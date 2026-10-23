@@ -128,8 +128,20 @@ def status_badge(status: str) -> None:
 
 
 def show_diagram(svg: str) -> None:
-    # st.html SVG'yi temizlediği için diyagram yalıtılmış bir iframe içinde çizilir.
-    components.html(f'<body style="margin:0;background:transparent">{svg}</body>', height=255)
+    # SVG kendi oranında kalsın; dar ekranda yalnızca diyagram alanı yatay kaydırılsın.
+    components.html(
+        '<style>html,body{margin:0;background:transparent;overflow:hidden}'
+        '.diagram-scroll{width:100%;height:310px;overflow-x:auto;overflow-y:hidden}'
+        '.diagram-canvas{width:1100px;height:289px;margin:0 auto}'
+        '.diagram-canvas svg{display:block;width:1100px;height:289px}'
+        '.diagram-hint{display:none}'
+        '@media(max-width:700px){.diagram-hint{display:block;position:absolute;top:3px;right:8px;'
+        'padding:4px 8px;border-radius:6px;background:#fff;color:#475569;font:12px Segoe UI,sans-serif}}'
+        '</style><div class="diagram-hint">↔ Diyagramı kaydır</div>'
+        '<div class="diagram-scroll"><div class="diagram-canvas">'
+        f'{svg}</div></div>',
+        height=316,
+    )
 
 
 def describe_activity(row: dict, states: dict[str, str]) -> str:
