@@ -115,7 +115,8 @@ CrewAI Flow sıralamayı yönetir. Ajan rolleri [`agents.yaml`](src/autosdlc/con
 
 ### Kalite kapıları ve izlenebilirlik
 
-- **Mimari inceleme (V&V):** Mimari İnceleme Ajanı tasarımı gereksinimlere (her FR'nin karşılığı, NFR'ler, API/veri tutarlılığı, kararlara uyum) göre denetler. Kritik veya yüksek bulgu varsa `KARAR: REVİZYON` verir; Tasarım Ajanı bulgulara göre belgeyi yeniden yazar ve inceleme tekrarlanır (en fazla 2 tur). Onay çıkmazsa açık bulgular kaydedilerek devam edilir ve kodlama ile bakım ajanlarına aktarılır.
+- **Proje ölçeği:** Formdaki **Ölçek** seçeneği `Normal` ya da `Küçük` olabilir (hızlı demo, CLI ve library şablonları `Küçük` gelir). Küçük projede her belge yaklaşık 3500 karakterle sınırlanır ve inceleme yalnızca **Kritik** bulguda tasarımı geri gönderir; yüksek/orta bulgular raporda kalır ve bakım listesine aktarılır.
+- **Mimari inceleme (V&V):** Mimari İnceleme Ajanı tasarımı gereksinimlere (her FR'nin karşılığı, NFR'ler, API/veri tutarlılığı, kararlara uyum) göre denetler. Kritik veya yüksek bulgu varsa `KARAR: REVİZYON` verir; Tasarım Ajanı belgenin yalnızca bulgulardan etkilenen bölümlerini yeniden yazar ve inceleme tekrarlanır (en fazla 2 tur). Onay çıkmazsa açık bulgular kaydedilerek devam edilir ve kodlama ile bakım ajanlarına aktarılır.
 
 - **Aşama kapıları:** Analiz belgesi FR-xx ve NFR-xx kimlikleri, tasarım belgesi en az iki Mermaid diyagramı (veritabanı seçildiyse `erDiagram`) içermelidir. Kapıdan geçemeyen belge, eksiği yazılı olarak ajana geri verilir ve bir kez yeniden yazdırılır; yine geçemezse çalışma durur.
 - **İzlenebilirlik matrisi:** Test aşaması `traceability.md` üretir. Gereksinim kimlikleri test dosyalarındaki referanslarla (`FR-01`, `test_fr01_...`) eşleştirilir ve FR/NFR kapsama oranı test raporuna ve dağıtım/bakım ajanlarına aktarılır.
@@ -141,14 +142,14 @@ Proje bittikten sonra da SDLC devam eder. Üç tür müdahale vardır.
 Ajanın önerisi **diff** olarak gösterilir; **Kabul et** dersen kaydedilir. Belgenin önceki hâli `runs/<id>/versions/` altına yedeklenir.
 
 **2. Etki: "güncel değil".** Bir belge değişince sonraki aşamalar otomatik yeniden üretilmez; diyagramda sarı **↻ Güncel değil** olarak işaretlenir. Uyarıdaki **Etkilenenleri güncelle** iki seçenek sunar:
-- **Delta:** mevcut belgeler ve kod korunur; ajanlar yalnızca düzenlemenin etkilediği kısımları günceller (değişen yerler `[CR-xxx]` ile etiketlenir), kodda yalnızca değişen dosyalar yazılır, ardından tüm testler regresyon olarak koşar.
+- **Delta:** mevcut belgeler ve kod korunur; ajanlar belgenin tamamını değil yalnızca değişen ya da yeni bölümleri döndürür ve bunlar başlık eşleşmesiyle belgeye yerleştirilir (değişen yerler `[CR-xxx]` ile etiketlenir). Çıktı kısa kaldığı için iterasyon hızlıdır; kodda yalnızca değişen dosyalar yazılır, ardından tüm testler regresyon olarak koşar.
 - **Baştan üret:** bu aşamalar sıfırdan yazılır.
 
 Fikir/kısıt değişikliği bütün aşamaları "güncel değil" yapar.
 
 **3. Değişiklik talebi (yeni özellik / hata / değişiklik).** Üst çubukta **📝 Değişiklik**:
 1. Talep oluştur (`CR-001`, türü ve açıklaması).
-2. **Etki analizi:** Etki Analizi Ajanı izlenebilirlik zinciriyle (FR → tasarım → dosya → test) etkilenen gereksinim, tasarım, dosya ve testleri raporlar ve başlangıç aşamasını önerir (yeni/değişen gereksinim → Analiz, yalnızca tasarım → Tasarım, yalnızca kod/hata → Kodlama).
+2. **Etki analizi:** Etki Analizi Ajanı izlenebilirlik zinciriyle (FR → tasarım → dosya → test) etkilenen gereksinim, tasarım, dosya ve testleri raporlar ve başlangıç aşamasını önerir (yeni/değişen gereksinim → Analiz, yalnızca tasarım → Tasarım, yalnızca kod/hata → Kodlama). Ayrıca değişiklikten **etkilenmeyen aşamaları** (`ATLA: review, deployment, maintenance`) önerir; onay ekranında bu liste düzenlenebilir. Atlanan aşama diyagramda kesik çizgili **↷ Atlandı** olarak görünür ve önceki belgesi korunur. Kodlama ve test hiçbir zaman atlanmaz.
 3. **Açık sorular:** Etki analizi belirsiz noktaları `SORU:` satırları olarak listeler (ör. "Kelvin negatif olabilir mi?"). Hepsini yanıtlamadan uygulanamaz; yanıtlar talebe kaydedilir ve bütün aşamalara kesin karar olarak gider. Böylece netleştirme ajanın soru sorup sormamasına bırakılmaz.
 4. **Onayla ve uygula:** başlangıç aşamasından itibaren delta iterasyonu çalışır; önceki aşamalar olduğu gibi kalır.
    - **Yeni özellik:** yeni gereksinim `FR-0n [CR-001]` olarak eklenir, tasarım ve kod güncellenir, yeni testler mevcutlara eklenir.

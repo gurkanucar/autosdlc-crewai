@@ -25,6 +25,7 @@ from .deployment import write_deployment_files
 from .files import write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
+from .sections import NO_CHANGE, apply_patch
 from .storage import History
 from .traceability import build_matrix
 
@@ -36,6 +37,13 @@ STAGE_FILES = {
 }
 MAX_REVIEW_ROUNDS = 2
 VERDICT = re.compile(r"KARAR:\s*\**\s*(ONAY|REV[İI]ZYON)", re.IGNORECASE)
+# Bulgu tablosundaki "| 1 | Kritik | …" satırı; küçük projede yalnızca bu, tasarım revizyonu gerektirir.
+CRITICAL_FINDING = re.compile(r"^\s*\|[^|\n]*\|\s*\**\s*Kritik\b", re.IGNORECASE | re.MULTILINE)
+# Küçük projede belge uzunluğu üst sınırı (karakter); ajan bunu aşmamaya yönlendirilir.
+SMALL_DOC_LIMIT = 3500
+# Bir değişiklik talebinde atlanabilecek aşamalar; kodlama ve test her zaman çalışır.
+SKIPPABLE_STAGES = ("analysis", "design", "review", "deployment", "maintenance")
+TEST_HEADER = re.compile(r"\A> Doğrulanan test sonucu:[^\n]*\n+")
 TEST_DIRS = ("tests/", "test/")
 PYTHON_TOOLS = {"python", "python3", "pip", "pip3"}
 DOC_BUDGET = 9000
@@ -161,13 +169,20 @@ def review_verdict(report: str) -> str | None:
     return "ONAY" if match.group(1).upper() == "ONAY" else "REVİZYON"
 
 
+def skip_stages(change: dict | None) -> set[str]:
+    """Değişiklik talebinde kullanıcının onayladığı, etkilenmeyen (atlanacak) aşamalar."""
+    if not change or not change.get("skip_stages"):
+        return set()
+    return {name.strip() for name in change["skip_stages"].split(",")} & set(SKIPPABLE_STAGES)
+
+
 def completed_from_events(events: list[dict]) -> set[str]:
     """Olayları sırayla oynatır; 'reset' olayı o aşama ve sonrasını yeniden üretilecek yapar."""
     completed: set[str] = set()
     for event in events:
         if event["stage"] == "workflow" and event["status"] == "reset" and event["detail"] in SDLC_STAGES:
             completed -= set(SDLC_STAGES[SDLC_STAGES.index(event["detail"]):])
-        elif event["status"] == "completed" or (event["stage"] == "testing" and event["status"] == "passed"):
+        elif event["status"] in {"completed", "skipped"} or (event["stage"] == "testing" and event["status"] == "passed"):
             completed.add(event["stage"])
     return completed
 
@@ -235,6 +250,8 @@ class RunSession:
             (self.output_dir / "decisions.yaml").write_text(yaml.safe_dump(decisions, sort_keys=False), encoding="utf-8")
             (self.project_dir / "docs" / "decisions.yaml").write_text(yaml.safe_dump(decisions, sort_keys=False), encoding="utf-8")
         self.max_repairs = max_repairs
+        # Küçük projede belgeler kısa tutulur ve inceleme yalnızca kritik bulguda tasarımı geri gönderir.
+        self.small = decisions.get("scale") == "small"
         self.docs: dict[str, str] = {}
         self.clarifications: list[dict[str, str]] = []
         self.code_files: dict[str, str] = {}
@@ -311,9 +328,29 @@ class RunSession:
         self._check_pause()
         if stage in self.completed_stages:
             return "Aşama daha önce tamamlandı"
+        if stage in skip_stages(self.change) and stage in self.previous_docs:
+            return self._skip(stage)
         result = operation()
         self._check_pause()
         return result
+
+    def _skip(self, stage: str) -> str:
+        """Değişiklikten etkilenmeyen aşama: önceki belge olduğu gibi kalır, yalnızca test sonucu satırı tazelenir."""
+        content = self.previous_docs[stage]
+        if stage == "deployment":
+            write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
+        if stage in {"deployment", "maintenance"}:
+            content = self._with_test_header(content)
+            self._write_doc(STAGE_FILES[stage], content)
+        self.docs[stage] = content
+        self._event(stage, "skipped", f"{self.change['id']} bu aşamayı etkilemiyor")
+        return "Aşama atlandı"
+
+    def _with_test_header(self, content: str) -> str:
+        return (
+            f"> Doğrulanan test sonucu: **{'BAŞARILI' if self.test_passed else 'BAŞARISIZ'}** "
+            f"({self.attempts} deneme).\n\n{TEST_HEADER.sub('', content, count=1)}"
+        )
 
     def pause(self) -> RunResult:
         self._event("workflow", "paused", "Kullanıcı isteğiyle duraklatıldı")
@@ -325,33 +362,63 @@ class RunSession:
         if self.on_event is not None:
             self.on_event(stage, status, detail)
 
-    def _generate(self, stage: str, instruction: str = "") -> str:
-        """Belgeyi üretir; kalite kapısından geçemezse gerekçesiyle bir kez daha yazdırır."""
+    def _generate(self, stage: str, instruction: str = "", base: str | None = None) -> str:
+        """Belgeyi üretir; kalite kapısından geçemezse gerekçesiyle bir kez daha yazdırır.
+
+        base verilirse (değişiklik talebi ya da inceleme revizyonu) ajan belgenin tamamını değil yalnızca
+        değişen/yeni bölümleri döndürür; bunlar mevcut belgeye yerleştirilir. Böylece çıktı kısa kalır.
+        """
+        if base is None and self.change and stage != "review":
+            base = self.previous_docs.get(stage)
         gate_feedback = ""
         for _ in range(2):
-            content = self._with_questions(
-                stage, lambda: self.engine.document(
-                    stage, self.idea, self._change_instruction(stage) + instruction + gate_feedback + self._context(stage)
+            prompt = self._change_instruction(stage) + instruction + gate_feedback
+            if base:
+                prompt += self._patch_instruction(base)
+            elif self.small:
+                prompt += (
+                    f"KÜÇÜK PROJE: belge en fazla ~{SMALL_DOC_LIMIT} karakter olsun. Yalnızca bu proje için gerekli "
+                    "bölümleri yaz; genel geçer açıklama, tekrar ve uzun tablolar ekleme.\n\n"
                 )
+            output = self._with_questions(
+                stage, lambda: self.engine.document(stage, self.idea, prompt + self._context(stage))
             )
+            content = output
+            if base:
+                content, replaced, added = apply_patch(base, output)
+                if replaced or added:
+                    self._event(stage, "delta", f"{replaced} bölüm güncellendi, {added} bölüm eklendi")
+                elif NO_CHANGE.casefold() in output.casefold():
+                    self._event(stage, "delta", "değişiklik gerekmedi")
+                else:
+                    # Ajan başlıksız düz metin döndürdüyse yama uygulanamaz; belge olduğu gibi alınır.
+                    content = output
             problem = self._quality_gate(stage, content)
             if problem is None:
                 return content
             self._event(stage, "gate_failed", problem)
             gate_feedback = (
                 f"ÖNCEKİ TASLAK KALİTE KAPISINDAN GEÇEMEDİ: {problem}\n"
-                "Eksikleri gidererek belgenin tamamını yeniden yaz.\n\n"
+                + ("Eksikleri gideren bölümleri döndür.\n\n" if base else "Eksikleri gidererek belgenin tamamını yeniden yaz.\n\n")
             )
         raise ValueError(problem)
+
+    def _patch_instruction(self, base: str) -> str:
+        return (
+            "YANIT BİÇİMİ — YALNIZCA DEĞİŞEN BÖLÜMLER: Belgenin tamamını DÖNDÜRME. Yalnızca değişmesi gereken ya da "
+            "yeni eklenecek bölümleri yaz. Değişen her bölüm, MEVCUT BELGEDEKİ başlığın AYNISIYLA (aynı # seviyesi ve "
+            "aynı metin) başlasın ve o bölümün yeni tam içeriğini alt başlıklarıyla birlikte içersin; bölüm belgede "
+            "bütünüyle bununla değiştirilir. Yeni bölüm için yeni bir başlık kullan ve hemen üstüne, ardına "
+            "ekleneceği mevcut başlığı gösteren '<!-- SONRA: <mevcut başlık metni> -->' satırını koy. "
+            f"Hiçbir bölümün değişmesi gerekmiyorsa yalnızca '{NO_CHANGE}' yaz.\n"
+            f"MEVCUT BELGE:\n{base[:14000]}\n\n"
+        )
 
     def _document(self, stage: str, filename: str) -> str:
         self._event(stage, "started")
         content = self._generate(stage)
         if stage in {"deployment", "maintenance"}:
-            content = (
-                f"> Doğrulanan test sonucu: **{'BAŞARILI' if self.test_passed else 'BAŞARISIZ'}** "
-                f"({self.attempts} deneme).\n\n{content}"
-            )
+            content = self._with_test_header(content)
         self.docs[stage] = content
         self._write_doc(filename, content)
         self._event(stage, "completed", filename)
@@ -395,15 +462,13 @@ class RunSession:
                 f"BU İNCELEME BİR DEĞİŞİKLİK İTERASYONU İÇİNDİR ({self.change['id']}). Özellikle değişikliğin "
                 f"tasarıma doğru ve eksiksiz yansıyıp yansımadığını denetle.\n{self._change_text()}\n\n"
             )
-        previous = self.previous_docs.get(stage)
-        if not previous:
+        if not self.previous_docs.get(stage):
             return f"UYGULANAN DEĞİŞİKLİK TALEBİ:\n{self._change_text()}\n\n"
         return (
             f"DEĞİŞİKLİK MODU — {self._change_text()}\n\n"
             "Aşağıdaki MEVCUT BELGEYİ temel al. Yalnızca bu değişiklikten etkilenen bölümleri güncelle ya da "
-            "yeni bölüm/gereksinim ekle; diğer bölümleri AYNEN koru. Belgenin tamamını döndür. "
-            f"Değişen veya eklenen her yerin sonuna [{self.change['id']}] etiketi koy.\n"
-            f"MEVCUT BELGE:\n{previous[:14000]}\n\n"
+            "yeni bölüm/gereksinim ekle; etkilenmeyen bölümlere dokunma. "
+            f"Değişen veya eklenen her yerin sonuna [{self.change['id']}] etiketi koy.\n\n"
         )
 
     def _write_doc(self, filename: str, content: str) -> None:
@@ -479,12 +544,14 @@ class RunSession:
             self._event("review", "approved" if verdict == "ONAY" else "changes_requested", f"tur {number}")
             if verdict == "ONAY" or number == MAX_REVIEW_ROUNDS:
                 break
+            if self.small and not CRITICAL_FINDING.search(report):
+                self._event("review", "revision_skipped", "küçük proje: kritik bulgu yok, bulgular bakım listesine kalır")
+                break
             self._event("design", "revision_started", f"inceleme turu {number}")
             self.docs["design"] = self._generate("design", (
-                "MİMARİ İNCELEME BULGULARI — mevcut tasarımı bu bulgulara göre revize et ve "
-                f"belgenin tamamını yeniden yaz:\n{report[:6000]}\n\n"
-                f"Mevcut tasarım belgesi:\n{self.docs['design'][:DOC_BUDGET]}\n\n"
-            ))
+                "MİMARİ İNCELEME BULGULARI — mevcut tasarımı yalnızca bu bulguların gerektirdiği yerlerde "
+                f"revize et:\n{report[:6000]}\n\n"
+            ), base=self.docs["design"])
             self._write_doc("architecture.md", self.docs["design"])
             self._event("design", "revision_completed", "architecture.md")
         summary = "ONAYLANDI" if verdict == "ONAY" else "AÇIK BULGULARLA DEVAM EDİLDİ"

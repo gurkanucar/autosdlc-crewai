@@ -16,6 +16,7 @@ from autosdlc.cli import main as cli_main
 from autosdlc.runner import RunResult
 from autosdlc.crewai_engine import _parse_file_bundle
 from autosdlc.traceability import build_matrix, requirement_ids
+from autosdlc.lifecycle import stage_states
 
 
 class StubEngine:
@@ -252,7 +253,7 @@ def test_yaml_request_passes_stack_and_output_to_runner(tmp_path, monkeypatch):
 
 
 def test_plain_make_run_prompts_for_idea_and_decisions(tmp_path, monkeypatch):
-    answers = iter(["A tiny CLI", "cli", "Rust", ""])
+    answers = iter(["A tiny CLI", "cli", "Rust", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     captured = {}
 
@@ -265,6 +266,7 @@ def test_plain_make_run_prompts_for_idea_and_decisions(tmp_path, monkeypatch):
     assert captured["idea"] == "A tiny CLI"
     assert captured["decisions"]["project_type"] == "cli"
     assert captured["decisions"]["stack"] == "Rust"
+    assert captured["decisions"]["scale"] == "normal"
 
 
 def test_ui_choice_runs_playwright_against_live_app(tmp_path, monkeypatch):
@@ -1169,3 +1171,90 @@ def test_each_finished_iteration_is_kept_as_a_version(tmp_path, monkeypatch):
     assert "FR-03" in (v2 / "docs" / "requirements.md").read_text(encoding="utf-8")
     assert not (v1 / "project" / "tests" / "test_items.py").exists() and (v2 / "project" / "tests" / "test_items.py").exists()
     assert not (v2 / "project" / ".autosdlc-venv").exists()
+
+
+def test_apply_patch_replaces_matching_sections_and_inserts_new_ones():
+    from autosdlc.sections import apply_patch
+
+    base = "# Gereksinimler\n\n## İşlevsel\n\nFR-01: Celsius\n\n## İşlevsel olmayan\n\nNFR-01: hızlı\n"
+    patch = (
+        "```markdown\n# Gereksinimler\n\n## İşlevsel [CR-001]\n\nFR-01: Celsius\nFR-02: Kelvin [CR-001]\n\n"
+        "<!-- SONRA: İşlevsel -->\n## Kısıtlar\n\nKelvin negatif olamaz.\n```"
+    )
+    merged, replaced, added = apply_patch(base, patch)
+    assert (replaced, added) == (1, 1)
+    assert "FR-02: Kelvin" in merged and "NFR-01: hızlı" in merged
+    assert merged.index("## Kısıtlar") < merged.index("## İşlevsel olmayan")
+    whole = "# Gereksinimler\n\n" + "yeni içerik\n" * 30
+    assert apply_patch(base, whole)[0].strip() == whole.strip()
+    assert apply_patch(base, "DEĞİŞİKLİK YOK") == (base, 0, 0)
+
+
+class PatchingEngine(ChangeAwareEngine):
+    """Değişiklik modunda belgenin tamamı yerine yalnızca değişen bölümü döndüren motor."""
+
+    def document(self, stage, idea, context):
+        self.contexts.setdefault(stage, []).append(context)
+        if "YALNIZCA DEĞİŞEN BÖLÜMLER" in context and stage == "analysis":
+            return "# Requirements\n\nFR-01: provide an HTTP response.\nFR-02: list items.\nFR-03: Ürünleri listele [CR-001]\nNFR-01: respond quickly.\n"
+        if "YALNIZCA DEĞİŞEN BÖLÜMLER" in context:
+            return "DEĞİŞİKLİK YOK"
+        return StubEngine.document(self, stage, idea, context)
+
+
+def test_change_request_uses_section_patches_and_skips_unaffected_stages(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    first = run_project("Envanter API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    change_id = db.create_change(first.id, "feature", "Ürün listeleme", "Ürünleri listeleyen /items uç noktası eklensin.")
+    db.update_change(first.id, change_id, status="in_progress", start_stage="analysis",
+                     skip_stages="review,deployment,maintenance")
+    db.reset_from(first.id, "analysis")
+    engine = PatchingEngine()
+    result = run_project("", workspace=tmp_path, engine=engine, resume_run_id=first.id)
+
+    assert result.status == "completed", result.error
+    assert {"review", "deployment", "maintenance"}.isdisjoint(engine.contexts)
+    assert "FR-03" in (result.output_dir / "requirements.md").read_text(encoding="utf-8")
+    events = db.get(first.id)["events"]
+    assert [e["stage"] for e in events if e["status"] == "skipped"] == ["review", "deployment", "maintenance"]
+    assert any(e["stage"] == "design" and e["status"] == "delta" and "gerekmedi" in e["detail"] for e in events)
+    deployment = (result.output_dir / "deployment.md").read_text(encoding="utf-8")
+    assert deployment.count("Doğrulanan test sonucu") == 1
+    states = stage_states(events, "completed")
+    assert states["review"] == "skipped" and states["testing"] == "done"
+
+
+class CriticalReviewEngine(StubEngine):
+    def __init__(self, severity):
+        self.severity, self.design_calls, self.prompts = severity, 0, []
+
+    def document(self, stage, idea, context):
+        self.prompts.append((stage, context))
+        if stage == "design":
+            self.design_calls += 1
+        if stage == "review":
+            return f"# İnceleme\n\n| No | Önem | Bulgu | Öneri |\n| 1 | {self.severity} | Eksik | Ekle |\n\nKARAR: REVİZYON\n"
+        return super().document(stage, idea, context)
+
+
+def test_small_scale_revises_design_only_for_critical_findings(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    small = {**BACKEND, "scale": "small"}
+    high = CriticalReviewEngine("Yüksek")
+    run_project("Küçük API", workspace=tmp_path / "a", engine=high, decisions=small)
+    assert high.design_calls == 1
+    assert any("KÜÇÜK PROJE" in context for stage, context in high.prompts if stage == "analysis")
+    critical = CriticalReviewEngine("Kritik")
+    run_project("Küçük API", workspace=tmp_path / "b", engine=critical, decisions=small)
+    assert critical.design_calls == 2
+    # Revizyon yalnızca değişen bölümleri ister.
+    assert any("YALNIZCA DEĞİŞEN BÖLÜMLER" in context for stage, context in critical.prompts if stage == "design")
+    normal = CriticalReviewEngine("Yüksek")
+    run_project("Normal API", workspace=tmp_path / "c", engine=normal, decisions=BACKEND)
+    assert normal.design_calls == 2
+
+
+def test_scale_defaults_to_normal():
+    assert validate_decisions(BACKEND)["scale"] == "normal"
+    assert validate_decisions({**BACKEND, "scale": "small"})["scale"] == "small"

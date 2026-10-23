@@ -12,6 +12,7 @@ CHOICE_LABELS = {
     "cache": {"none": "Yok", "redis": "Redis"},
     "observability": {"none": "Yok", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
     "ui": {"none": "Yok", "web": "Web UI"},
+    "scale": {"normal": "Normal", "small": "Küçük"},
 }
 
 
@@ -59,7 +60,7 @@ def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
     # Proje türüne uymayan kararlar (ör. cli + postgres) yok sayılır.
     normalized = {
         name: "none" if item.get("when") and project_type not in item["when"]
-        else selected.get(name, "" if item.get("optional") else "none")
+        else selected.get(name, item.get("default", "" if item.get("optional") else "none"))
         for name, item in catalog.items()
     }
     if project_type in {"frontend", "fullstack"}:

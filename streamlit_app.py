@@ -25,7 +25,8 @@ from autosdlc.lifecycle import (
 from autosdlc.models import available_models, default_model
 from autosdlc.project_management import delete_project
 from autosdlc.runner import (
-    CHANGE_KINDS, DOC_BUDGET, STAGE_INPUTS, RunPaused, backup_versions, completed_from_events, open_questions,
+    CHANGE_KINDS, DOC_BUDGET, SKIPPABLE_STAGES, STAGE_INPUTS, RunPaused, backup_versions, completed_from_events,
+    open_questions,
     run_project,
 )
 from autosdlc.sections import (
@@ -44,13 +45,15 @@ STATUS_LABELS = {
     "running": ("🔵", "Çalışıyor", "blue"), "paused": ("🟠", "Duraklatıldı", "orange"),
     "completed": ("🟢", "Tamamlandı", "green"), "failed": ("🔴", "Başarısız", "red"),
 }
-STATE_ICONS = {"pending": "○", "running": "🔵", "question": "❔", "done": "✅", "failed": "❌", "paused": "⏸", "stale": "↻"}
+STATE_ICONS = {"pending": "○", "running": "🔵", "question": "❔", "done": "✅", "failed": "❌", "paused": "⏸", "stale": "↻",
+               "skipped": "↷"}
 STATE_LABELS = {"pending": "Sırada", "running": "Çalışıyor", "question": "Yanıt bekliyor", "done": "Tamamlandı",
-                "failed": "Başarısız", "paused": "Duraklatıldı", "stale": "Güncel değil"}
+                "failed": "Başarısız", "paused": "Duraklatıldı", "stale": "Güncel değil", "skipped": "Atlandı"}
 SECTION_ACTIONS = {"question": "💬 Sor", "rewrite": "✍️ Yeniden yaz", "add": "➕ Ekle", "delete": "🗑️ Sil", "manual": "✏️ Elle"}
 CHANGE_STATUS = {"draft": "📝 Taslak", "analyzed": "🔍 Analiz edildi", "in_progress": "🔵 Uygulanıyor",
                  "done": "✅ Tamamlandı", "failed": "❌ Başarısız", "rejected": "✖ Reddedildi"}
 START_STAGE = re.compile(r"BAŞLANGIÇ:\s*\**\s*(analysis|design|development)", re.IGNORECASE)
+SKIP_LINE = re.compile(r"ATLA:\s*\**\s*([a-z, ]*)", re.IGNORECASE)
 ITERATION_ICONS = {"completed": "✅", "failed": "❌"}
 EVENT_NAMES = {
     "started": "Başladı", "completed": "Tamamlandı", "passed": "Testler geçti",
@@ -223,7 +226,7 @@ def active_stage(states: dict[str, str]) -> str:
         found = next((key for key in STAGE_KEYS if states[key] == wanted), None)
         if found:
             return found
-    done = [key for key in STAGE_KEYS if states[key] == "done"]
+    done = [key for key in STAGE_KEYS if states[key] in {"done", "skipped"}]
     return done[-1] if done else STAGE_KEYS[0]
 
 
@@ -266,6 +269,9 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "changes_requested": f"🔁 Tasarımda düzeltilmesi gereken bulgular var ({detail}); Tasarım Ajanı'na geri gönderiyorum.",
             "approved": f"✅ Tasarımı onayladım ({detail}).",
             "revision_started": "✏️ İnceleme bulgularına göre tasarımı revize ediyorum.",
+            "revision_skipped": f"➡️ Revizyon gerekmedi: {detail}.",
+            "delta": f"🧩 Yalnızca değişen bölümler: {detail}.",
+            "skipped": f"↷ Aşama atlandı: {detail}; önceki belge korundu.",
             "passed": f"✅ Testler geçti ({detail}).",
             "failed": f"❌ Testler başarısız ({detail})." if stage == "testing" else f"❌ {detail}",
             "repair_started": "🛠️ Test hatalarına göre kodu düzeltiyorum.",
@@ -659,7 +665,7 @@ def overview(run_id: str) -> None:
         "Aşama", STAGE_KEYS, key=f"stage_{run_id}", label_visibility="collapsed", width="stretch",
         format_func=lambda key: f"{STATE_ICONS[states[key]]} {STAGE_NAMES[key]}",
     )
-    done = sum(value == "done" for value in states.values())
+    done = sum(value in {"done", "skipped"} for value in states.values())
     cells = st.columns(6)
     cells[0].metric("Aşama", f"{done}/{len(STAGES)}")
     cells[1].metric("Ajan süresi", format_duration(sum(value["seconds"] for value in metrics.values())))
@@ -708,6 +714,13 @@ def detail_panel(run_id: str) -> None:
         return
     states = stage_states(row["events"], row["status"])
     stage_detail(db, row, selected_stage(run_id, states)[0], states, stage_metrics(row["events"]))
+
+
+def suggested_skips(report: str) -> list[str]:
+    """Etki analizinin 'ATLA: deployment, maintenance' satırındaki atlanabilir aşamalar."""
+    found = SKIP_LINE.search(report)
+    names = [name.strip().lower() for name in found.group(1).split(",")] if found else []
+    return [name for name in SKIPPABLE_STAGES if name in names]
 
 
 def impact_context(row: dict) -> str:
@@ -764,7 +777,8 @@ def changes_dialog(run_id: str) -> None:
                                 f"{change['id']} · {CHANGE_KINDS[change['kind']]}: {change['title']}\n{change['description']}"))
                         found = START_STAGE.search(report)
                         start = found.group(1).lower() if found else ("development" if change["kind"] == "bug" else "analysis")
-                        db.update_change(run_id, change["id"], impact=report, start_stage=start, status="analyzed")
+                        db.update_change(run_id, change["id"], impact=report, start_stage=start, status="analyzed",
+                                         skip_stages=",".join(suggested_skips(report)) or None)
                         st.rerun(scope="fragment")
                     except (RuntimeError, ValueError) as exc:
                         st.error(str(exc))
@@ -780,6 +794,12 @@ def changes_dialog(run_id: str) -> None:
                 start = st.selectbox("Başlangıç aşaması", options, index=options.index(change["start_stage"] or "analysis"),
                                      format_func=STAGE_NAMES.get, key=f"start_{change['id']}",
                                      help="Bu aşama ve sonrası delta modunda güncellenir; öncekiler olduğu gibi kalır.")
+                skippable = [key for key in SKIPPABLE_STAGES if STAGE_KEYS.index(key) > STAGE_KEYS.index(start)]
+                skipped = st.multiselect(
+                    "Atlanacak aşamalar", skippable, format_func=STAGE_NAMES.get, key=f"skip_{change['id']}",
+                    default=[key for key in (change.get("skip_stages") or "").split(",") if key in skippable],
+                    help="Etki analizi bu aşamaların değişiklikten etkilenmediğini söylüyor; önceki belgeleri korunur. "
+                         "Kodlama ve test her zaman çalışır.")
                 apply, reject = st.columns(2)
                 if apply.button("▶ Onayla ve uygula", key=f"apply_{change['id']}", type="primary",
                                 disabled=busy or not ready or bool(unanswered),
@@ -787,7 +807,7 @@ def changes_dialog(run_id: str) -> None:
                                       "Çalışan bir iş ya da uygulanan başka bir talep varken başlatılamaz.")):
                     clarifications = "\n".join(f"- Soru: {question}\n  Yanıt: {answer.strip()}" for question, answer in answers.items())
                     db.update_change(run_id, change["id"], status="in_progress", start_stage=start,
-                                     clarifications=clarifications or None)
+                                     clarifications=clarifications or None, skip_stages=",".join(skipped) or None)
                     regenerate(db, run_id, start, api_key)
                     st.rerun()
                 if reject.button("✖ Reddet", key=f"reject_{change['id']}"):
@@ -1112,7 +1132,8 @@ def home_page() -> None:
         options = [(name, item) for name, item in catalog.items()
                    if name not in FORM_FIELDS and (not item.get("when") or project_type in item["when"])]
         if options:
-            labels = {"database": "Veritabanı", "cache": "Önbellek", "observability": "İzleme", "ui": "Web arayüzü"}
+            labels = {"database": "Veritabanı", "cache": "Önbellek", "observability": "İzleme", "ui": "Web arayüzü",
+                      "scale": "Ölçek"}
             for column, (name, item) in zip(st.columns(len(options), vertical_alignment="bottom"), options):
                 decisions[name] = column.selectbox(
                     labels.get(name, item["question"]), item["options"], key=f"choice_{name}", help=item["question"],

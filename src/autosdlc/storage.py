@@ -80,8 +80,11 @@ class History:
                 db.execute("ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0")
             if "heartbeat_at" not in columns:
                 db.execute("ALTER TABLE runs ADD COLUMN heartbeat_at TEXT")
-            if "clarifications" not in {row[1] for row in db.execute("PRAGMA table_info(changes)")}:
+            change_columns = {row[1] for row in db.execute("PRAGMA table_info(changes)")}
+            if "clarifications" not in change_columns:
                 db.execute("ALTER TABLE changes ADD COLUMN clarifications TEXT")
+            if "skip_stages" not in change_columns:
+                db.execute("ALTER TABLE changes ADD COLUMN skip_stages TEXT")
             # Sürüm geçmişi: her biten iterasyon (ilk üretim, CR, bugfix) bir kayıt ve anlık kopya bırakır.
             db.execute(
                 """CREATE TABLE IF NOT EXISTS iterations (
@@ -223,7 +226,7 @@ class History:
             return change_id
 
     def update_change(self, run_id: str, change_id: str, **fields: str | None) -> None:
-        allowed = {"status", "impact", "start_stage", "description", "clarifications"}
+        allowed = {"status", "impact", "start_stage", "description", "clarifications", "skip_stages"}
         if not fields or set(fields) - allowed:
             raise ValueError("Geçersiz değişiklik alanı")
         assignments = ", ".join(f"{name}=?" for name in fields)

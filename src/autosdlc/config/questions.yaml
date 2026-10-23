@@ -20,6 +20,11 @@ ui:
   question: Backend projesinde web UI olsun mu?
   options: [none, web]
   when: [backend]
+scale:
+  question: Proje ölçeği nedir? Küçük projede belgeler kısa tutulur, inceleme yalnızca kritik bulguda tasarımı geri gönderir.
+  options: [normal, small]
+  optional: true
+  default: normal
 constraints:
   question: Başka teknik veya ürün kısıtları var mı?
   free_text: true

@@ -38,7 +38,9 @@ HANDOFFS = {("development", "repair_completed"): "testing", ("design", "revision
 
 
 def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
-    """Her aşama için pending / running / question / done / stale / failed / paused döndürür.
+    """Her aşama için pending / running / question / done / skipped / stale / failed / paused döndürür.
+
+    "skipped": değişiklik talebi bu aşamayı etkilemediği için önceki belgesi olduğu gibi korundu.
 
     "stale": aşama tamamlanmıştı ama önceki bir aşamanın belgesi sonradan değişti; güncellenmesi gerekir.
     """
@@ -53,7 +55,7 @@ def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
             # "decisions": mimari kararlar değişti → bütün aşamalar etkilenir.
             first = 0 if event["detail"] == "decisions" else STAGE_KEYS.index(event["detail"]) + 1
             for key in STAGE_KEYS[first:]:
-                if states[key] == "done":
+                if states[key] in {"done", "skipped"}:
                     states[key] = "stale"
             continue
         if stage not in states:
@@ -67,6 +69,8 @@ def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
             states[stage] = "question"
         elif status in {"completed", "passed", "edited"}:
             states[stage] = "done"
+        elif status == "skipped":
+            states[stage] = "skipped"
         elif status == "failed":
             states[stage] = "failed"
     if run_status != "running":
@@ -164,8 +168,9 @@ PALETTE = {
     "failed": ("#fee2e2", "#dc2626", "#7f1d1d", "Başarısız"),
     "paused": ("#fff7ed", "#ea580c", "#7c2d12", "Duraklatıldı"),
     "stale": ("#fef9c3", "#ca8a04", "#713f12", "Güncel değil"),
+    "skipped": ("#f8fafc", "#16a34a", "#475569", "Atlandı (etkilenmedi)"),
 }
-GLYPHS = {"done": "✓", "failed": "✕", "question": "?", "paused": "❚❚", "stale": "↻"}
+GLYPHS = {"done": "✓", "failed": "✕", "question": "?", "paused": "❚❚", "stale": "↻", "skipped": "↷"}
 
 
 def _node_x(index: int) -> int:
@@ -233,7 +238,7 @@ def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, obje
             parts.append(f'<circle class="sdlc-halo" cx="{x}" cy="{y}" r="31" fill="none" stroke="{stroke}"/>')
         if stage.key == selected:
             parts.append(f'<circle cx="{x}" cy="{y}" r="36" fill="none" stroke="#0f172a" stroke-width="2.5"/>')
-        dash = ' stroke-dasharray="4 3"' if state == "paused" else ""
+        dash = ' stroke-dasharray="4 3"' if state in {"paused", "skipped"} else ""
         parts.append(f'<circle cx="{x}" cy="{y}" r="29" fill="{fill}" stroke="{stroke}" stroke-width="2.5"{dash}/>')
         count = (runs or {}).get(stage.key, 0)
         if count > 1:

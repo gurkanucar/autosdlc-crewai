@@ -63,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
                             if item.get("free_text") and (answer or item.get("optional")):
                                 selected[name] = answer
                                 break
+                            if not answer and item.get("optional"):
+                                break
                             choice = parse_choice(name, answer)
                             if choice in item.get("options", []):
                                 selected[name] = choice

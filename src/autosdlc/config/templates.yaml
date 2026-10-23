@@ -9,6 +9,7 @@
     ve fahrenheit_to_celsius fonksiyonları. Mutlak sıfırın (-273.15 °C) altındaki değerler için
     ValueError fırlatılsın.
   decisions:
+    scale: small
     project_type: library
     stack: Python 3.12, pytest
     constraints: >-
@@ -57,6 +58,7 @@
     "convert 10 km mi" komutu 10 kilometreyi mile çevirsin. Desteklenen birimleri listeleyen
     bir komut ve hatalı birim için açık hata mesajı olsun.
   decisions:
+    scale: small
     project_type: cli
     stack: Python 3.12, argparse, pytest
     constraints: Dış bağımlılık kullanma; yalnızca standard library.
@@ -69,6 +71,7 @@
     fazla boşlukları temizleme, kelime sayma ve belirli uzunlukta akıllı kısaltma.
     Her işlev belgelenmiş ve tip ipuçlu olsun.
   decisions:
+    scale: small
     project_type: library
     stack: Python 3.12, pytest
     constraints: Dış bağımlılık kullanma; yalnızca standard library.

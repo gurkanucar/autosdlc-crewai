@@ -195,6 +195,11 @@ impact:
        "SORU: <tek, açık soru>" biçiminde yaz (en fazla 5). Varsayım yapma; kararı kullanıcıya bırak.
        Gerçekten belirsizlik yoksa bu bölüme yalnızca "Açık soru yok." yaz.
     Hata taleplerinde önce hatayı yeniden üreten bir test yazılacağını varsay.
+    Sondan bir önceki satır, bu değişiklikten ETKİLENMEYEN ve yeniden yazılması gerekmeyen aşamaları
+    göstersin: "ATLA: review, deployment, maintenance" gibi (seçenekler: analysis, design, review,
+    deployment, maintenance; kodlama ve test hiçbir zaman atlanmaz). Port, bağımlılık, ortam değişkeni
+    ya da çalıştırma biçimi değişmiyorsa deployment; izleme/operasyon etkilenmiyorsa maintenance;
+    tasarım değişmiyorsa review atlanabilir. Atlanacak aşama yoksa "ATLA: yok" yaz.
     Raporun son satırı tam olarak şu biçimde olsun ve değişikliğin ilk dokunması
     gereken aşamayı göstersin: "BAŞLANGIÇ: analysis" (yeni/değişen gereksinim),
     "BAŞLANGIÇ: design" (gereksinim aynı, tasarım değişiyor) veya
