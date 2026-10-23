@@ -99,6 +99,16 @@ def _stop_process(process: subprocess.Popen) -> None:
         process.wait()
 
 
+# Etki analizinin 'Açık sorular' bölümündeki satırlar: kullanıcı yanıtlamadan talep uygulanmaz.
+OPEN_QUESTION = re.compile(r"^\s*(?:[-*]|\d+[.)])?\s*\**\s*SORU\s*\**\s*:\s*\**\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def open_questions(impact: str) -> list[str]:
+    """Etki analizindeki 'SORU: …' satırları; 'yok' yanıtları sayılmaz."""
+    found = [match.group(1).strip() for match in OPEN_QUESTION.finditer(impact)]
+    return [question for question in found if question.strip(" .").casefold() not in {"yok", "none", "-"}][:5]
+
+
 def test_placement_problem(tests: dict[str, str]) -> str | None:
     """Test Ajanı yalnızca tests/ veya test/ altına yazabilir; ihlal varsa gerekçeyi döndürür."""
     outside = sorted(name for name in tests if not name.startswith(TEST_DIRS))
@@ -169,6 +179,9 @@ def default_project_dir(workspace: Path, idea: str, run_id: str) -> Path:
     return workspace / "projects" / f"{slug}-{run_id}"
 
 
+# Sürüm kopyasına alınmayan, yeniden oluşturulabilir ya da büyük klasörler.
+SNAPSHOT_SKIP = (".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__", ".pytest_cache",
+                 "test-results", "playwright-report", "dist", "build", "target")
 CHANGE_KINDS = {"feature": "Yeni özellik", "bug": "Hata", "change": "Değişiklik", "edit": "Belge düzenlemesi"}
 
 
@@ -366,6 +379,9 @@ class RunSession:
             f"{change.get('id')} · {CHANGE_KINDS.get(change.get('kind'), change.get('kind'))}: {change.get('title')}\n"
             f"{change.get('description', '')}"
         )
+        if change.get("clarifications"):
+            # Kullanıcının açık sorulara verdiği yanıtlar varsayımların önüne geçer.
+            text += f"\n\nKullanıcının netleştirmeleri (kesin kararlardır):\n{change['clarifications'][:3000]}"
         if change.get("impact"):
             text += f"\n\nEtki analizi:\n{change['impact'][:4000]}"
         return text
@@ -745,7 +761,35 @@ class RunSession:
             self._close_change(status, error)
         self._write_project_readme(status)
         self.history.finish(self.run_id, status, self.attempts, error)
+        self._record_iteration(status)
         return RunResult(self.run_id, status, self.output_dir, self.project_dir, self.attempts, error)
+
+    def _record_iteration(self, status: str) -> None:
+        """Biten iterasyonu sürüm olarak kaydeder: belgelerin ve kodun anlık kopyası + olay aralığı.
+
+        Böylece bir CR ya da bugfix sonrası, önceki sürümün durumu, belgeleri ve kodu kaybolmaz.
+        """
+        number = self.history.next_iteration_number(self.run_id)
+        target = self.output_dir / "iterations" / f"v{number}"
+        try:
+            docs = target / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            for path in self.output_dir.iterdir():
+                if path.is_file() and path.suffix in {".md", ".yaml"}:
+                    shutil.copy2(path, docs / path.name)
+            if self.project_dir.is_dir():
+                shutil.copytree(self.project_dir, target / "project", dirs_exist_ok=True,
+                                ignore=shutil.ignore_patterns(*SNAPSHOT_SKIP))
+        except OSError as exc:
+            self._event("workflow", "snapshot_failed", str(exc))
+        if self.change:
+            kind = self.change["kind"]
+            label = f"v{number} · {self.change['id']} · {CHANGE_KINDS.get(kind, kind)}: {self.change['title']}"
+        else:
+            kind = "initial" if number == 1 else "rerun"
+            label = f"v{number} · İlk sürüm" if number == 1 else f"v{number} · Yeniden üretim"
+        self._event("workflow", "iteration_recorded", label)
+        self.history.add_iteration(self.run_id, label, kind, self.change and self.change["id"], status, self.attempts, target)
 
     def _close_change(self, status: str, error: str | None) -> None:
         change = self.change

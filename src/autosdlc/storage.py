@@ -80,6 +80,25 @@ class History:
                 db.execute("ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0")
             if "heartbeat_at" not in columns:
                 db.execute("ALTER TABLE runs ADD COLUMN heartbeat_at TEXT")
+            if "clarifications" not in {row[1] for row in db.execute("PRAGMA table_info(changes)")}:
+                db.execute("ALTER TABLE changes ADD COLUMN clarifications TEXT")
+            # Sürüm geçmişi: her biten iterasyon (ilk üretim, CR, bugfix) bir kayıt ve anlık kopya bırakır.
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS iterations (
+                    run_id TEXT NOT NULL REFERENCES runs(id),
+                    number INTEGER NOT NULL,
+                    label TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    change_id TEXT,
+                    status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    first_event_id INTEGER NOT NULL,
+                    last_event_id INTEGER NOT NULL,
+                    snapshot_dir TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (run_id, number)
+                )"""
+            )
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10)
@@ -182,6 +201,7 @@ class History:
             db.execute("DELETE FROM questions WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM notes WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM changes WHERE run_id=?", (run_id,))
+            db.execute("DELETE FROM iterations WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM events WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM runs WHERE id=?", (run_id,))
 
@@ -203,7 +223,7 @@ class History:
             return change_id
 
     def update_change(self, run_id: str, change_id: str, **fields: str | None) -> None:
-        allowed = {"status", "impact", "start_stage", "description"}
+        allowed = {"status", "impact", "start_stage", "description", "clarifications"}
         if not fields or set(fields) - allowed:
             raise ValueError("Geçersiz değişiklik alanı")
         assignments = ", ".join(f"{name}=?" for name in fields)
@@ -228,6 +248,33 @@ class History:
                 "SELECT * FROM changes WHERE run_id=? AND status='in_progress' ORDER BY updated_at DESC LIMIT 1", (run_id,)
             ).fetchone()
             return dict(row) if row else None
+
+    def add_iteration(self, run_id: str, label: str, kind: str, change_id: str | None, status: str,
+                      attempts: int, snapshot_dir: Path) -> int:
+        """Biten iterasyonu kaydeder; olay aralığı bir önceki sürümün bittiği yerden şimdiye kadardır."""
+        with self._connect() as db:
+            previous = db.execute(
+                "SELECT MAX(number), MAX(last_event_id) FROM iterations WHERE run_id=?", (run_id,)
+            ).fetchone()
+            first = db.execute(
+                "SELECT COALESCE(MIN(id), 0) FROM events WHERE run_id=? AND id > ?", (run_id, previous[1] or 0)
+            ).fetchone()[0]
+            last = db.execute("SELECT COALESCE(MAX(id), 0) FROM events WHERE run_id=?", (run_id,)).fetchone()[0]
+            number = (previous[0] or 0) + 1
+            db.execute(
+                "INSERT INTO iterations (run_id, number, label, kind, change_id, status, attempts, first_event_id, "
+                "last_event_id, snapshot_dir, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, number, label, kind, change_id, status, attempts, first, last, str(snapshot_dir), now()),
+            )
+            return number
+
+    def iterations(self, run_id: str) -> list[dict]:
+        with self._connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM iterations WHERE run_id=? ORDER BY number", (run_id,))]
+
+    def next_iteration_number(self, run_id: str) -> int:
+        with self._connect() as db:
+            return (db.execute("SELECT MAX(number) FROM iterations WHERE run_id=?", (run_id,)).fetchone()[0] or 0) + 1
 
     def add_note(self, run_id: str, content: str) -> None:
         """Kullanıcının chat üzerinden ajanlara verdiği yönlendirme; sonraki aşamaların bağlamına girer."""
@@ -295,7 +342,7 @@ class History:
             result["events"] = [
                 dict(event)
                 for event in db.execute(
-                    "SELECT stage, status, detail, created_at FROM events "
+                    "SELECT id, stage, status, detail, created_at FROM events "
                     "WHERE run_id=? ORDER BY id", (run_id,)
                 )
             ]

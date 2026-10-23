@@ -149,10 +149,13 @@ Fikir/kısıt değişikliği bütün aşamaları "güncel değil" yapar.
 **3. Değişiklik talebi (yeni özellik / hata / değişiklik).** Üst çubukta **📝 Değişiklik**:
 1. Talep oluştur (`CR-001`, türü ve açıklaması).
 2. **Etki analizi:** Etki Analizi Ajanı izlenebilirlik zinciriyle (FR → tasarım → dosya → test) etkilenen gereksinim, tasarım, dosya ve testleri raporlar ve başlangıç aşamasını önerir (yeni/değişen gereksinim → Analiz, yalnızca tasarım → Tasarım, yalnızca kod/hata → Kodlama).
-3. **Onayla ve uygula:** başlangıç aşamasından itibaren delta iterasyonu çalışır; önceki aşamalar olduğu gibi kalır.
+3. **Açık sorular:** Etki analizi belirsiz noktaları `SORU:` satırları olarak listeler (ör. "Kelvin negatif olabilir mi?"). Hepsini yanıtlamadan uygulanamaz; yanıtlar talebe kaydedilir ve bütün aşamalara kesin karar olarak gider. Böylece netleştirme ajanın soru sorup sormamasına bırakılmaz.
+4. **Onayla ve uygula:** başlangıç aşamasından itibaren delta iterasyonu çalışır; önceki aşamalar olduğu gibi kalır.
    - **Yeni özellik:** yeni gereksinim `FR-0n [CR-001]` olarak eklenir, tasarım ve kod güncellenir, yeni testler mevcutlara eklenir.
    - **Hata (TDD):** Test Ajanı önce hatayı yeniden üreten bir regresyon testi yazar ve testin **başarısız** olduğu doğrulanır; Geliştirme Ajanı bu başarısız test çıktısıyla kodu düzeltir; ardından tüm testler koşar.
-4. Sonuç `CHANGELOG.md`'ye yazılır; talep **Tamamlandı** ya da **Başarısız** olur. Diyagramda geri dönüşler (revizyon, onarım) sayaçlarıyla kalıcı olarak görünür; birden fazla çalışan aşamalar ×N rozeti taşır.
+5. Sonuç `CHANGELOG.md`'ye yazılır; talep **Tamamlandı** ya da **Başarısız** olur. Diyagramda geri dönüşler (revizyon, onarım) sayaçlarıyla kalıcı olarak görünür; birden fazla çalışan aşamalar ×N rozeti taşır.
+
+**Sürüm geçmişi.** Her biten iterasyon — ilk üretim, her CR, her bugfix, başarılı ya da başarısız — bir sürüm olarak saklanır (`v1 · İlk sürüm`, `v2 · CR-001 · Yeni özellik: …`). Sürümle birlikte o anki belgelerin ve kodun kopyası (`runs/<id>/iterations/v<n>/`) ve olay aralığı tutulur. Üst çubuktaki **🕓 Sürümler** penceresinde bir sürüm seçince o andaki yaşam döngüsü diyagramı, o sürümde geçen ajan süresi, sürümü oluşturan talep ve netleştirmeleri, belgeleri ve **önceki sürümle farkı** görünür; sürüm ZIP olarak indirilebilir. Başlıkta projenin güncel sürümü yazar.
 
 Chat kutusuna yazılan notlar da sonraki aşamaların bağlamına girer (ör. "arayüz koyu tema olsun").
 

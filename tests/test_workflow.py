@@ -1137,3 +1137,35 @@ def test_open_folder_uses_platform_file_manager(tmp_path, monkeypatch, platform,
     assert calls == [expected]
     with pytest.raises(ValueError, match="bulunamadı"):
         desktop.open_folder(tmp_path / "yok")
+
+
+def test_open_questions_are_parsed_from_impact_report():
+    from autosdlc.runner import open_questions
+
+    report = "## Açık sorular\n- SORU: Kelvin negatif olabilir mi?\n2. **SORU:** Yuvarlama kaç basamak?\nSORU: yok\n\nBAŞLANGIÇ: analysis"
+    assert open_questions(report) == ["Kelvin negatif olabilir mi?", "Yuvarlama kaç basamak?"]
+    assert open_questions("## Açık sorular\nAçık soru yok.\nBAŞLANGIÇ: design") == []
+
+
+def test_each_finished_iteration_is_kept_as_a_version(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    first = run_project("Envanter API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    engine = ChangeAwareEngine()
+    change_id = db.create_change(first.id, "feature", "Kelvin desteği", "Kelvin dönüşümü eklensin.")
+    db.update_change(first.id, change_id, status="in_progress", start_stage="analysis",
+                     clarifications="- Soru: Kelvin negatif olabilir mi?\n  Yanıt: Hayır, ValueError")
+    assert db.reset_from(first.id, "analysis")
+    second = run_project("", workspace=tmp_path, engine=engine, resume_run_id=first.id)
+    assert second.status == "completed", second.error
+    # Netleştirme yanıtı, delta modundaki ajanlara kesin karar olarak ulaştı.
+    assert "Hayır, ValueError" in engine.contexts["analysis"][0]
+    versions = db.iterations(first.id)
+    assert [item["label"] for item in versions] == ["v1 · İlk sürüm", f"v2 · {change_id} · Yeni özellik: Kelvin desteği"]
+    assert versions[0]["last_event_id"] < versions[1]["first_event_id"] <= versions[1]["last_event_id"]
+    v1, v2 = (Path(item["snapshot_dir"]) for item in versions)
+    # v1'in kopyası, CR sonrası değişen dosyalardan etkilenmez.
+    assert "FR-03" not in (v1 / "docs" / "requirements.md").read_text(encoding="utf-8")
+    assert "FR-03" in (v2 / "docs" / "requirements.md").read_text(encoding="utf-8")
+    assert not (v1 / "project" / "tests" / "test_items.py").exists() and (v2 / "project" / "tests" / "test_items.py").exists()
+    assert not (v2 / "project" / ".autosdlc-venv").exists()

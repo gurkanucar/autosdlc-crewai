@@ -190,6 +190,10 @@ impact:
     3. Etkilenen tasarım bölümleri ve API/veri şeması değişiklikleri.
     4. Değişmesi muhtemel kaynak dosyalar ve eklenecek/güncellenecek testler.
     5. Riskler ve regresyon riski taşıyan alanlar.
+    6. "## Açık sorular": talep belirsizse ya da birden fazla makul yorum varsa, uygulamaya
+       geçmeden kullanıcının netleştirmesi gereken noktaları her biri ayrı satırda
+       "SORU: <tek, açık soru>" biçiminde yaz (en fazla 5). Varsayım yapma; kararı kullanıcıya bırak.
+       Gerçekten belirsizlik yoksa bu bölüme yalnızca "Açık soru yok." yaz.
     Hata taleplerinde önce hatayı yeniden üreten bir test yazılacağını varsay.
     Raporun son satırı tam olarak şu biçimde olsun ve değişikliğin ilk dokunması
     gereken aşamayı göstersin: "BAŞLANGIÇ: analysis" (yeni/değişen gereksinim),

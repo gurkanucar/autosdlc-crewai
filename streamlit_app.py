@@ -25,7 +25,8 @@ from autosdlc.lifecycle import (
 from autosdlc.models import available_models, default_model
 from autosdlc.project_management import delete_project
 from autosdlc.runner import (
-    CHANGE_KINDS, DOC_BUDGET, STAGE_INPUTS, RunPaused, backup_versions, completed_from_events, run_project,
+    CHANGE_KINDS, DOC_BUDGET, STAGE_INPUTS, RunPaused, backup_versions, completed_from_events, open_questions,
+    run_project,
 )
 from autosdlc.sections import (
     delete_section, insert_after, replace_section, split_sections, strip_fences, unified_diff,
@@ -50,6 +51,7 @@ SECTION_ACTIONS = {"question": "💬 Sor", "rewrite": "✍️ Yeniden yaz", "add
 CHANGE_STATUS = {"draft": "📝 Taslak", "analyzed": "🔍 Analiz edildi", "in_progress": "🔵 Uygulanıyor",
                  "done": "✅ Tamamlandı", "failed": "❌ Başarısız", "rejected": "✖ Reddedildi"}
 START_STAGE = re.compile(r"BAŞLANGIÇ:\s*\**\s*(analysis|design|development)", re.IGNORECASE)
+ITERATION_ICONS = {"completed": "✅", "failed": "❌"}
 EVENT_NAMES = {
     "started": "Başladı", "completed": "Tamamlandı", "passed": "Testler geçti",
     "failed": "Başarısız", "repair_started": "Onarım başladı", "repair_completed": "Onarım tamamlandı",
@@ -749,6 +751,8 @@ def changes_dialog(run_id: str) -> None:
         with st.expander(f"{CHANGE_STATUS.get(change['status'], change['status'])} · **{change['id']}** · "
                          f"{CHANGE_KINDS[change['kind']]} · {change['title']}", expanded=open_now):
             st.write(change["description"] or "_Açıklama yok_")
+            if change.get("clarifications"):
+                st.markdown("**Netleştirmeler**\n\n" + change["clarifications"])
             if change["impact"]:
                 with st.container(height=240, border=True):
                     st.markdown(change["impact"])
@@ -765,19 +769,85 @@ def changes_dialog(run_id: str) -> None:
                     except (RuntimeError, ValueError) as exc:
                         st.error(str(exc))
             elif change["status"] == "analyzed":
+                questions_asked = open_questions(change["impact"] or "")
+                answers = {}
+                if questions_asked:
+                    st.markdown("**❓ Açık sorular** — uygulamaya geçmeden netleştir; yanıtların bütün aşamalara kesin karar olarak gider.")
+                    for number, question in enumerate(questions_asked, 1):
+                        answers[question] = st.text_input(f"{number}. {question}", key=f"clarify_{change['id']}_{number}")
+                unanswered = [question for question, answer in answers.items() if not answer.strip()]
                 options = ["analysis", "design", "development"]
                 start = st.selectbox("Başlangıç aşaması", options, index=options.index(change["start_stage"] or "analysis"),
                                      format_func=STAGE_NAMES.get, key=f"start_{change['id']}",
                                      help="Bu aşama ve sonrası delta modunda güncellenir; öncekiler olduğu gibi kalır.")
                 apply, reject = st.columns(2)
                 if apply.button("▶ Onayla ve uygula", key=f"apply_{change['id']}", type="primary",
-                                disabled=busy or not ready, help="Çalışan bir iş ya da uygulanan başka bir talep varken başlatılamaz."):
-                    db.update_change(run_id, change["id"], status="in_progress", start_stage=start)
+                                disabled=busy or not ready or bool(unanswered),
+                                help=("Önce açık soruları yanıtla." if unanswered else
+                                      "Çalışan bir iş ya da uygulanan başka bir talep varken başlatılamaz.")):
+                    clarifications = "\n".join(f"- Soru: {question}\n  Yanıt: {answer.strip()}" for question, answer in answers.items())
+                    db.update_change(run_id, change["id"], status="in_progress", start_stage=start,
+                                     clarifications=clarifications or None)
                     regenerate(db, run_id, start, api_key)
                     st.rerun()
                 if reject.button("✖ Reddet", key=f"reject_{change['id']}"):
                     db.update_change(run_id, change["id"], status="rejected")
                     st.rerun(scope="fragment")
+
+
+@st.dialog("🕓 Sürüm geçmişi", width="large")
+def iterations_dialog(run_id: str) -> None:
+    """Her biten iterasyon (ilk sürüm, CR, bugfix): o andaki diyagram, metrikler, belgeler ve önceki sürümle fark."""
+    db = history()
+    row = db.get(run_id)
+    items = db.iterations(run_id)
+    if not items:
+        st.caption("Henüz biten bir iterasyon yok. İlk üretim ya da bir değişiklik talebi bitince burada sürüm olarak görünür.")
+        return
+    by_number = {item["number"]: item for item in items}
+    number = st.selectbox("Sürüm", list(reversed(by_number)), key=f"iteration_{run_id}",
+                          format_func=lambda n: f"{ITERATION_ICONS.get(by_number[n]['status'], '⚪')} {by_number[n]['label']}"
+                                                f" · {by_number[n]['created_at'][:16].replace('T', ' ')}")
+    item = by_number[number]
+    until = [event for event in row["events"] if event["id"] <= item["last_event_id"]]
+    within = [event for event in until if event["id"] >= item["first_event_id"]]
+    states = stage_states(until, item["status"])
+    metrics = stage_metrics(within)
+    show_diagram(render_svg(states, counters(until), None,
+                            {key: format_duration(value["seconds"]) for key, value in metrics.items()},
+                            {key: value["runs"] for key, value in stage_metrics(until).items()}))
+    cells = st.columns(4)
+    cells[0].metric("Sonuç", "Tamamlandı" if item["status"] == "completed" else "Başarısız")
+    cells[1].metric("Test denemesi", item["attempts"])
+    cells[2].metric("Bu sürümde ajan süresi", format_duration(sum(value["seconds"] for value in metrics.values())))
+    cells[3].metric("Bu sürümde çalışan aşama", sum(value["runs"] > 0 for value in metrics.values()))
+    if item["change_id"]:
+        change = db.change(run_id, item["change_id"]) or {}
+        with st.expander(f"Bu sürümü oluşturan talep: {item['change_id']}", expanded=True):
+            st.write(change.get("description") or "")
+            if change.get("clarifications"):
+                st.markdown("**Netleştirmeler**\n\n" + change["clarifications"])
+    snapshot = Path(item["snapshot_dir"])
+    docs = sorted((snapshot / "docs").glob("*")) if (snapshot / "docs").is_dir() else []
+    if docs:
+        pick, compare = st.columns([3, 1.4], vertical_alignment="bottom")
+        name = pick.selectbox("Bu sürümün belgeleri", [doc.name for doc in docs], key=f"iteration_doc_{run_id}_{number}")
+        previous = by_number.get(number - 1)
+        show_diff = compare.toggle("Önceki sürümle fark", key=f"iteration_diff_{run_id}_{number}", disabled=previous is None)
+        content = read_text(snapshot / "docs" / name) or ""
+        with st.container(height=320, border=True):
+            if show_diff and previous:
+                before = read_text(Path(previous["snapshot_dir"]) / "docs" / name) or ""
+                st.code(unified_diff(before, content, name) or "(bu belge değişmedi)", language="diff")
+            elif name.endswith(".yaml"):
+                st.code(content, language="yaml")
+            else:
+                render_markdown(content)
+    if snapshot.is_dir():
+        files = [path.relative_to(snapshot) for path in sorted(snapshot.rglob("*")) if path.is_file()]
+        st.download_button(f"⬇️ {item['label']} — belgeler + kod (ZIP)", project_zip(snapshot, files),
+                           file_name=f"{run_id}-v{number}.zip", mime="application/zip", key=f"iteration_zip_{run_id}_{number}",
+                           on_click="ignore")
 
 
 def header(db: History, row: dict) -> None:
@@ -786,7 +856,9 @@ def header(db: History, row: dict) -> None:
     with title:
         st.markdown(f'<div class="project-title" role="heading" aria-level="1">{escape(row["idea"])}</div>', unsafe_allow_html=True)
         # Tam yol başlığı birkaç satıra yayıyor; yalnızca klasör adı (tam yol README görünümünde ve Yönet menüsünde).
-        st.caption(f"`{run_id}` · model `{row['model'] or '—'}` · 📁 `{Path(row['project_dir']).name}`")
+        iterations = db.iterations(run_id)
+        version = iterations[-1]["label"] if iterations else "henüz sürüm yok"
+        st.caption(f"🏷️ **{version}** · `{run_id}` · model `{row['model'] or '—'}` · 📁 `{Path(row['project_dir']).name}`")
     with status:
         icon, label, color = STATUS_LABELS.get(row["status"], ("⚪", row["status"], "gray"))
         st.badge(label, icon=icon, color=color)
@@ -794,6 +866,7 @@ def header(db: History, row: dict) -> None:
         primary = st.container(width="content")
         changes = st.container(width="content")
         readme = st.container(width="content")
+        versions = st.container(width="content")
         folder = st.container(width="content")
         downloads = st.container(width="content")
         manage = st.container(width="content")
@@ -802,6 +875,9 @@ def header(db: History, row: dict) -> None:
         readme_path = Path(row["project_dir"]) / "README.md"
         if readme.button("📘 README", key=f"readme_{run_id}", width="stretch", disabled=not readme_path.is_file()):
             open_focus(row, readme_path, "README")
+        if versions.button(f"🕓 Sürümler ({len(iterations)})", key=f"iterations_{run_id}", width="stretch",
+                           help="İlk sürüm, her CR ve bugfix: o andaki durum, belgeler, kod ve farklar"):
+            iterations_dialog(run_id)
         project_dir = Path(row["project_dir"])
         if folder.button("📂 Klasör", key=f"open_folder_{run_id}", width="stretch", disabled=not project_dir.is_dir(),
                          help=f"Proje klasörünü dosya yöneticisinde aç (Explorer / Finder): {project_dir}"):
