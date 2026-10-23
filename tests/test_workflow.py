@@ -29,7 +29,7 @@ class StubEngine:
         if stage == "design":
             return "# Design\n\n```mermaid\nflowchart LR\n A --> B\n```\n\n```mermaid\nsequenceDiagram\n A->>B: Request\n```\n\n```mermaid\nerDiagram\n TASK { int id }\n```\n"
         if stage == "review":
-            return "# İnceleme\n\n| 1 | Düşük | Ad | Öneri |\n\nKARAR: ONAY\n"
+            return "# Review\n\n| 1 | Low | Name | Suggestion |\n\nVERDICT: APPROVE\n"
         return f"# {stage}\n\n{idea}\n"
 
     def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]:
@@ -142,8 +142,8 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
         "# Plan\nBuild a book tracker.",
         "# Requirements\nFR-01: Create and list books.\nNFR-01: Fast.",
         "# Design\n```mermaid\nflowchart LR\nA-->B\n```\n```mermaid\nsequenceDiagram\nA->>B: Request\n```\n```mermaid\nerDiagram\nBOOK { int id }\n```",
-        "# İnceleme\nBulgu yok.\nKARAR: ONAY",
-        # Kodlama: önce dosya planı, sonra dörder dosyalık gruplar.
+        "# Review\nNo findings.\nVERDICT: APPROVE",
+        # Development: first the file plan, then groups of four files.
         json.dumps({"plan": [{"path": path, "purpose": "x"} for path in StubEngine().code("", "", feedback="fix")]}),
         json.dumps({"files": dict(list(StubEngine().code("", "", feedback="fix").items())[:4])}),
         json.dumps({"files": dict(list(StubEngine().code("", "", feedback="fix").items())[4:])}),
@@ -170,7 +170,7 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     streamed = []
 
     class StreamResponse:
-        """OpenAI uyumlu SSE akışı: yanıtı birkaç parçaya bölüp gönderir."""
+        """OpenAI-compatible SSE stream: sends the response in several chunks."""
         headers = {"content-type": "text/event-stream"}
         status_code = 200
 
@@ -204,8 +204,8 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     assert result.status == "completed", result.error
     assert result.attempts == 1
     assert "PASSED" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
-    # Ajan yanıtları akış olarak alındı ve canlı gösterim dosyalarına yazıldı.
-    assert len(streamed) == 10  # 6 belge aşaması + test + kodlamada plan ve iki dosya grubu
+    # Agent responses were received as a stream and written to the live-view files.
+    assert len(streamed) == 10  # 6 document stages + testing + the development plan and two file groups
     assert "book tracker" in (result.output_dir / "live" / "planning.md").read_text(encoding="utf-8").lower()
 
 
@@ -311,27 +311,27 @@ def test_stage_question_waits_for_answer_and_records_it(tmp_path, monkeypatch):
 
     class AskingEngine(StubEngine):
         def document(self, stage, idea, context):
-            if stage == "planning" and "Answer: küçük işletme" not in context:
-                raise ClarificationNeeded("Hedef kullanıcı kim?")
+            if stage == "planning" and "Answer: small business" not in context:
+                raise ClarificationNeeded("Who is the target user?")
             return super().document(stage, idea, context)
 
     def answer(run_id, stage, prompt):
         db = History(tmp_path / "runs" / "history.sqlite3")
         question_id = db.ask(run_id, stage, prompt)
         assert db.pending_question(run_id)["id"] == question_id
-        assert db.answer(run_id, question_id, "küçük işletme")
-        assert not db.answer(run_id, question_id, "ikinci cevap")
+        assert db.answer(run_id, question_id, "small business")
+        assert not db.answer(run_id, question_id, "second answer")
         return db.question(question_id)["answer"]
 
     result = run_project(
-        "Stok API", workspace=tmp_path, engine=AskingEngine(),
+        "Stock API", workspace=tmp_path, engine=AskingEngine(),
         decisions=BACKEND, on_question=answer,
     )
     assert result.status == "completed", result.error
     row = History(tmp_path / "runs" / "history.sqlite3").get(result.id)
-    assert row["questions"][0]["prompt"] == "Hedef kullanıcı kim?"
-    assert row["questions"][0]["answer"] == "küçük işletme"
-    assert "küçük işletme" in (result.output_dir / "clarifications.yaml").read_text(encoding="utf-8")
+    assert row["questions"][0]["prompt"] == "Who is the target user?"
+    assert row["questions"][0]["answer"] == "small business"
+    assert "small business" in (result.output_dir / "clarifications.yaml").read_text(encoding="utf-8")
     assert [event["status"] for event in row["events"] if event["stage"] == "planning"] == [
         "started", "question", "answered", "completed",
     ]
@@ -350,7 +350,8 @@ def test_model_picker_filters_to_supported_chat_models(monkeypatch):
     assert "gpt-6-luna" not in CHAT_MODELS
 
 
-def test_agent_question_marker_is_detected(monkeypatch):
+@pytest.mark.parametrize("token", ["USER_QUESTION", "KULLANICI_SORUSU"])  # the second is the legacy Turkish token
+def test_agent_question_marker_is_detected(monkeypatch, token):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
 
     class Response:
@@ -358,12 +359,12 @@ def test_agent_question_marker_is_detected(monkeypatch):
             pass
 
         def json(self):
-            return {"choices": [{"message": {"content": "KULLANICI_SORUSU: Hedef kullanıcı kim?"}}]}
+            return {"choices": [{"message": {"content": f"{token}: Who is the target user?"}}]}
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", lambda *args, **kwargs: Response())
     engine = CrewAIEngine(api_key="test-key")
-    with pytest.raises(ClarificationNeeded, match="Hedef kullanıcı kim"):
-        engine.document("planning", "Stok API", "")
+    with pytest.raises(ClarificationNeeded, match="Who is the target user"):
+        engine.document("planning", "Stock API", "")
 
 
 def test_pause_resume_and_delete_project(tmp_path, monkeypatch):
@@ -376,7 +377,7 @@ def test_pause_resume_and_delete_project(tmp_path, monkeypatch):
             assert db.request_pause(run_id)
 
     paused = run_project(
-        "Stok yönetimi", workspace=tmp_path, engine=StubEngine(),
+        "Stock management", workspace=tmp_path, engine=StubEngine(),
         decisions=BACKEND, run_id=run_id, on_event=request_pause,
     )
     assert paused.status == "paused"
@@ -418,8 +419,8 @@ def test_pause_while_question_waits_then_resume(tmp_path, monkeypatch):
 
     class AskingEngine(StubEngine):
         def document(self, stage, idea, context):
-            if stage == "planning" and "Answer: işletme sahibi" not in context:
-                raise ClarificationNeeded("Hedef kullanıcı kim?")
+            if stage == "planning" and "Answer: business owner" not in context:
+                raise ClarificationNeeded("Who is the target user?")
             return super().document(stage, idea, context)
 
     def stop_at_question(current_id, stage, prompt):
@@ -428,16 +429,16 @@ def test_pause_while_question_waits_then_resume(tmp_path, monkeypatch):
         raise RunPaused()
 
     paused = run_project(
-        "Stok API", workspace=tmp_path, engine=AskingEngine(), decisions=BACKEND,
+        "Stock API", workspace=tmp_path, engine=AskingEngine(), decisions=BACKEND,
         run_id=run_id, on_question=stop_at_question,
     )
     assert paused.status == "paused"
     pending = db.pending_question(run_id)
-    assert pending["prompt"] == "Hedef kullanıcı kim?"
+    assert pending["prompt"] == "Who is the target user?"
 
     def reply(current_id, stage, prompt):
         assert db.ask(current_id, stage, prompt) == pending["id"]
-        assert db.answer(current_id, pending["id"], "işletme sahibi")
+        assert db.answer(current_id, pending["id"], "business owner")
         return db.question(pending["id"])["answer"]
 
     resumed = run_project(
@@ -472,14 +473,14 @@ def test_common_dotfiles_allowed_but_secrets_rejected(tmp_path: Path):
 
 
 def test_file_bundle_tolerates_prose_around_json():
-    raw = 'Dosyalar aşağıda:\n{"files": {"main.go": "package main"}}\nİyi çalışmalar.'
+    raw = 'Files below:\n{"files": {"main.go": "package main"}}\nGood luck.'
     assert _parse_file_bundle(raw) == {"main.go": "package main"}
 
 
 def test_traceability_matrix_recognises_test_name_formats():
     assert requirement_ids("FR-1, NFR-02 ve fr03") == ["FR-01", "NFR-02", "FR-03"]
     matrix, coverage = build_matrix(
-        "FR-01 ekle\nFR-02 listele\nNFR-01 hız",
+        "FR-01 add\nFR-02 list\nNFR-01 speed",
         {"tests/test_api.py": "def test_fr01_create(): ...\ndef test_FR_02_list(): ..."},
     )
     assert coverage == {"FR": 1.0, "NFR": 0.0}
@@ -514,7 +515,7 @@ def test_quality_gate_asks_agent_to_rewrite_once(tmp_path, monkeypatch):
             if stage == "analysis":
                 calls.append(context)
                 if len(calls) == 1:
-                    return "# Gereksinimler\nFR-01: liste."
+                    return "# Requirements\nFR-01: liste."
             return super().document(stage, idea, context)
 
     result = run_project("Gate API", workspace=tmp_path, engine=SloppyEngine(), decisions=BACKEND)
@@ -529,17 +530,17 @@ def test_late_stages_see_answers_and_test_result_despite_long_documents(tmp_path
     class VerboseEngine(StubEngine):
         def document(self, stage, idea, context):
             contexts[stage] = context
-            if stage == "planning" and "Answer: öğrenciler" not in context:
-                raise ClarificationNeeded("Hedef kullanıcı kim?")
+            if stage == "planning" and "Answer: students" not in context:
+                raise ClarificationNeeded("Who is the target user?")
             return super().document(stage, idea, context) + "x" * 50_000
 
     result = run_project(
-        "Uzun API", workspace=tmp_path, engine=VerboseEngine(), decisions=BACKEND,
-        on_question=lambda *_args: "öğrenciler",
+        "Long API", workspace=tmp_path, engine=VerboseEngine(), decisions=BACKEND,
+        on_question=lambda *_args: "students",
     )
     assert result.status == "completed", result.error
     head = contexts["maintenance"][:12000]
-    assert "Answer: öğrenciler" in head and "Actual test result: PASSED" in head
+    assert "Answer: students" in head and "Actual test result: PASSED" in head
 
 
 
@@ -551,16 +552,16 @@ def test_review_requests_revision_then_approves(tmp_path, monkeypatch):
         def document(self, stage, idea, context):
             if stage == "review":
                 seen.append("review")
-                return "KARAR: ONAY" if "REVİZE" in context else "| 1 | Kritik | FR-02 tasarımda yok | Ekle |\nKARAR: REVİZYON"
+                return "VERDICT: APPROVE" if "REVISED" in context else "| 1 | Critical | FR-02 is missing in the design | Add |\nVERDICT: REVISE"
             if stage == "design" and "ARCHITECTURE REVIEW FINDINGS" in context:
                 seen.append("revision")
-                return super().document(stage, idea, context) + "\nREVİZE: FR-02 eklendi\n"
+                return super().document(stage, idea, context) + "\nREVISED: FR-02 added\n"
             return super().document(stage, idea, context)
 
     result = run_project("Review API", workspace=tmp_path, engine=StrictReviewer(), decisions=BACKEND)
     assert result.status == "completed", result.error
     assert seen == ["review", "revision", "review"]
-    assert "REVİZE" in (result.project_dir / "docs" / "architecture.md").read_text(encoding="utf-8")
+    assert "REVISED" in (result.project_dir / "docs" / "architecture.md").read_text(encoding="utf-8")
     report = (result.output_dir / "design_review.md").read_text(encoding="utf-8")
     assert "APPROVED" in report and "2 rounds" in report
 
@@ -593,7 +594,7 @@ def test_stale_running_run_is_recovered_and_deletable(tmp_path):
     readonly = project / ".git" / "object"
     readonly.write_text("x", encoding="utf-8")
     readonly.chmod(0o444)
-    db.create("stale1234567", "Yarım kalan", reports, project)
+    db.create("stale1234567", "Left half-way", reports, project)
     with db._connect() as conn:
         conn.execute("UPDATE runs SET heartbeat_at='2000-01-01T00:00:00+00:00', pause_requested=1")
     assert db.recover_stale() == ["stale1234567"]
@@ -612,18 +613,18 @@ def test_lifecycle_states_and_diagram():
         {"stage": "review", "status": "changes_requested", "detail": "tur 1"},
         {"stage": "design", "status": "revision_started", "detail": ""},
         {"stage": "design", "status": "revision_completed", "detail": ""},
-        {"stage": "testing", "status": "traceability", "detail": "FR kapsamı %75"},
+        {"stage": "testing", "status": "traceability", "detail": "FR coverage 75%"},
         {"stage": "workflow", "status": "reset", "detail": "design"},
     ]
     states = stage_states(events, "paused")
     assert states["planning"] == "done" and states["design"] == "pending" and states["review"] == "pending"
     loops = counters(events)
-    # Yeniden üretim geçmişi silmez: bir kez geri dönülmüşse sayaç kalır.
+    # Regeneration does not erase history: once a loop-back happened the counter stays.
     assert loops["coverage"] == "75" and loops["revisions"] == 1
     svg = render_svg(stage_states(events[:5], "running"), counters(events[:5]), runs={"design": 2, "review": 1})
     assert svg.startswith("<svg") and "↺ revision ×1" in svg and "sdlc-halo" in svg
-    assert svg.count(">×2<") == 1  # Tasarım düğümünde ×2 rozeti; tek kez çalışan İnceleme'de rozet yok.
-    assert "repair loop" in svg  # Hiç onarım olmadıysa döngü soluk ve sayaçsız kalır.
+    assert svg.count(">×2<") == 1  # ×2 badge on the Design node; no badge on Review, which ran once.
+    assert "repair loop" in svg  # If no repair ever happened the loop stays faded and has no counter.
 
 
 def test_stale_marking_after_document_edit():
@@ -641,7 +642,7 @@ def test_stale_marking_after_document_edit():
 
 
 def test_streamlit_create_button_starts_a_run(monkeypatch):
-    """Gerçek arayüzü çalıştırıp "Projeyi oluştur"a basar; run_project'e geçerli argümanlar gitmeli."""
+    """Runs the real UI and presses "Create the project"; run_project must receive valid arguments."""
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
@@ -650,8 +651,8 @@ def test_streamlit_create_button_starts_a_run(monkeypatch):
     monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
     app = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30).run()
     assert not app.exception
-    app.text_area[0].set_value("Basit envanter takip uygulaması")
-    app.text_input[0].set_value("Node.js, pnpm, sade HTML")
+    app.text_area[0].set_value("Simple inventory tracking app")
+    app.text_input[0].set_value("Node.js, pnpm, plain HTML")
     next(button for button in app.button if "Create the project" in button.label).click()
     app.run()
     assert not app.exception, [e.value for e in app.exception]
@@ -661,8 +662,8 @@ def test_streamlit_create_button_starts_a_run(monkeypatch):
         if calls:
             break
         time.sleep(0.1)
-    assert calls and calls[0]["idea"] == "Basit envanter takip uygulaması"
-    assert calls[0]["run_id"] and calls[0]["decisions"]["stack"] == "Node.js, pnpm, sade HTML"
+    assert calls and calls[0]["idea"] == "Simple inventory tracking app"
+    assert calls[0]["run_id"] and calls[0]["decisions"]["stack"] == "Node.js, pnpm, plain HTML"
 
 
 def test_templates_are_valid_decisions():
@@ -730,13 +731,13 @@ def test_user_notes_reach_later_agents(tmp_path, monkeypatch):
         def document(self, stage, idea, context):
             contexts[stage] = context
             if stage == "planning":
-                History(tmp_path / "runs" / "history.sqlite3").add_note(run_id, "Arayüz koyu tema olsun")
+                History(tmp_path / "runs" / "history.sqlite3").add_note(run_id, "The UI should use a dark theme")
             return super().document(stage, idea, context)
 
     result = run_project("Not API", workspace=tmp_path, engine=NotingEngine(), decisions=BACKEND, run_id=run_id)
     assert result.status == "completed", result.error
-    assert "koyu tema" not in contexts["planning"]
-    assert "koyu tema" in contexts["analysis"] and "koyu tema" in contexts["maintenance"]
+    assert "dark theme" not in contexts["planning"]
+    assert "dark theme" in contexts["analysis"] and "dark theme" in contexts["maintenance"]
 
 
 def _app(tmp_path, monkeypatch):
@@ -749,7 +750,7 @@ def _app(tmp_path, monkeypatch):
 
 
 def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
-    """Formdan oluştur → Projeler sayfasına geç → aşamaya tıkla → chat'ten soruyu yanıtla ve not bırak."""
+    """Create from the form → go to the Projects page → click a stage → answer the question from the chat and leave a note."""
     import threading
     import time
 
@@ -761,9 +762,9 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
 
     class AskingEngine(StubEngine):
         def document(self, stage, idea, context):
-            if stage == "planning" and "Answer: öğrenciler" not in context:
+            if stage == "planning" and "Answer: students" not in context:
                 question_asked.set()
-                raise ClarificationNeeded("Hedef kullanıcı kim?")
+                raise ClarificationNeeded("Who is the target user?")
             return super().document(stage, idea, context)
 
     monkeypatch.setattr("autosdlc.runner.run_project", lambda idea, **kw: real_run(
@@ -783,19 +784,19 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
         time.sleep(0.1)
     app.run()
     assert not app.exception, [e.value for e in app.exception]
-    assert any("Hedef kullanıcı kim?" in w.value for w in app.warning)
+    assert any("Who is the target user?" in w.value for w in app.warning)
     assert "question" in app.chat_input[0].proto.placeholder
-    app.chat_input[0].set_value("öğrenciler").run()
+    app.chat_input[0].set_value("students").run()
     for _ in range(200):
         if db.get(run_id)["status"] != "running":
             break
         time.sleep(0.1)
     assert db.get(run_id)["status"] == "completed"
-    assert db.get(run_id)["questions"][0]["answer"] == "öğrenciler"
+    assert db.get(run_id)["questions"][0]["answer"] == "students"
     app.run()
     assert not app.exception, [e.value for e in app.exception]
-    app.chat_input[0].set_value("Bir sonraki sürümde CSV dışa aktarım olsun").run()
-    assert db.notes(run_id)[0]["content"].startswith("Bir sonraki sürümde")
+    app.chat_input[0].set_value("The next version should export CSV").run()
+    assert db.notes(run_id)[0]["content"].startswith("The next version")
     app.session_state[f"stage_{run_id}"] = "review"
     app.run()
     assert not app.exception, [e.value for e in app.exception]
@@ -831,7 +832,7 @@ def test_failed_run_can_be_retried_from_the_failed_stage(tmp_path, monkeypatch):
         def document(self, stage, idea, context):
             calls.append(stage)
             if stage == "review" and FlakyEngine.fail:
-                raise RuntimeError("OpenCode Go HTTP 400 döndürdü")
+                raise RuntimeError("OpenCode Go returned HTTP 400")
             return super().document(stage, idea, context)
 
     failed = run_project("Flaky API", workspace=tmp_path, engine=FlakyEngine(), decisions=BACKEND)
@@ -849,7 +850,7 @@ def test_failed_run_can_be_retried_from_the_failed_stage(tmp_path, monkeypatch):
 
 
 class ChangeAwareEngine(StubEngine):
-    """Değişiklik taleplerini destekleyen test motoru; aldığı bağlamları kaydeder."""
+    """Test engine that supports change requests; it records the contexts it receives."""
 
     def __init__(self):
         self.contexts, self.code_changes, self.test_changes = {}, [], []
@@ -858,7 +859,7 @@ class ChangeAwareEngine(StubEngine):
         self.contexts.setdefault(stage, []).append(context)
         text = super().document(stage, idea, context)
         if stage == "analysis" and "CHANGE MODE" in context:
-            text += "FR-03: Ürünleri listele [CR-001]\n"
+            text += "FR-03: List the products [CR-001]\n"
         return text
 
     def code(self, idea, docs, feedback=None, change=None):
@@ -882,7 +883,7 @@ class ChangeAwareEngine(StubEngine):
 
 def _apply_change(tmp_path, run_id, kind, title, start_stage, engine):
     db = History(tmp_path / "runs" / "history.sqlite3")
-    change_id = db.create_change(run_id, kind, title, "Ürünleri listeleyen /items uç noktası eklensin.")
+    change_id = db.create_change(run_id, kind, title, "Add an /items endpoint that lists the products.")
     db.update_change(run_id, change_id, status="in_progress", start_stage=start_stage, impact="FR-03 eklenecek.")
     assert db.reset_from(run_id, start_stage)
     return change_id, run_project("", workspace=tmp_path, engine=engine, resume_run_id=run_id)
@@ -890,15 +891,15 @@ def _apply_change(tmp_path, run_id, kind, title, start_stage, engine):
 
 def test_feature_change_request_updates_only_affected_parts(tmp_path, monkeypatch):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
-    first = run_project("Envanter API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
+    first = run_project("Inventory API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
     assert first.status == "completed", first.error
     engine = ChangeAwareEngine()
-    change_id, result = _apply_change(tmp_path, first.id, "feature", "Ürün listeleme", "analysis", engine)
+    change_id, result = _apply_change(tmp_path, first.id, "feature", "Product listing", "analysis", engine)
     assert result.status == "completed", result.error
     assert "planning" not in engine.contexts
     analysis = engine.contexts["analysis"][0]
     assert "CHANGE MODE" in analysis and "EXISTING DOCUMENT" in analysis and "FR-01: provide an HTTP response" in analysis
-    assert engine.code_changes and "Ürün listeleme" in engine.code_changes[0][0]
+    assert engine.code_changes and "Product listing" in engine.code_changes[0][0]
     assert (result.project_dir / "tests/test_api.py").is_file() and (result.project_dir / "tests/test_items.py").is_file()
     db = History(tmp_path / "runs" / "history.sqlite3")
     assert db.change(first.id, change_id)["status"] == "done"
@@ -909,31 +910,31 @@ def test_feature_change_request_updates_only_affected_parts(tmp_path, monkeypatc
 
 def test_bug_change_request_writes_failing_test_first(tmp_path, monkeypatch):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
-    first = run_project("Envanter API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
+    first = run_project("Inventory API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
     engine = ChangeAwareEngine()
-    change_id, result = _apply_change(tmp_path, first.id, "bug", "/items 404 dönüyor", "development", engine)
+    change_id, result = _apply_change(tmp_path, first.id, "bug", "/items returns 404", "development", engine)
     assert result.status == "completed", result.error
     events = History(tmp_path / "runs" / "history.sqlite3").get(first.id)["events"]
     assert any(e["status"] == "bug_reproduced" for e in events)
-    # Geliştirici, hatayı gösteren başarısız test çıktısını girdi olarak aldı.
+    # The developer received the failing test output that shows the bug as input.
     assert engine.code_changes[0][1] and "test_items" in engine.code_changes[0][1]
 
 
 def test_sections_split_and_edit():
     from autosdlc.sections import delete_section, find_section, insert_after, replace_section, split_sections, unified_diff
 
-    doc = "# Gereksinimler\n\n## İşlevsel\n\n- FR-01: Ürün ekle\n- FR-02: Ürün sil\n  ayrıntı\n\n## İşlevsel olmayan\n\n| NFR-01 | Hız |\n"
+    doc = "# Requirements\n\n## Functional\n\n- FR-01: Add product\n- FR-02: Delete product\n  details\n\n## Non-functional\n\n| NFR-01 | Speed |\n"
     keys = [section.key for section in split_sections(doc)]
     assert keys == ["h:0", "h:1", "r:FR-01", "r:FR-02", "h:2", "r:NFR-01"]
     fr2 = find_section(doc, "r:FR-02")
-    assert fr2.text(doc.split("\n")) == "- FR-02: Ürün sil\n  ayrıntı"
-    edited = replace_section(doc, fr2, "- FR-02: Ürünü arşivle")
-    assert "arşivle" in edited and "ayrıntı" not in edited
-    added = insert_after(edited, find_section(edited, "r:FR-02"), "- FR-03: Ürün listele")
-    assert added.index("FR-03") > added.index("FR-02") < added.index("## İşlevsel olmayan")
+    assert fr2.text(doc.split("\n")) == "- FR-02: Delete product\n  details"
+    edited = replace_section(doc, fr2, "- FR-02: Archive the product")
+    assert "Archive" in edited and "details" not in edited
+    added = insert_after(edited, find_section(edited, "r:FR-02"), "- FR-03: List products")
+    assert added.index("FR-03") > added.index("FR-02") < added.index("## Non-functional")
     removed = delete_section(added, find_section(added, "h:2"))
     assert "NFR-01" not in removed and "FR-03" in removed
-    assert "+- FR-02: Ürünü arşivle" in unified_diff(doc, edited, "requirements.md")
+    assert "+- FR-02: Archive the product" in unified_diff(doc, edited, "requirements.md")
 
 
 def test_uncovered_tests_are_detected():
@@ -969,8 +970,8 @@ def test_streamlit_section_edit_marks_downstream_stale(tmp_path, monkeypatch):
             pass
 
         def section(self, stage, idea, context, document, section, instruction, mode, language=None):
-            assert stage == "analysis" and "FR-02" in section and "arşivle" in instruction
-            return "```markdown\nFR-02: Ürünü silmek yerine arşivle.\n```"
+            assert stage == "analysis" and "FR-02" in section and "rchive" in instruction
+            return "```markdown\nFR-02: Archive the product instead of deleting it.\n```"
 
     monkeypatch.setattr("autosdlc.crewai_engine.CrewAIEngine", FakeEngine)
     app = _app(tmp_path, monkeypatch).run()
@@ -992,14 +993,14 @@ def test_streamlit_section_edit_marks_downstream_stale(tmp_path, monkeypatch):
     app.selectbox(key=f"section_{prefix}").select("r:FR-02")
     app.session_state[f"action_{prefix}"] = "rewrite"
     app.run()
-    app.text_area(key=f"instruction_{prefix}_rewrite").set_value("Silme yerine arşivle").run()
+    app.text_area(key=f"instruction_{prefix}_rewrite").set_value("Archive instead of deleting").run()
     app.button(key=f"ask_{prefix}").click().run()
     assert not app.exception, [e.value for e in app.exception]
-    assert any("+FR-02: Ürünü silmek yerine arşivle." in code.value for code in app.code)
+    assert any("+FR-02: Archive the product instead of deleting it." in code.value for code in app.code)
     app.button(key=f"accept_{prefix}").click().run()
     assert not app.exception, [e.value for e in app.exception]
     output = Path(db.get(run_id)["output_dir"])
-    assert "arşivle" in (output / "requirements.md").read_text(encoding="utf-8")
+    assert "Archive" in (output / "requirements.md").read_text(encoding="utf-8")
     assert list((output / "versions").glob("requirements.*.md"))
     assert any(e["status"] == "stale" and e["detail"] == "analysis" for e in db.get(run_id)["events"])
     assert any("Out of date" in warning.value for warning in app.warning)
@@ -1019,7 +1020,7 @@ def test_language_rules_reach_every_agent_and_terms_are_not_translated(monkeypat
             pass
 
         def json(self):
-            return {"choices": [{"message": {"content": "Yanıt"}}]}
+            return {"choices": [{"message": {"content": "Answer"}}]}
 
     def fake_post(url, *, headers, json, timeout):
         prompts.append(str(json["messages"]))
@@ -1027,15 +1028,15 @@ def test_language_rules_reach_every_agent_and_terms_are_not_translated(monkeypat
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
     engine = CrewAIEngine(api_key="test-key")
-    engine.document("planning", "Envanter", "")
-    engine.section("analysis", "Envanter", "", "# Doc\nFR-01: x", "FR-01: x", "Neden?", "question")
+    engine.document("planning", "Inventory", "")
+    engine.section("analysis", "Inventory", "", "# Doc\nFR-01: x", "FR-01: x", "Why?", "question")
     assert all("LANGUAGE RULES" in prompt and "addProduct" in prompt for prompt in prompts)
     assert choice_label("project_type", "fullstack") == "Fullstack" and choice_label("project_type", "backend") == "Backend"
     assert "backend" in questions()["ui"]["question"]
     # Turkish documents: the prompt names the language and forbids translating the jargon.
     prompts.clear()
     engine.language = "tr"
-    engine.document("planning", "Envanter", "")
+    engine.document("planning", "Inventory", "")
     assert "in Turkish" in prompts[0] and "backend" in prompts[0] and '"arka uç"' in prompts[0] and "USER_QUESTION: <one clear question in Turkish>" in prompts[0]
 
 
@@ -1074,9 +1075,9 @@ def test_truncated_output_is_reported_and_development_is_batched(monkeypatch):
 
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
     replies = iter([
-        ('{"files": {"a.py": "x = ', "length"),  # _ask: kesik yanıt → OutputTruncated
-        ('{"files": {"a.py": "x = ', "length"),  # _ask_files ilk deneme: yine kesik
-        ('{"files": {"a.py": "x = 1"}}', "stop"),  # _ask_files ikinci deneme: "daha kısa yaz" uyarısıyla
+        ('{"files": {"a.py": "x = ', "length"),  # _ask: truncated response → OutputTruncated
+        ('{"files": {"a.py": "x = ', "length"),  # _ask_files first attempt: truncated again
+        ('{"files": {"a.py": "x = 1"}}', "stop"),  # _ask_files second attempt: with the "write less" warning
     ])
     prompts = []
 
@@ -1150,29 +1151,29 @@ def test_open_folder_uses_platform_file_manager(tmp_path, monkeypatch, platform,
 def test_open_questions_are_parsed_from_impact_report():
     from autosdlc.runner import open_questions
 
-    report = "## Açık sorular\n- SORU: Kelvin negatif olabilir mi?\n2. **SORU:** Yuvarlama kaç basamak?\nSORU: yok\n\nBAŞLANGIÇ: analysis"
-    assert open_questions(report) == ["Kelvin negatif olabilir mi?", "Yuvarlama kaç basamak?"]
-    assert open_questions("## Açık sorular\nAçık soru yok.\nBAŞLANGIÇ: design") == []
+    report = "## Open questions\n- QUESTION: Can Kelvin be negative?\n2. **QUESTION:** How many digits to round to?\nQUESTION: none\n\nSTART: analysis"
+    assert open_questions(report) == ["Can Kelvin be negative?", "How many digits to round to?"]
+    assert open_questions("## Open questions\nNo open questions.\nSTART: design") == []
 
 
 def test_each_finished_iteration_is_kept_as_a_version(tmp_path, monkeypatch):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
-    first = run_project("Envanter API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
+    first = run_project("Inventory API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
     db = History(tmp_path / "runs" / "history.sqlite3")
     engine = ChangeAwareEngine()
-    change_id = db.create_change(first.id, "feature", "Kelvin desteği", "Kelvin dönüşümü eklensin.")
+    change_id = db.create_change(first.id, "feature", "Kelvin support", "Add Kelvin conversion.")
     db.update_change(first.id, change_id, status="in_progress", start_stage="analysis",
-                     clarifications="- Soru: Kelvin negatif olabilir mi?\n  Yanıt: Hayır, ValueError")
+                     clarifications="- Question: Can Kelvin be negative?\n  Answer: No, ValueError")
     assert db.reset_from(first.id, "analysis")
     second = run_project("", workspace=tmp_path, engine=engine, resume_run_id=first.id)
     assert second.status == "completed", second.error
-    # Netleştirme yanıtı, delta modundaki ajanlara kesin karar olarak ulaştı.
-    assert "Hayır, ValueError" in engine.contexts["analysis"][0]
+    # The clarification answer reached the agents in delta mode as a firm decision.
+    assert "No, ValueError" in engine.contexts["analysis"][0]
     versions = db.iterations(first.id)
-    assert [item["label"] for item in versions] == ["v1 · Initial version", f"v2 · {change_id} · New feature: Kelvin desteği"]
+    assert [item["label"] for item in versions] == ["v1 · Initial version", f"v2 · {change_id} · New feature: Kelvin support"]
     assert versions[0]["last_event_id"] < versions[1]["first_event_id"] <= versions[1]["last_event_id"]
     v1, v2 = (Path(item["snapshot_dir"]) for item in versions)
-    # v1'in kopyası, CR sonrası değişen dosyalardan etkilenmez.
+    # The v1 snapshot is not affected by the files changed after the CR.
     assert "FR-03" not in (v1 / "docs" / "requirements.md").read_text(encoding="utf-8")
     assert "FR-03" in (v2 / "docs" / "requirements.md").read_text(encoding="utf-8")
     assert not (v1 / "project" / "tests" / "test_items.py").exists() and (v2 / "project" / "tests" / "test_items.py").exists()
@@ -1182,37 +1183,37 @@ def test_each_finished_iteration_is_kept_as_a_version(tmp_path, monkeypatch):
 def test_apply_patch_replaces_matching_sections_and_inserts_new_ones():
     from autosdlc.sections import apply_patch
 
-    base = "# Gereksinimler\n\n## İşlevsel\n\nFR-01: Celsius\n\n## İşlevsel olmayan\n\nNFR-01: hızlı\n"
+    base = "# Requirements\n\n## Functional\n\nFR-01: Celsius\n\n## Non-functional\n\nNFR-01: fast\n"
     patch = (
-        "```markdown\n# Gereksinimler\n\n## İşlevsel [CR-001]\n\nFR-01: Celsius\nFR-02: Kelvin [CR-001]\n\n"
-        "<!-- SONRA: İşlevsel -->\n## Kısıtlar\n\nKelvin negatif olamaz.\n```"
+        "```markdown\n# Requirements\n\n## Functional [CR-001]\n\nFR-01: Celsius\nFR-02: Kelvin [CR-001]\n\n"
+        "<!-- AFTER: Functional -->\n## Constraints\n\nKelvin cannot be negative.\n```"
     )
     merged, replaced, added = apply_patch(base, patch)
     assert (replaced, added) == (1, 1)
-    assert "FR-02: Kelvin" in merged and "NFR-01: hızlı" in merged
-    assert merged.index("## Kısıtlar") < merged.index("## İşlevsel olmayan")
-    whole = "# Gereksinimler\n\n" + "yeni içerik\n" * 30
+    assert "FR-02: Kelvin" in merged and "NFR-01: fast" in merged
+    assert merged.index("## Constraints") < merged.index("## Non-functional")
+    whole = "# Requirements\n\n" + "new content\n" * 30
     assert apply_patch(base, whole)[0].strip() == whole.strip()
-    assert apply_patch(base, "NO CHANGES") == (base, 0, 0) and apply_patch(base, "DEĞİŞİKLİK YOK") == (base, 0, 0)
+    assert apply_patch(base, "NO CHANGES") == (base, 0, 0)
 
 
 class PatchingEngine(ChangeAwareEngine):
-    """Değişiklik modunda belgenin tamamı yerine yalnızca değişen bölümü döndüren motor."""
+    """Engine that returns only the changed section instead of the whole document in change mode."""
 
     def document(self, stage, idea, context):
         self.contexts.setdefault(stage, []).append(context)
         if "CHANGED SECTIONS ONLY" in context and stage == "analysis":
-            return "# Requirements\n\nFR-01: provide an HTTP response.\nFR-02: list items.\nFR-03: Ürünleri listele [CR-001]\nNFR-01: respond quickly.\n"
+            return "# Requirements\n\nFR-01: provide an HTTP response.\nFR-02: list items.\nFR-03: List the products [CR-001]\nNFR-01: respond quickly.\n"
         if "CHANGED SECTIONS ONLY" in context:
-            return "DEĞİŞİKLİK YOK"
+            return "NO CHANGES"
         return StubEngine.document(self, stage, idea, context)
 
 
 def test_change_request_uses_section_patches_and_skips_unaffected_stages(tmp_path, monkeypatch):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
-    first = run_project("Envanter API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
+    first = run_project("Inventory API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
     db = History(tmp_path / "runs" / "history.sqlite3")
-    change_id = db.create_change(first.id, "feature", "Ürün listeleme", "Ürünleri listeleyen /items uç noktası eklensin.")
+    change_id = db.create_change(first.id, "feature", "Product listing", "Add an /items endpoint that lists the products.")
     db.update_change(first.id, change_id, status="in_progress", start_stage="analysis",
                      skip_stages="review,deployment,maintenance")
     db.reset_from(first.id, "analysis")
@@ -1240,24 +1241,24 @@ class CriticalReviewEngine(StubEngine):
         if stage == "design":
             self.design_calls += 1
         if stage == "review":
-            return f"# İnceleme\n\n| No | Önem | Bulgu | Öneri |\n| 1 | {self.severity} | Eksik | Ekle |\n\nKARAR: REVİZYON\n"
+            return f"# Review\n\n| No | Severity | Finding | Recommendation |\n| 1 | {self.severity} | Missing | Add |\n\nVERDICT: REVISE\n"
         return super().document(stage, idea, context)
 
 
 def test_small_scale_revises_design_only_for_critical_findings(tmp_path, monkeypatch):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
     small = {**BACKEND, "scale": "small"}
-    high = CriticalReviewEngine("Yüksek")
-    run_project("Küçük API", workspace=tmp_path / "a", engine=high, decisions=small)
+    high = CriticalReviewEngine("High")
+    run_project("Small API", workspace=tmp_path / "a", engine=high, decisions=small)
     assert high.design_calls == 1
     assert any("SMALL PROJECT" in context for stage, context in high.prompts if stage == "analysis")
     assert any("SMALL PROJECT REVIEW" in context for stage, context in high.prompts if stage == "review")
-    critical = CriticalReviewEngine("Kritik")
-    run_project("Küçük API", workspace=tmp_path / "b", engine=critical, decisions=small)
+    critical = CriticalReviewEngine("Critical")
+    run_project("Small API", workspace=tmp_path / "b", engine=critical, decisions=small)
     assert critical.design_calls == 2
-    # Revizyon yalnızca değişen bölümleri ister.
+    # The revision asks for the changed sections only.
     assert any("CHANGED SECTIONS ONLY" in context for stage, context in critical.prompts if stage == "design")
-    normal = CriticalReviewEngine("Yüksek")
+    normal = CriticalReviewEngine("High")
     run_project("Normal API", workspace=tmp_path / "c", engine=normal, decisions=BACKEND)
     assert normal.design_calls == 2
 
@@ -1278,7 +1279,7 @@ def test_turkish_project_gets_turkish_documents_and_prompts(tmp_path, monkeypatc
             Recording.languages.add(getattr(self, "language", None))
             return super().document(stage, idea, context)
 
-    turkish = run_project("Stok API", workspace=tmp_path / "tr", engine=Recording(), decisions={**BACKEND, "language": "tr"})
+    turkish = run_project("Stock API", workspace=tmp_path / "tr", engine=Recording(), decisions={**BACKEND, "language": "tr"})
     assert turkish.status == "completed", turkish.error
     assert Recording.languages == {"tr"}
     report = (turkish.output_dir / "test_report.md").read_text(encoding="utf-8")
@@ -1312,3 +1313,19 @@ def test_streamlit_ui_language_switch_translates_the_interface(monkeypatch):
     assert app.selectbox(key="choice_language").value == "tr"
     assert app.selectbox(key="project_type_input").options[2] == "Fullstack"
     assert any(button.label == "Uygula" for button in app.button)
+
+
+def test_legacy_turkish_protocol_tokens_are_still_accepted():
+    """Runs recorded before the tokens became language neutral used these Turkish ones; they must keep working."""
+    from autosdlc.runner import open_questions, parse_start_stage, review_verdict, suggested_skips
+    from autosdlc.sections import apply_patch
+
+    assert review_verdict("KARAR: ONAY") == "APPROVE" and review_verdict("**KARAR:** REVİZYON") == "REVISE"
+    assert review_verdict("VERDICT: APPROVE") == "APPROVE" and review_verdict("VERDICT: REVISE") == "REVISE"
+    assert open_questions("- SORU: Kelvin negatif olabilir mi?\nSORU: yok\nBAŞLANGIÇ: analysis") == ["Kelvin negatif olabilir mi?"]
+    assert parse_start_stage("BAŞLANGIÇ: design") == "design" and parse_start_stage("START: development") == "development"
+    assert suggested_skips("ATLA: deployment, maintenance") == ["deployment", "maintenance"]
+    assert suggested_skips("SKIP: review") == ["review"]
+    base = "# Requirements\n\n## Functional\n\nFR-01: x\n"
+    assert apply_patch(base, "DEĞİŞİKLİK YOK") == (base, 0, 0)
+    assert apply_patch(base, "# Requirements\n\n## Functional\n\nFR-01: x\n<!-- SONRA: Functional -->\n## Extra\n\ny\n")[2] >= 0
