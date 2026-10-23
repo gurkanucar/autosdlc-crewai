@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -30,7 +30,8 @@ class History:
                     completed_at TEXT,
                     error TEXT,
                     model TEXT,
-                    pause_requested INTEGER NOT NULL DEFAULT 0
+                    pause_requested INTEGER NOT NULL DEFAULT 0,
+                    heartbeat_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,6 +59,8 @@ class History:
                 db.execute("ALTER TABLE runs ADD COLUMN model TEXT")
             if "pause_requested" not in columns:
                 db.execute("ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0")
+            if "heartbeat_at" not in columns:
+                db.execute("ALTER TABLE runs ADD COLUMN heartbeat_at TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10)
@@ -68,9 +71,9 @@ class History:
     def create(self, run_id: str, idea: str, output_dir: Path, project_dir: Path, model: str | None = None) -> None:
         with self._connect() as db:
             db.execute(
-                "INSERT INTO runs (id, idea, provider, status, output_dir, project_dir, created_at, model) "
-                "VALUES (?, ?, ?, 'running', ?, ?, ?, ?)",
-                (run_id, idea, "opencode-go", str(output_dir), str(project_dir), now(), model),
+                "INSERT INTO runs (id, idea, provider, status, output_dir, project_dir, created_at, model, heartbeat_at) "
+                "VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)",
+                (run_id, idea, "opencode-go", str(output_dir), str(project_dir), now(), model, now()),
             )
 
     def event(self, run_id: str, stage: str, status: str, detail: str = "") -> None:
@@ -111,10 +114,49 @@ class History:
     def resume(self, run_id: str) -> bool:
         with self._connect() as db:
             result = db.execute(
-                "UPDATE runs SET status='running', pause_requested=0, error=NULL WHERE id=? AND status='paused'",
-                (run_id,),
+                "UPDATE runs SET status='running', pause_requested=0, error=NULL, heartbeat_at=? WHERE id=? AND status='paused'",
+                (now(), run_id),
             )
             return result.rowcount == 1
+
+    def heartbeat(self, run_id: str) -> None:
+        with self._connect() as db:
+            db.execute("UPDATE runs SET heartbeat_at=? WHERE id=? AND status='running'", (now(), run_id))
+
+    def recover_stale(self, max_age_seconds: int = 45) -> list[str]:
+        """Süreci ölmüş (arayüz yeniden başlatıldı, bilgisayar kapandı) çalışmaları duraklatılmış yapar."""
+        limit = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat(timespec="seconds")
+        with self._connect() as db:
+            stale = [row[0] for row in db.execute(
+                "SELECT id FROM runs WHERE status='running' AND (heartbeat_at IS NULL OR heartbeat_at < ?)", (limit,)
+            )]
+            for run_id in stale:
+                db.execute("UPDATE runs SET status='paused', pause_requested=0 WHERE id=?", (run_id,))
+                db.execute(
+                    "INSERT INTO events (run_id, stage, status, detail, created_at) VALUES (?, 'workflow', 'interrupted', ?, ?)",
+                    (run_id, "Çalışan süreç sona erdi; kaldığı yerden devam ettirilebilir", now()),
+                )
+            return stale
+
+    def reset_from(self, run_id: str, stage: str) -> bool:
+        """Bitmiş/duraklatılmış çalışmayı, verilen aşama ve sonrası yeniden üretilecek biçimde duraklatır."""
+        with self._connect() as db:
+            result = db.execute(
+                "UPDATE runs SET status='paused', pause_requested=0, error=NULL, completed_at=NULL "
+                "WHERE id=? AND status IN ('completed', 'failed', 'paused')",
+                (run_id,),
+            )
+            if result.rowcount != 1:
+                return False
+            db.execute(
+                "INSERT INTO events (run_id, stage, status, detail, created_at) VALUES (?, 'workflow', 'reset', ?, ?)",
+                (run_id, stage, now()),
+            )
+            return True
+
+    def update_idea(self, run_id: str, idea: str) -> None:
+        with self._connect() as db:
+            db.execute("UPDATE runs SET idea=? WHERE id=? AND status != 'running'", (idea, run_id))
 
     def delete_record(self, run_id: str) -> None:
         with self._connect() as db:

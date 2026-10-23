@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import uuid
 from importlib.resources import files as resource_files
 from string import Template
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 
 GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
 DEFAULT_MODEL = "glm-5.3-flash"
+RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
 class ClarificationNeeded(Exception):
@@ -32,8 +34,15 @@ def _parse_file_bundle(raw: str) -> dict[str, str]:
         text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
     try:
         value = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError("Ajan geçerli JSON dosyaları döndürmedi") from exc
+    except json.JSONDecodeError:
+        # Modeller JSON'un önüne/arkasına açıklama ekleyebiliyor; en dıştaki nesneyi dene.
+        start, end = text.find("{"), text.rfind("}")
+        try:
+            value = json.loads(text[start:end + 1]) if 0 <= start < end else None
+        except json.JSONDecodeError:
+            value = None
+        if value is None:
+            raise ValueError("Ajan geçerli JSON dosyaları döndürmedi")
     files = value.get("files") if isinstance(value, dict) else None
     if not isinstance(files, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in files.items()
@@ -75,24 +84,35 @@ class CrewAIEngine:
                     raise ValueError("Bu projede ajanlara harici araç izni verilmez")
                 if isinstance(messages, str):
                     messages = [{"role": "user", "content": messages}]
-                try:
-                    response = httpx.post(
-                        f"{GO_BASE_URL}/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {inner.key}",
-                            "x-opencode-session": inner.session_id,
-                        },
-                        json={"model": inner.model, "messages": messages},
-                        timeout=120,
-                    )
-                    response.raise_for_status()
-                    content = response.json()["choices"][0]["message"]["content"]
-                except httpx.HTTPStatusError as exc:
-                    raise RuntimeError(
-                        f"OpenCode Go HTTP {exc.response.status_code} döndürdü"
-                    ) from exc
-                except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
-                    raise RuntimeError("OpenCode Go isteği veya yanıtı başarısız") from exc
+                # Geçici ağ/hız sınırı hatalarında üstel bekleme ile üç deneme.
+                for attempt in range(3):
+                    try:
+                        response = httpx.post(
+                            f"{GO_BASE_URL}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {inner.key}",
+                                "x-opencode-session": inner.session_id,
+                            },
+                            json={"model": inner.model, "messages": messages},
+                            timeout=300,
+                        )
+                        response.raise_for_status()
+                        content = response.json()["choices"][0]["message"]["content"]
+                        break
+                    except httpx.HTTPStatusError as exc:
+                        if exc.response.status_code in RETRY_STATUSES and attempt < 2:
+                            time.sleep(2 ** (attempt + 1))
+                            continue
+                        raise RuntimeError(
+                            f"OpenCode Go HTTP {exc.response.status_code} döndürdü"
+                        ) from exc
+                    except httpx.TransportError as exc:
+                        if attempt < 2:
+                            time.sleep(2 ** (attempt + 1))
+                            continue
+                        raise RuntimeError("OpenCode Go isteği başarısız") from exc
+                    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+                        raise RuntimeError("OpenCode Go isteği veya yanıtı başarısız") from exc
                 if not isinstance(content, str) or not content.strip():
                     raise RuntimeError("OpenCode Go boş yanıt döndürdü")
                 return content
@@ -116,10 +136,10 @@ class CrewAIEngine:
         self.agents = yaml.safe_load(config_dir.joinpath("agents.yaml").read_text(encoding="utf-8"))
         self.tasks = yaml.safe_load(config_dir.joinpath("tasks.yaml").read_text(encoding="utf-8"))
 
-    def _ask(self, stage: str, **values: str) -> str:
+    def _ask(self, stage: str, extra: str = "", **values: str) -> str:
         agent_config = self.agents[stage]
         task_config = self.tasks[stage]
-        prompt = Template(task_config["description"]).substitute(values)
+        prompt = Template(task_config["description"]).substitute(values) + extra
         prompt += (
             "\nKritik bir kullanıcı kararı eksikse varsayım yapmadan yalnızca "
             "'KULLANICI_SORUSU: <tek, açık Türkçe soru>' biçiminde yanıt ver. "
@@ -148,25 +168,36 @@ class CrewAIEngine:
             raise ClarificationNeeded(match.group(1).strip())
         return raw
 
+    def _ask_files(self, stage: str, **values: str) -> dict[str, str]:
+        """Dosya paketi ister; JSON bozuksa ajana hatayı söyleyip bir kez daha sorar."""
+        try:
+            return _parse_file_bundle(self._ask(stage, **values))
+        except ValueError as exc:
+            return _parse_file_bundle(self._ask(stage, extra=(
+                f"\nÖNCEKİ YANITIN REDDEDİLDİ: {exc}. Açıklama veya Markdown ekleme; "
+                'yalnızca {"files": {...}} biçiminde geçerli JSON döndür.'
+            ), **values))
+
     def document(self, stage: str, idea: str, context: str) -> str:
-        return self._ask(stage, idea=idea, context=context[:12000])
+        return self._ask(stage, idea=idea, context=context[:24000])
 
     def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]:
         repair = (
-            "Mevcut uygulama:\n"
-            f"{json.dumps(self.current_files, ensure_ascii=False)[:18000]}\n"
-                    f"Bu test çıktısına göre uygulamayı düzelt:\n{feedback[:10000]}\n"
+            # Hata özeti genellikle çıktının sonundadır; bu yüzden sondan alınır.
+            f"Bu test çıktısına göre uygulamayı düzelt:\n{feedback[-8000:]}\n"
+            "tests/ ve test/ altındaki dosyalar Test Ajanı'na aittir ve değiştirilmez; "
+            "uygulama kodunu testlere uyacak şekilde düzelt. Yalnızca değişen dosyaları döndür.\n"
+            "Mevcut dosyalar (testler dahil):\n"
+            f"{json.dumps(self.current_files, ensure_ascii=False)[:30000]}\n"
             if feedback else "İlk uygulamayı oluştur.\n"
         )
-        raw = self._ask("development", idea=idea, context=docs[:14000], feedback=repair)
-        files = _parse_file_bundle(raw)
+        files = self._ask_files("development", idea=idea, context=docs[:20000], feedback=repair)
         self.current_files.update(files)
         return files
 
     def tests(self, idea: str, docs: str, files: dict[str, str]) -> dict[str, str]:
-        raw = self._ask(
-            "testing", idea=idea, context=docs[:10000],
-            files=json.dumps(files, ensure_ascii=False)[:18000],
+        return self._ask_files(
+            "testing", idea=idea, context=docs[:16000],
+            files=json.dumps(files, ensure_ascii=False)[:30000],
         )
-        return _parse_file_bundle(raw)
 

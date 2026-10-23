@@ -6,6 +6,12 @@ from pathlib import Path, PurePosixPath
 
 
 RESERVED_DIRECTORIES = {"docs", "node_modules", "runs", ".venv", ".git"}
+# .gitignore, .github/ gibi yaygın nokta dosyalarına izin verilir; gizli değer ve ortam klasörlerine verilmez.
+FORBIDDEN_PARTS = {".git", ".venv", ".autosdlc-venv", ".env", ".ssh"}
+
+
+def _forbidden_part(part: str) -> bool:
+    return part in FORBIDDEN_PARTS or (part.startswith(".env.") and part != ".env.example")
 
 
 def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
@@ -25,7 +31,7 @@ def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
             or ":" in name
             or "\x00" in name
             or any(char in name for char in '<>"|?*')
-            or any(part.startswith(".") for part in path.parts)
+            or any(part in {".", ".."} or _forbidden_part(part) for part in path.parts)
             or path.parts[0] in RESERVED_DIRECTORIES
             or len(content.encode("utf-8")) > 50_000
         ):

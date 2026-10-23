@@ -49,7 +49,12 @@ def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
                 raise ValueError(f"Geçersiz {name}: kısa bir metin gir")
         elif value not in catalog[name]["options"]:
             raise ValueError(f"Geçersiz {name}: {value}. Seçenekler: {catalog[name]['options']}")
-    normalized = {name: selected.get(name, "" if item.get("optional") else "none") for name, item in catalog.items()}
+    # Proje türüne uymayan kararlar (ör. cli + postgres) yok sayılır.
+    normalized = {
+        name: "none" if item.get("when") and project_type not in item["when"]
+        else selected.get(name, "" if item.get("optional") else "none")
+        for name, item in catalog.items()
+    }
     if project_type in {"frontend", "fullstack"}:
         normalized["ui"] = "web"
     return normalized

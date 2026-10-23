@@ -36,6 +36,22 @@ design:
     Kararların gerekçelerini ve ödünleşimleri açıkla. Yalnızca Markdown döndür.
   expected_output: Türkçe mimari belgesi, Mermaid diyagramları ve uygun veri şeması.
 
+review:
+  description: |
+    Proje fikri: $idea
+    İncelenecek tasarım, gereksinimler ve kararlar:
+    $context
+    Bütün raporu Türkçe yaz. Tasarımı bağımsız bir gözden geçirmeci olarak denetle:
+    her FR'nin tasarımda karşılığı var mı (izlenebilirlik), NFR'ler (performans,
+    güvenlik, erişilebilirlik vb.) nasıl karşılanıyor, API sözleşmeleri ve veri
+    şeması tutarlı mı, kullanıcının seçtiği teknoloji ve kısıtlara uyuluyor mu,
+    hata yönetimi ve test edilebilirlik yeterli mi.
+    Bulguları "| No | Önem (Kritik/Yüksek/Orta/Düşük) | Bulgu | Öneri |" tablosu ile ver.
+    Kritik veya Yüksek önemde bulgu varsa karar REVİZYON, yoksa ONAY olmalı.
+    Raporun son satırı tam olarak "KARAR: ONAY" veya "KARAR: REVİZYON" olsun.
+    Yalnızca Markdown döndür; tasarımı kendin yeniden yazma.
+  expected_output: Bulgu tablosu ve KARAR satırı içeren Türkçe mimari inceleme raporu.
+
 development:
   description: |
     Proje fikri: $idea
@@ -62,6 +78,9 @@ development:
     [-p, pytest_playwright.pytest_playwright] ekle; otomatik eklenti yükleme kapalı.
     SQLite için TASK_DB_PATH, Postgres için DATABASE_URL, Redis için REDIS_URL,
     telemetri için OTEL_EXPORTER_OTLP_ENDPOINT ortam değişkenlerini kullan.
+    En fazla 40 dosya, dosya başına en fazla 50 KB. Kilit dosyası (package-lock.json,
+    pnpm-lock.yaml, go.sum vb.) üretme; kurulum komutu bunları oluşturur.
+    .env dosyası yazma; gerekiyorsa .env.example kullan.
     Markdown kod bloğu döndürme. Düzeltmede yama değil tam dosya içeriği ver.
   expected_output: Dockerfile, project.yaml ve eksiksiz kaynak dosyalarını içeren geçerli JSON.
 
@@ -75,7 +94,9 @@ testing:
     Bütün açıklamaları Türkçe yaz. Seçilen dil ve çatıya uygun testleri tests/
     veya test/ altında üret. YALNIZCA {"files": {"goreli/yol": "tam içerik"}}
     biçiminde JSON döndür. Testleri FR/NFR kimlikleriyle ilişkilendir; başarılı
-    ve hatalı kullanımları kapsa. Backend/fullstack projede gerçek API HTTP
+    ve hatalı kullanımları kapsa. Her testin adında veya açıklamasında ilgili
+    kimliği (ör. FR-01) açıkça yaz; izlenebilirlik matrisi bu kimliklerden üretilir.
+    Her FR en az bir testle kapsanmalı. Backend/fullstack projede gerçek API HTTP
     uç noktalarını sına. Web arayüzü varsa Playwright ile BASE_URL adresini aç
     ve görünür bir etkileşimi doğrula. Test verisini yalıt ve deterministik tut.
     Test komutları uygulamanın project.yaml dosyasında belirtilmiştir.

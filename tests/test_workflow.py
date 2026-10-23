@@ -13,6 +13,8 @@ from autosdlc.deployment import render_compose
 from autosdlc.storage import History
 from autosdlc.cli import main as cli_main
 from autosdlc.runner import RunResult
+from autosdlc.crewai_engine import _parse_file_bundle
+from autosdlc.traceability import build_matrix, requirement_ids
 
 
 class StubEngine:
@@ -20,9 +22,11 @@ class StubEngine:
 
     def document(self, stage: str, idea: str, context: str) -> str:
         if stage == "analysis":
-            return "# Requirements\n\nFR-01: provide an HTTP response.\n"
+            return "# Requirements\n\nFR-01: provide an HTTP response.\nFR-02: list items.\nNFR-01: respond quickly.\n"
         if stage == "design":
             return "# Design\n\n```mermaid\nflowchart LR\n A --> B\n```\n\n```mermaid\nsequenceDiagram\n A->>B: Request\n```\n\n```mermaid\nerDiagram\n TASK { int id }\n```\n"
+        if stage == "review":
+            return "# İnceleme\n\n| 1 | Düşük | Ad | Öneri |\n\nKARAR: ONAY\n"
         return f"# {stage}\n\n{idea}\n"
 
     def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]:
@@ -36,7 +40,7 @@ class StubEngine:
         }
 
     def tests(self, idea: str, docs: str, files: dict[str, str]) -> dict[str, str]:
-        return {"tests/test_api.py": "from fastapi.testclient import TestClient\nfrom app.main import app\n\ndef test_http_response():\n    assert TestClient(app).get('/').json()['answer'] == 1\n"}
+        return {"tests/test_api.py": "from fastapi.testclient import TestClient\nfrom app.main import app\n\ndef test_fr01_http_response():\n    assert TestClient(app).get('/').json()['answer'] == 1\n"}
 
 
 BACKEND = {"project_type": "backend", "stack": "Python / FastAPI", "database": "sqlite", "cache": "none", "observability": "none", "ui": "none"}
@@ -50,7 +54,7 @@ def test_flow_creates_artifacts_and_repairs_failed_test(tmp_path: Path, monkeypa
     assert result.status == "completed", result.error
     assert result.attempts == 2
     for name in (
-        "planning.md", "requirements.md", "architecture.md", "test_report.md",
+        "planning.md", "requirements.md", "architecture.md", "design_review.md", "traceability.md", "test_report.md",
         "deployment.md", "maintenance_report.md", "decisions.yaml",
     ):
         assert (result.output_dir / name).is_file(), name
@@ -97,7 +101,8 @@ def test_yaml_config_and_opencode_request_header(monkeypatch):
     engine = CrewAIEngine(api_key="test-key", model="glm-5.3-flash")
     assert engine.agents["analysis"]["role"] == "Analiz Ajanı"
     assert "kabul kriterleri" in engine.tasks["analysis"]["description"]
-    assert len(engine.agents) == 7
+    assert len(engine.agents) == 8
+    assert engine.agents["review"]["role"] == "Mimari İnceleme Ajanı"
     assert engine.llm.call("hello") == "OK"
     assert seen["url"].endswith("/openai/v1/chat/completions")
     assert seen["headers"]["Authorization"] == "Bearer test-key"
@@ -132,8 +137,9 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
     responses = iter([
         "# Plan\nBuild a book tracker.",
-        "# Requirements\nFR-01: Create and list books.",
+        "# Requirements\nFR-01: Create and list books.\nNFR-01: Fast.",
         "# Design\n```mermaid\nflowchart LR\nA-->B\n```\n```mermaid\nsequenceDiagram\nA->>B: Request\n```\n```mermaid\nerDiagram\nBOOK { int id }\n```",
+        "# İnceleme\nBulgu yok.\nKARAR: ONAY",
         json.dumps({"files": StubEngine().code("", "", feedback="fix")}),
         json.dumps({"files": {
             "tests/test_api.py": "from fastapi.testclient import TestClient\nfrom app.main import app\n\ndef test_api():\n    assert TestClient(app).get('/').json()['answer'] == 1\n",
@@ -400,3 +406,176 @@ def test_pause_while_question_waits_then_resume(tmp_path, monkeypatch):
     assert resumed.status == "completed", resumed.error
     assert db.pending_question(run_id) is None
 
+
+def test_compose_without_database_has_no_postgres():
+    for decisions in (
+        validate_decisions({"project_type": "cli", "stack": "Rust"}),
+        validate_decisions({**BACKEND, "database": "none"}),
+    ):
+        compose = render_compose(decisions)
+        assert "db" not in compose["services"]
+        assert "DATABASE_URL" not in compose["services"]["app"].get("environment", {})
+
+
+def test_decisions_not_applicable_to_project_type_are_dropped():
+    cli = validate_decisions({"project_type": "cli", "stack": "Go", "database": "postgres", "cache": "redis"})
+    assert cli["database"] == "none" and cli["cache"] == "none"
+
+
+def test_common_dotfiles_allowed_but_secrets_rejected(tmp_path: Path):
+    write_generated_files(tmp_path, {".gitignore": "node_modules\n", ".github/workflows/ci.yml": "on: push\n", ".env.example": "PORT=3000\n"})
+    assert (tmp_path / ".github/workflows/ci.yml").is_file()
+    for name in (".env", ".env.local", ".git/config", "app/.venv/x"):
+        with pytest.raises(ValueError):
+            write_generated_files(tmp_path, {name: "x"})
+
+
+def test_file_bundle_tolerates_prose_around_json():
+    raw = 'Dosyalar aşağıda:\n{"files": {"main.go": "package main"}}\nİyi çalışmalar.'
+    assert _parse_file_bundle(raw) == {"main.go": "package main"}
+
+
+def test_traceability_matrix_recognises_test_name_formats():
+    assert requirement_ids("FR-1, NFR-02 ve fr03") == ["FR-01", "NFR-02", "FR-03"]
+    matrix, coverage = build_matrix(
+        "FR-01 ekle\nFR-02 listele\nNFR-01 hız",
+        {"tests/test_api.py": "def test_fr01_create(): ...\ndef test_FR_02_list(): ..."},
+    )
+    assert coverage == {"FR": 1.0, "NFR": 0.0}
+    assert "| NFR-01 | — | Test yok |" in matrix
+
+
+def test_repair_cannot_overwrite_tests_and_traceability_is_written(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+
+    class CheatingEngine(StubEngine):
+        def code(self, idea, docs, feedback=None):
+            if feedback:
+                return {"tests/test_api.py": "def test_fr01_cheat():\n    assert True\n"}
+            return super().code(idea, docs)
+
+    result = run_project("Cheat API", workspace=tmp_path, engine=CheatingEngine(), decisions=BACKEND, max_repairs=1)
+    assert result.status == "failed"
+    assert "TestClient" in (result.project_dir / "tests/test_api.py").read_text(encoding="utf-8")
+    events = History(tmp_path / "runs" / "history.sqlite3").get(result.id)["events"]
+    assert any(e["status"] == "tests_protected" for e in events)
+    matrix = (result.project_dir / "docs" / "traceability.md").read_text(encoding="utf-8")
+    assert "| FR-01 | `tests/test_api.py` | Kapsanıyor |" in matrix
+    assert "| FR-02 | — | Test yok |" in matrix
+
+
+def test_quality_gate_asks_agent_to_rewrite_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    calls = []
+
+    class SloppyEngine(StubEngine):
+        def document(self, stage, idea, context):
+            if stage == "analysis":
+                calls.append(context)
+                if len(calls) == 1:
+                    return "# Gereksinimler\nFR-01: liste."
+            return super().document(stage, idea, context)
+
+    result = run_project("Gate API", workspace=tmp_path, engine=SloppyEngine(), decisions=BACKEND)
+    assert result.status == "completed", result.error
+    assert len(calls) == 2 and "KALİTE KAPISINDAN GEÇEMEDİ" in calls[1]
+
+
+def test_late_stages_see_answers_and_test_result_despite_long_documents(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    contexts = {}
+
+    class VerboseEngine(StubEngine):
+        def document(self, stage, idea, context):
+            contexts[stage] = context
+            if stage == "planning" and "Yanıt: öğrenciler" not in context:
+                raise ClarificationNeeded("Hedef kullanıcı kim?")
+            return super().document(stage, idea, context) + "x" * 50_000
+
+    result = run_project(
+        "Uzun API", workspace=tmp_path, engine=VerboseEngine(), decisions=BACKEND,
+        on_question=lambda *_args: "öğrenciler",
+    )
+    assert result.status == "completed", result.error
+    head = contexts["maintenance"][:12000]
+    assert "Yanıt: öğrenciler" in head and "Gerçek test sonucu: BAŞARILI" in head
+
+
+
+def test_review_requests_revision_then_approves(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    seen = []
+
+    class StrictReviewer(StubEngine):
+        def document(self, stage, idea, context):
+            if stage == "review":
+                seen.append("review")
+                return "KARAR: ONAY" if "REVİZE" in context else "| 1 | Kritik | FR-02 tasarımda yok | Ekle |\nKARAR: REVİZYON"
+            if stage == "design" and "MİMARİ İNCELEME BULGULARI" in context:
+                seen.append("revision")
+                return super().document(stage, idea, context) + "\nREVİZE: FR-02 eklendi\n"
+            return super().document(stage, idea, context)
+
+    result = run_project("Review API", workspace=tmp_path, engine=StrictReviewer(), decisions=BACKEND)
+    assert result.status == "completed", result.error
+    assert seen == ["review", "revision", "review"]
+    assert "REVİZE" in (result.project_dir / "docs" / "architecture.md").read_text(encoding="utf-8")
+    report = (result.output_dir / "design_review.md").read_text(encoding="utf-8")
+    assert "ONAYLANDI" in report and "2 tur" in report
+
+
+def test_regenerate_from_stage_keeps_earlier_work(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    calls = []
+
+    class CountingEngine(StubEngine):
+        def document(self, stage, idea, context):
+            calls.append(stage)
+            return super().document(stage, idea, context)
+
+    first = run_project("Regen API", workspace=tmp_path, engine=CountingEngine(), decisions=BACKEND)
+    assert first.status == "completed", first.error
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    assert db.reset_from(first.id, "design")
+    calls.clear()
+    again = run_project("", workspace=tmp_path, engine=CountingEngine(), resume_run_id=first.id)
+    assert again.status == "completed", again.error
+    assert calls == ["design", "review", "deployment", "maintenance"]
+
+
+def test_stale_running_run_is_recovered_and_deletable(tmp_path):
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    reports = tmp_path / "runs" / "stale1234567"
+    project = tmp_path / "projects" / "stale"
+    reports.mkdir(parents=True)
+    (project / ".git").mkdir(parents=True)
+    readonly = project / ".git" / "object"
+    readonly.write_text("x", encoding="utf-8")
+    readonly.chmod(0o444)
+    db.create("stale1234567", "Yarım kalan", reports, project)
+    with db._connect() as conn:
+        conn.execute("UPDATE runs SET heartbeat_at='2000-01-01T00:00:00+00:00', pause_requested=1")
+    assert db.recover_stale() == ["stale1234567"]
+    row = db.get("stale1234567")
+    assert row["status"] == "paused" and row["events"][-1]["status"] == "interrupted"
+    delete_project(tmp_path, "stale1234567")
+    assert not project.exists() and db.get("stale1234567") is None
+
+
+def test_lifecycle_states_and_diagram():
+    from autosdlc.lifecycle import counters, render_svg, stage_states
+
+    events = [
+        {"stage": "planning", "status": "completed", "detail": ""},
+        {"stage": "design", "status": "completed", "detail": ""},
+        {"stage": "review", "status": "changes_requested", "detail": "tur 1"},
+        {"stage": "design", "status": "revision_completed", "detail": ""},
+        {"stage": "testing", "status": "traceability", "detail": "FR kapsamı %75"},
+        {"stage": "workflow", "status": "reset", "detail": "design"},
+    ]
+    states = stage_states(events, "paused")
+    assert states["planning"] == "done" and states["design"] == "pending" and states["review"] == "pending"
+    loops = counters(events)
+    assert loops["coverage"] == "75" and loops["revisions"] == 0
+    svg = render_svg(stage_states(events[:4], "running"), counters(events[:4]))
+    assert svg.startswith("<svg") and "revizyon ×1" in svg and "sdlc-halo" in svg

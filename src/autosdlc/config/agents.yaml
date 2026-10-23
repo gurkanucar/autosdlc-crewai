@@ -14,6 +14,11 @@ design:
   goal: Seçilen teknolojiyle mimariyi, arayüzleri, diyagramları ve veri modelini tasarlamak.
   backstory: Kullanıcı kararlarına uyan ve tasarım gerekçelerini belgeleyen bir yazılım mimarı.
 
+review:
+  role: Mimari İnceleme Ajanı
+  goal: Tasarımı gereksinimlere, kararlara ve kalite özelliklerine göre bağımsız olarak denetlemek.
+  backstory: Kod yazılmadan önce eksik gereksinimleri, tutarsız sözleşmeleri ve riskli kararları yakalayan kıdemli bir yazılım mimarı ve gözden geçirme sorumlusu.
+
 development:
   role: Geliştirme Ajanı
   goal: İstenen teknolojiyle çalışan kodu üretmek ve test hatalarını düzeltmek.

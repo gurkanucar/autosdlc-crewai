@@ -1,11 +1,14 @@
-BASE_PYTHON ?= python
 .DEFAULT_GOAL := run
 ifeq ($(OS),Windows_NT)
+BASE_PYTHON ?= python
 VENV_PYTHON := .venv/Scripts/python.exe
 else
+# macOS/Linux'ta çoğu kurulumda yalnızca python3 bulunur.
+BASE_PYTHON ?= python3
 VENV_PYTHON := .venv/bin/python
 endif
 PYTHON := $(VENV_PYTHON)
+export PYTHONUTF8 := 1
 export TEMP := $(CURDIR)/.tmp
 export TMP := $(CURDIR)/.tmp
 export TMPDIR := $(CURDIR)/.tmp
