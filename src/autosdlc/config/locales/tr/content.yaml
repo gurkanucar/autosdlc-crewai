@@ -13,6 +13,21 @@ Python 3.12, pytest: Python 3.12, pytest
 : 'Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü, tests/ altında tek test dosyası,
   project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve
   2 NFR yaz.'
+Calculator (Python, CLI): Hesap makinesi (Python, CLI)
+A command-line calculator for the four basic operations; one module, one test file, short documents.: Dört işlem
+  yapan komut satırı hesap makinesi; tek modül, tek test dosyası, kısa belgeler.
+? 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication and
+  division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
+  code.'
+: 'Dört işlem yapan komut satırı hesap makinesi: toplama, çıkarma, çarpma ve bölme. Kullanım: calc 6 / 3 çıktısı
+  2 olsun. Sıfıra bölme açık bir hata mesajı yazsın ve sıfırdan farklı bir çıkış koduyla bitsin.'
+Python 3.12, argparse, pytest: Python 3.12, argparse, pytest
+? 'Use no external dependencies; standard library only. Fewest files: one source module, a single test file under
+  tests/, project.yaml and a Dockerfile. Keep every SDLC document short (at most half a page each); write at most
+  3 FRs and 2 NFRs.'
+: 'Dış bağımlılık kullanma; yalnızca standard library. En az dosya: tek kaynak modülü, tests/ altında tek test dosyası,
+  project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve
+  2 NFR yaz.'
 Inventory tracker (Node.js, fullstack): Envanter takip uygulaması (Node.js, fullstack)
 A simple web application that keeps stock records with product name, category and location.: Ürün adı, kategori
   ve konum bilgisiyle stok kaydı tutan basit bir web uygulaması.
@@ -44,7 +59,6 @@ A small CLI tool that converts length, weight and temperature units.: Uzunluk, a
   unit.
 : Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren CLI aracı. Örneğin "convert 10 km mi" komutu 10 kilometreyi
   mile çevirsin. Desteklenen birimleri listeleyen bir komut ve hatalı birim için açık hata mesajı olsun.
-Python 3.12, argparse, pytest: Python 3.12, argparse, pytest
 Use no external dependencies; standard library only.: Dış bağımlılık kullanma; yalnızca standard library.
 Text helpers (Python, library): Metin yardımcıları (Python, library)
 A library offering slug generation and text cleanup functions that handle Turkish characters correctly.: Türkçe

@@ -1251,6 +1251,7 @@ def test_small_scale_revises_design_only_for_critical_findings(tmp_path, monkeyp
     run_project("Küçük API", workspace=tmp_path / "a", engine=high, decisions=small)
     assert high.design_calls == 1
     assert any("SMALL PROJECT" in context for stage, context in high.prompts if stage == "analysis")
+    assert any("SMALL PROJECT REVIEW" in context for stage, context in high.prompts if stage == "review")
     critical = CriticalReviewEngine("Kritik")
     run_project("Küçük API", workspace=tmp_path / "b", engine=critical, decisions=small)
     assert critical.design_calls == 2

@@ -43,6 +43,7 @@ VERDICT = re.compile(r"(?:VERDICT|KARAR):\s*\**\s*(APPROVE|REVISE|ONAY|REV[İI]Z
 CRITICAL_FINDING = re.compile(r"^\s*\|[^|\n]*\|\s*\**\s*(?:Critical|Kritik)\b", re.IGNORECASE | re.MULTILINE)
 # Maximum document length (characters) in a small project; the agent is told not to exceed it.
 SMALL_DOC_LIMIT = 3500
+SMALL_REVIEW_LIMIT = 2000
 # Stages a change request may skip; development and testing always run.
 SKIPPABLE_STAGES = ("analysis", "design", "review", "deployment", "maintenance")
 # First line of deployment/maintenance documents; recognised in any language through the marker comment.
@@ -402,6 +403,13 @@ class RunSession:
             prompt = self._change_instruction(stage) + instruction + gate_feedback
             if base:
                 prompt += self._patch_instruction(base)
+            elif self.small and stage == "review":
+                # The review is the model's most expensive step (long hidden reasoning); a small project needs a short one.
+                prompt += (
+                    "SMALL PROJECT REVIEW: report at most 5 findings and only real risks. Do NOT walk through every "
+                    f"requirement. The whole report must stay under {SMALL_REVIEW_LIMIT} characters: the findings table, "
+                    "then the VERDICT line.\n\n"
+                )
             elif self.small:
                 prompt += (
                     f"SMALL PROJECT: keep the document to about {SMALL_DOC_LIMIT} characters at most. Write only the "

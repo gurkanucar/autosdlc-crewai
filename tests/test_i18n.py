@@ -115,3 +115,12 @@ def test_stored_english_details_are_translated_when_displayed():
 
 def test_language_names_are_listed():
     assert set(LANGUAGES) == {"en", "tr"} and LANGUAGES["tr"] == "Türkçe"
+
+
+def test_coverage_counter_reads_current_and_legacy_event_details():
+    from autosdlc.lifecycle import counters
+
+    current = [{"stage": "testing", "status": "traceability", "detail": "FR coverage 80%"}]
+    legacy = [{"stage": "testing", "status": "traceability", "detail": "FR kapsamı %100"}]
+    assert counters(current)["coverage"] == "80" and counters(legacy)["coverage"] == "100"
+    assert counters([{"stage": "testing", "status": "traceability", "detail": "?"}])["coverage"] is None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
@@ -109,7 +110,9 @@ def counters(events: list[dict]) -> dict[str, object]:
         elif status == "question":
             result["questions"] += 1
         elif stage == "testing" and status == "traceability":
-            result["coverage"] = event["detail"].rsplit("%", 1)[-1]
+            # "FR coverage 80%" (current) or "FR kapsamı %80" (runs recorded before the details were stored in English).
+            found = re.search(r"(\d+)\s*%|%\s*(\d+)", event["detail"])
+            result["coverage"] = (found.group(1) or found.group(2)) if found else None
     return result
 
 

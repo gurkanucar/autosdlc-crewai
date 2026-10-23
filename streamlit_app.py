@@ -100,7 +100,7 @@ MERMAID_SCRIPT = (
     '</script>'
 )
 FORM_FIELDS = {"project_type", "stack", "constraints"}
-FORM_LABELS = {"database": "Database", "cache": "Cache", "observability": "Observability", "ui": "Web UI",
+FORM_LABELS = {"database": "Database", "cache": "Cache", "observability": "Monitoring", "ui": "Web UI",
                "scale": "Scale", "language": "Document language"}
 
 st.html("""<style>
