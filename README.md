@@ -15,11 +15,11 @@ Fikir → Planning → Analysis → Design → Developer → Tester + pytest
                                         Deployment → Maintenance
 ```
 
-CrewAI Flow aşama sırasını yönetir. Beş CrewAI ajanının rolü ve hedefi
+CrewAI Flow aşama sırasını yönetir. Yedi CrewAI ajanının rolü ve hedefi
 [`agents.yaml`](src/autosdlc/config/agents.yaml), görevleri ve beklenen çıktıları
 [`tasks.yaml`](src/autosdlc/config/tasks.yaml) içindedir. Bu dosyaları düzenleyerek
-ajan talimatlarını değiştirebilirsin. Dağıtım ve bakım belgelerini kontrollü
-Python adımları oluşturur.
+ajan talimatlarını değiştirebilirsin. Dağıtım ve bakım raporlarını ilgili ajanlar
+yazar; Flow gerçek pytest sonucunu bu ajanlara iletir. Dockerfile akışta hazırlanır.
 
 ## Gereksinimler
 

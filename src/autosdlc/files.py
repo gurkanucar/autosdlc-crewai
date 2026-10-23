@@ -19,12 +19,16 @@ def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
             path.is_absolute()
             or ".." in path.parts
             or "\\" in name
+            or ":" in name
+            or "\x00" in name
             or not name.startswith(ALLOWED_PREFIXES)
             or path.suffix != ".py"
             or len(content.encode("utf-8")) > 50_000
         ):
             raise ValueError(f"Disallowed generated file: {name}")
         target = project_dir.joinpath(*path.parts)
+        if not target.resolve().is_relative_to(project_dir.resolve()):
+            raise ValueError(f"Generated file escapes project: {name}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
 

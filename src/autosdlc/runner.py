@@ -8,6 +8,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from .crewai_engine import CrewAIEngine
 from .files import write_generated_files
@@ -37,12 +38,18 @@ class RunResult:
     error: str | None = None
 
 
+class StageEngine(Protocol):
+    def document(self, stage: str, idea: str, context: str) -> str: ...
+    def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]: ...
+    def tests(self, idea: str, docs: str, files: dict[str, str]) -> dict[str, str]: ...
+
+
 class RunSession:
     def __init__(
         self,
         idea: str,
         workspace: Path,
-        engine: CrewAIEngine,
+        engine: StageEngine,
         max_repairs: int,
     ):
         self.idea = idea.strip()
@@ -68,9 +75,20 @@ class RunSession:
     def _document(self, stage: str, filename: str) -> str:
         self._event(stage, "started")
         context = "\n\n".join(self.docs.values())
+        if stage in {"deployment", "maintenance"}:
+            context += (
+                f"\n\nActual test status: {'PASS' if self.test_passed else 'FAIL'}"
+                f" after {self.attempts} attempt(s).\n"
+                f"Latest pytest output:\n{self.last_test_output[-5000:]}"
+            )
         content = self.engine.document(stage, self.idea, context)
         if not content.strip():
             raise ValueError(f"{stage} agent returned an empty document")
+        if stage in {"deployment", "maintenance"}:
+            content = (
+                f"> Verified pytest status: **{'PASS' if self.test_passed else 'FAIL'}** "
+                f"after {self.attempts} attempt(s).\n\n{content}"
+            )
         self.docs[stage] = content
         (self.output_dir / filename).write_text(content, encoding="utf-8")
         self._event(stage, "completed", filename)
@@ -156,36 +174,12 @@ class RunSession:
         return summary
 
     def deployment(self) -> str:
-        self._event("deployment", "started")
         (self.project_dir / "Dockerfile").write_text(DOCKERFILE, encoding="utf-8")
-        status = "ready for local Docker build" if self.test_passed else "blocked by failed tests"
-        (self.output_dir / "deployment.md").write_text(
-            "# Deployment\n\n"
-            f"Status: **{status}**.\n\n"
-            "Build: `docker build -t autosdlc-example .` from `project/`.\n\n"
-            "Run: `docker run --rm -p 8000:8000 -v task_data:/data autosdlc-example`.\n",
-            encoding="utf-8",
-        )
-        self._event("deployment", "completed", status)
-        return status
+        report = self._document("deployment", "deployment.md")
+        return report
 
     def maintenance(self) -> str:
-        self._event("maintenance", "started")
-        items = [
-            "Review generated source and tests before any real deployment.",
-            "Add authentication, migrations, monitoring and backups for production use.",
-            "Keep Python dependencies updated and rerun pytest after changes.",
-        ]
-        if not self.test_passed:
-            items.insert(0, "Resolve the remaining pytest failures in test_report.md.")
-        report = (
-            "# Maintenance report\n\n"
-            f"Latest test result: **{'PASS' if self.test_passed else 'FAIL'}**.\n\n"
-            "## Follow-up work\n" + "\n".join(f"- {item}" for item in items) + "\n"
-        )
-        (self.output_dir / "maintenance_report.md").write_text(report, encoding="utf-8")
-        self._event("maintenance", "completed")
-        return report
+        return self._document("maintenance", "maintenance_report.md")
 
     def result(self, error: str | None = None) -> RunResult:
         status = "failed" if error or not self.test_passed else "completed"
@@ -235,7 +229,7 @@ def run_project(
     max_repairs: int = 2,
     api_key: str | None = None,
     model: str | None = None,
-    engine: CrewAIEngine | None = None,
+    engine: StageEngine | None = None,
 ) -> RunResult:
     if not idea.strip() or len(idea) > 1000:
         raise ValueError("Project idea must be 1–1000 characters")

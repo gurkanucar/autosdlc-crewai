@@ -10,6 +10,7 @@ from string import Template
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
 
 GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
@@ -38,8 +39,9 @@ class CrewAIEngine:
             from crewai import Agent, BaseLLM, Crew, Process, Task
             import yaml
         except ImportError as exc:
-            raise RuntimeError('AI dependencies are missing. Install with: pip install -e ".[ai]"') from exc
+            raise RuntimeError("Dependencies are missing. Install with: pip install -e .") from exc
 
+        load_dotenv()
         self.key = api_key or os.getenv("OPENCODE_API_KEY", "")
         if not self.key:
             raise RuntimeError("OPENCODE_API_KEY is required")
@@ -58,6 +60,7 @@ class CrewAIEngine:
                 tools: list[dict] | None = None,
                 callbacks: list[Any] | None = None,
                 available_functions: dict[str, Any] | None = None,
+                **_kwargs: Any,
             ) -> str:
                 if tools:
                     raise ValueError("This project does not grant agents external tools")

@@ -52,3 +52,24 @@ testing:
     Test successful behavior and at least one invalid input. Use tmp_path and monkeypatch for database isolation.
     No markdown fences, network requests, shell calls or dynamic code execution.
   expected_output: Valid JSON containing complete pytest source files under the files key.
+
+deployment:
+  description: |
+    Project idea: $idea
+    Previous SDLC artifacts and actual test result:
+    $context
+    Write a concise Markdown deployment report for the generated FastAPI application.
+    The workflow has prepared a Dockerfile, but do not claim an image was built or deployed.
+    State clearly if tests failed and deployment is blocked. Include local build and run commands.
+    Do not include API keys or secrets. Output Markdown only.
+  expected_output: An honest Markdown deployment report with readiness status and commands.
+
+maintenance:
+  description: |
+    Project idea: $idea
+    Previous SDLC artifacts and actual test result:
+    $context
+    Write a concise Markdown maintenance report with known limitations, unresolved
+    test failures if any, and prioritized improvements. Do not claim issues have been fixed
+    or production monitoring is active. Output Markdown only.
+  expected_output: A concrete Markdown maintenance report with next actions.
