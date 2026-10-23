@@ -38,6 +38,19 @@ sayfayı yenilemeden kendini günceller:
 - **Ajan akışı (chat):** ajanların ilerleme mesajları, soruları ve senin yanıtların. Bir ajan karar isterse soru burada görünür ve chat kutusuna yazdığın metin yanıt olarak gider. Soru yoksa yazdığın metin **yönlendirme notu** olarak kaydedilir ve sonraki aşamaların ajan bağlamına eklenir (ör. "arayüz koyu tema olsun").
 - **Üst bar:** ⏸ Durdur, ▶ Devam et ve ⚙️ Yönet (fikri/kısıtları düzenle, bir aşamadan itibaren yeniden üret, projeyi sil).
 
+**Çıktıları indirme:** README'nin yanındaki **İndir** menüsünden tüm proje ve SDLC
+çıktılarını tek ZIP olarak, yalnızca belgeleri/raporları veya kaynak kodları ayrı
+paketler olarak indirebilirsin. Tam pakette `proje/` kaynakları, `sdlc/` tüm aşama
+çıktılarını içerir. Henüz bitmemiş çalışmalarda o ana kadar üretilen dosyalar alınır.
+Yerel `.env` dosyaları ve bağımlılık klasörleri pakete katılmaz; `.env.example` korunur.
+Her belgenin **Büyüt** düğmesinin yanında tek dosya indirme düğmesi de vardır.
+README tam genişlikte açıldığında üstteki **İndir** düğmesini kullanabilirsin.
+
+Yaşam döngüsünün düğüm grafiğini **Büyüt** ile açıp boyutunu ayarlayabilir,
+**SVG indir** ile görüntü olarak saklayabilirsin. Büyütülmüş görünümde durumlar
+canlı güncellenir. Belgeler ve Mermaid diyagramları içerik yüksekliğine göre açılır;
+uzun belgeleri sayfanın kaydırma çubuğuyla okuyabilirsin.
+
 Durdurma o sırada süren ajan çağrısı bitince uygulanır; devam ettirince tamamlanmış
 aşamalar yeniden üretilmez. Çalışan iş her 10 saniyede bir kalp atışı
 yazar. Arayüz kapanır ya da bilgisayar uyursa, iş kesintiye uğramış kabul edilip

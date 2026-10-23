@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import re
 import threading
 import time
 import uuid
-import zipfile
 from html import escape
 from pathlib import Path
 
@@ -18,6 +16,7 @@ import yaml
 from dotenv import load_dotenv
 
 from autosdlc.crewai_engine import CrewAIEngine
+from autosdlc.exports import export_files, export_zip
 from autosdlc.intake import choice_label, questions, templates, validate_decisions
 from autosdlc.lifecycle import (
     STAGE_KEYS, STAGE_NAMES, STAGES, counters, format_duration, render_svg, stage_metrics, stage_states,
@@ -73,24 +72,39 @@ STAGE_DOCUMENTS = {
     "deployment": [("deployment.md", "Dağıtım kılavuzu", "maintenance")],
     "maintenance": [("maintenance_report.md", "Bakım planı", None)],
 }
-SKIPPED_DIRS = {".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__", ".pytest_cache", "test-results", "dist", "build", "target"}
 LANGUAGES = {".py": "python", ".js": "javascript", ".ts": "typescript", ".go": "go", ".rs": "rust", ".java": "java",
              ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".html": "html", ".css": "css", ".md": "markdown",
              ".toml": "toml", ".sql": "sql", ".sh": "bash"}
 MERMAID_BLOCK = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 MERMAID_SCRIPT = (
     '<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";'
-    'mermaid.initialize({startOnLoad:true,theme:"neutral",securityLevel:"strict"});</script>'
+    'mermaid.initialize({startOnLoad:false,theme:"neutral",securityLevel:"strict"});'
+    'try {await mermaid.run({querySelector:".mermaid"});} catch(e) {'
+    'document.querySelector(".mermaid").textContent="Diyagram çizilemedi. Markdown dosyasını indirerek kaynağı inceleyebilirsin.";}'
+    '</script>'
 )
 FORM_FIELDS = {"project_type", "stack", "constraints"}
 
 st.html("""<style>
-.block-container {padding-top:3.2rem; padding-bottom:6rem; max-width:100%;}
-div[data-testid="stMetric"] {background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:4px 12px;}
-div[data-testid="stMetricValue"] {font-size:1.15rem;}
+.block-container {padding-top:4.5rem; padding-bottom:5rem; max-width:1600px;}
+[data-testid="stAppViewContainer"] {background:#f8fafc;}
+[data-testid="stHeader"] {background:rgba(248,250,252,.96);}
+[data-testid="stSidebar"] {border-right:1px solid #e2e8f0;}
+[data-testid="stVerticalBlockBorderWrapper"] {border-radius:16px;}
+div[data-testid="stMetric"] {background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;}
+div[data-testid="stMetricValue"] {font-size:1.3rem;}
 div[data-testid="stMetricLabel"] p {font-size:.78rem;}
-h1 {font-size:1.7rem !important; padding-bottom:.2rem !important;}
-h4 {padding:.1rem 0 !important;}
+h1 {font-size:1.85rem !important; line-height:1.35 !important; padding:.25rem 0 .6rem !important;}
+h4 {line-height:1.45 !important; padding:.35rem 0 !important;}
+.project-title {font-size:1.8rem;line-height:1.4;font-weight:700;color:#102a43;overflow-wrap:anywhere;margin:0 0 .4rem;}
+button {border-radius:9px !important;}
+[data-testid="stButtonGroup"] [role="radiogroup"] {gap:8px;flex-wrap:wrap;}
+[data-testid="stButtonGroup"] button[role="radio"] {margin:0 !important;}
+[data-testid="stCaptionContainer"] {overflow-wrap:anywhere;}
+@media(max-width:768px) {
+ .block-container {padding:4.5rem 1rem 3rem;}
+ .project-title {font-size:1.4rem;}
+}
 div[data-testid="stChatMessage"] {padding:.3rem .55rem; gap:.55rem; margin-bottom:.1rem;}
 div[data-testid="stChatMessage"] p {margin-bottom:.05rem; font-size:.88rem; line-height:1.35;}
 div[data-testid="stChatMessageAvatarUser"], div[data-testid="stChatMessageAvatarAssistant"] {width:1.6rem;height:1.6rem;}
@@ -167,12 +181,14 @@ def api_key_field(prefix: str) -> tuple[bool, str | None]:
     return bool(key), key
 
 
-def show_diagram(svg: str, height: int = 232) -> None:
-    # st.html SVG'yi temizlediği için diyagram yalıtılmış bir iframe içinde çizilir.
-    sized = svg.replace('width="100%"', f'width="100%" style="max-height:{height - 6}px"', 1)
-    # Yalnızca kendi ürettiğimiz (metinleri kaçışlanmış) SVG verilir; LLM çıktısı ham HTML olarak iframe'e girmez.
-    st.iframe(f'<body style="margin:0;background:transparent"><div style="display:flex;justify-content:center">{sized}</div></body>',
-              height=height)
+def show_diagram(svg: str, *, zoom: int = 100) -> None:
+    # SVG'nin oranını koru. İçerik yüksekliği genişlik/zoom ile birlikte ölçülür; alt etiketler kesilmez.
+    st.iframe(
+        '<style>html,body{margin:0;padding:0;background:transparent} '
+        'svg{display:block;width:100%;height:auto} .graph{min-width:860px}</style>'
+        f'<div class="graph" style="width:{zoom}%">{svg}</div>',
+        height="content", alt="SDLC yaşam döngüsü düğüm grafiği",
+    )
 
 
 def render_markdown(content: str) -> None:
@@ -182,8 +198,11 @@ def render_markdown(content: str) -> None:
         if content[position:match.start()].strip():
             st.markdown(content[position:match.start()])
         # Mermaid kodu LLM çıktısıdır: escape() ile yalnızca metin olarak verilir, Mermaid de "strict" güvenlik modunda çizer.
-        st.iframe(f'<body style="margin:0">{MERMAID_SCRIPT}<pre class="mermaid">{escape(match.group(1))}</pre></body>',
-                  height="content")
+        st.iframe('<style>html,body{margin:0;padding:0} .mermaid{margin:0;padding:12px 0;white-space:pre-wrap;'
+                  'font-family:system-ui;box-sizing:border-box} .mermaid svg{display:block;width:100%;'
+                  'height:auto;max-height:none!important;margin:auto}</style>'
+                  f'<pre class="mermaid">{escape(match.group(1))}</pre>{MERMAID_SCRIPT}',
+                  height="content", alt="Belge Mermaid diyagramı")
         position = match.end()
     if content[position:].strip():
         st.markdown(content[position:])
@@ -328,23 +347,8 @@ def handle_chat(db: History, row: dict) -> None:
 # ---------------------------------------------------------------- aşama detayı
 
 def project_files(project_dir: Path) -> list[Path]:
-    files = []
     # Nokta dosyaları sona: ilk açılan dosya .dockerignore değil, gerçek kaynak olsun.
-    for path in sorted(project_dir.rglob("*"), key=lambda item: (item.name.startswith("."), str(item))):
-        relative = path.relative_to(project_dir)
-        if path.is_file() and not SKIPPED_DIRS.intersection(relative.parts):
-            files.append(relative)
-        if len(files) >= 300:
-            break
-    return files
-
-
-def project_zip(project_dir: Path, files: list[Path]) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for relative in files:
-            archive.write(project_dir / relative, Path(project_dir.name) / relative)
-    return buffer.getvalue()
+    return sorted(export_files(project_dir), key=lambda item: (item.name.startswith("."), str(item)))
 
 
 def save_document(db: History, row: dict, filename: str, content: str, stage: str) -> None:
@@ -416,16 +420,30 @@ def open_focus(row: dict, path: Path, title: str) -> None:
 
 def focus_view(focus: dict) -> None:
     """Belgeyi ya da README'yi tam genişlikte, kutu yüksekliği sınırı olmadan gösterir."""
-    back, title = st.columns([1, 8], vertical_alignment="center")
+    back, title, download = st.columns([1.2, 6, 1.5], vertical_alignment="center")
     if back.button("← Geri", width="stretch"):
         st.session_state.pop("focus")
         st.rerun()
     title.markdown(f"#### {escape(focus['title'])}")
+    if focus.get("kind") == "graph":
+        zoom = st.slider("Grafik boyutu", 100, 200, 125, 25, format="%%%d")
+        def live_graph():
+            row = history().get(focus["run"])
+            svg = lifecycle_svg(row)
+            st.download_button("SVG indir", svg, file_name="yasam-dongusu.svg", mime="image/svg+xml",
+                               icon=":material/download:", on_click="ignore")
+            show_diagram(svg, zoom=zoom)
+            st.caption(describe_activity(row, stage_states(row["events"], row["status"])))
+        st.fragment(live_graph, run_every=2)()
+        return
     st.caption(f"`{focus['path']}`")
-    content = read_text(Path(focus["path"]))
+    path = Path(focus["path"])
+    content = read_text(path)
     if content is None:
         st.warning("Dosya bulunamadı.")
     else:
+        download.download_button("İndir", content, file_name=path.name, mime="text/markdown",
+                                 icon=":material/download:", width="stretch", on_click="ignore")
         render_markdown(content)
 
 
@@ -531,12 +549,15 @@ def document_view(db: History, row: dict, stage: str) -> None:
     content = read_text(output / filename) or ""
     can_edit = regen_from is not None and row["status"] != "running"
     modes = {"read": "📖 Oku", "section": "🎯 Bölüm", **({"full": "✏️ Tamamı"} if can_edit else {})}
-    info, mode_col, full = st.columns([2, 2.6, 0.5], vertical_alignment="center")
+    info, mode_col = st.columns([2, 3], vertical_alignment="center")
     info.caption(f"📄 `{filename}`" + ("" if can_edit else " · salt okunur" if regen_from is None else " · çalışma sürerken düzenlenemez"))
     mode = mode_col.segmented_control("Mod", list(modes), format_func=modes.get, default="read",
                                       key=f"mode_{row['id']}_{filename}", label_visibility="collapsed") or "read"
-    if full.button("⛶", key=f"focus_{row['id']}_{filename}", help="Tam ekran"):
-        open_focus(row, output / filename, f"{label} · {row['idea'][:60]}")
+    with st.container(horizontal=True):
+        if st.button("Büyüt", icon=":material/open_in_full:", key=f"focus_{row['id']}_{filename}", help="Belgeyi tam genişlikte aç"):
+            open_focus(row, output / filename, label)
+        st.download_button("İndir", content, file_name=filename, mime="text/markdown",
+                           icon=":material/download:", key=f"download_{row['id']}_{filename}", on_click="ignore")
     if mode == "section":
         section_panel(db, row, stage, filename, content, can_edit)
     elif mode == "full":
@@ -546,7 +567,7 @@ def document_view(db: History, row: dict, stage: str) -> None:
             st.toast("Kaydedildi; sonraki aşamalar 'güncel değil' olarak işaretlendi.")
             st.rerun()
     else:
-        with st.container(height=360, border=True):
+        with st.container(border=True):
             render_markdown(content)
 
 
@@ -558,10 +579,13 @@ def code_view(row: dict) -> None:
         return
     pick, download = st.columns([3, 1], vertical_alignment="bottom")
     selected = pick.selectbox(f"Dosyalar ({len(files)})", files, format_func=lambda path: path.as_posix(), key=f"file_{row['id']}")
-    download.download_button("⬇️ ZIP", project_zip(project_dir, files), file_name=f"{project_dir.name}.zip",
-                             mime="application/zip", width="stretch")
+    download.download_button("Kod ZIP", lambda: export_zip(project_dir, Path(row["output_dir"]), "code"),
+                             file_name=f"{row['id']}-kod.zip", icon=":material/download:",
+                             mime="application/zip", width="stretch", on_click="ignore")
+    st.download_button("Dosyayı indir", lambda: (project_dir / selected).read_bytes(), file_name=selected.name,
+                       icon=":material/download:", key=f"source_download_{row['id']}", on_click="ignore")
     text = read_text(project_dir / selected)
-    with st.container(height=330, border=True):
+    with st.container(border=True):
         if text is None:
             st.caption("Metin olmayan dosya.")
         else:
@@ -599,6 +623,13 @@ def selected_stage(run_id: str, states: dict[str, str]) -> tuple[str, bool]:
     return picked or active_stage(states), picked is not None
 
 
+def lifecycle_svg(row: dict, selected: str | None = None) -> str:
+    metrics = stage_metrics(row["events"])
+    durations = {key: format_duration(value["seconds"]) for key, value in metrics.items() if not value["running"]}
+    runs = {key: value["runs"] for key, value in metrics.items()}
+    return render_svg(stage_states(row["events"], row["status"]), counters(row["events"]), selected, durations, runs)
+
+
 def overview(run_id: str) -> None:
     """Diyagram, tıklanabilir aşama seçici ve metrikler. Çalışırken kendi kendine yenilenir."""
     db = history()
@@ -610,26 +641,32 @@ def overview(run_id: str) -> None:
     loops = counters(row["events"])
     metrics = stage_metrics(row["events"])
     selected, picked = selected_stage(run_id, states)
-    # Çalışan aşamanın süresi diyagrama yazılmaz; böylece diyagram yalnızca durum değişince yeniden çizilir.
-    durations = {key: format_duration(value["seconds"]) for key, value in metrics.items() if not value["running"]}
-    runs = {key: value["runs"] for key, value in metrics.items()}
-    show_diagram(render_svg(states, loops, selected, durations, runs))
+    svg = lifecycle_svg(row, selected)
+    with st.container(border=True):
+        heading, actions = st.columns([3, 2], vertical_alignment="center")
+        heading.markdown("#### Yaşam döngüsü")
+        with actions.container(horizontal=True, horizontal_alignment="right"):
+            if st.button("Büyüt", icon=":material/open_in_full:", key=f"graph_focus_{run_id}"):
+                st.session_state["focus"] = {"run": run_id, "kind": "graph", "title": "Yaşam döngüsü"}
+                st.rerun()
+            st.download_button("SVG indir", svg, file_name="yasam-dongusu.svg", mime="image/svg+xml",
+                               icon=":material/download:", key=f"graph_download_{run_id}", on_click="ignore")
+        show_diagram(svg)
     choice = st.segmented_control(
         "Aşama", STAGE_KEYS, key=f"stage_{run_id}", label_visibility="collapsed", width="stretch",
         format_func=lambda key: f"{STATE_ICONS[states[key]]} {STAGE_NAMES[key]}",
     )
     done = sum(value == "done" for value in states.values())
-    cells = st.columns([1, 1.3, 1, 1, 1, 1.2, 4])
+    cells = st.columns(6)
     cells[0].metric("Aşama", f"{done}/{len(STAGES)}")
     cells[1].metric("Ajan süresi", format_duration(sum(value["seconds"] for value in metrics.values())))
     cells[2].metric("İnceleme", f"{loops['review_rounds']} tur")
     cells[3].metric("Test", f"{loops['test_runs']}×")
     cells[4].metric("Onarım", loops["repairs"])
     cells[5].metric("FR kapsamı", f"%{loops['coverage']}" if loops["coverage"] is not None else "—")
-    with cells[6]:
-        activity = describe_activity(row, states)
-        {"completed": st.success, "failed": st.error, "paused": st.warning}.get(row["status"], st.info)(
-            activity + ("" if picked else "  \n_Bir aşamaya tıkla; seçmezsen görünüm aktif aşamayı izler._"))
+    activity = describe_activity(row, states)
+    {"completed": st.success, "failed": st.error, "paused": st.warning}.get(row["status"], st.info)(
+        activity + ("" if picked else "  \n_Bir aşamaya tıkla; seçmezsen görünüm aktif aşamayı izler._"))
     stale = [key for key in STAGE_KEYS if states[key] == "stale"]
     if stale and row["status"] != "running":
         stale_banner(db, row, stale)
@@ -744,21 +781,35 @@ def changes_dialog(run_id: str) -> None:
 
 def header(db: History, row: dict) -> None:
     run_id = row["id"]
-    title, status, actions = st.columns([3.4, 1.3, 5.3], vertical_alignment="center")
+    title, status = st.columns([8, 1.5], vertical_alignment="center")
     with title:
-        st.markdown(f"#### {escape(row['idea'][:140])}")
+        st.markdown(f'<div class="project-title" role="heading" aria-level="1">{escape(row["idea"])}</div>', unsafe_allow_html=True)
         # Tam yol başlığı birkaç satıra yayıyor; yalnızca klasör adı (tam yol README görünümünde ve Yönet menüsünde).
         st.caption(f"`{run_id}` · model `{row['model'] or '—'}` · 📁 `{Path(row['project_dir']).name}`")
     with status:
         icon, label, color = STATUS_LABELS.get(row["status"], ("⚪", row["status"], "gray"))
         st.badge(label, icon=icon, color=color)
-    with actions:
-        primary, changes, readme, manage = st.columns([1.3, 1.45, 1.25, 1.1])
+    with st.container(horizontal=True):
+        primary = st.container(width="content")
+        changes = st.container(width="content")
+        readme = st.container(width="content")
+        downloads = st.container(width="content")
+        manage = st.container(width="content")
         if changes.button("📝 Değişiklik", key=f"changes_{run_id}", width="stretch", help="Yeni özellik, hata ya da değişiklik talebi"):
             changes_dialog(run_id)
         readme_path = Path(row["project_dir"]) / "README.md"
         if readme.button("📘 README", key=f"readme_{run_id}", width="stretch", disabled=not readme_path.is_file()):
-            open_focus(row, readme_path, f"README · {row['idea'][:60]}")
+            open_focus(row, readme_path, "README")
+        with downloads.popover("İndir", icon=":material/download:", width="stretch"):
+            st.markdown("**Proje çıktıları**")
+            st.caption("Şu ana kadar üretilen dosyalar indirilir. Bağımlılıklar ve yerel .env dosyaları dahil edilmez.")
+            for kind, label in [("all", "Tüm proje + SDLC çıktıları"), ("documents", "Tüm belgeler ve raporlar"), ("code", "Kaynak kodlar")]:
+                st.download_button(label, lambda kind=kind: export_zip(Path(row["project_dir"]), Path(row["output_dir"]), kind),
+                                   file_name=f"{run_id}-{kind}.zip", mime="application/zip", icon=":material/download:",
+                                   key=f"bundle_{run_id}_{kind}", width="stretch", on_click="ignore")
+            if readme_path.is_file():
+                st.download_button("README.md", lambda: readme_path.read_bytes(), file_name="README.md", mime="text/markdown",
+                                   key=f"readme_download_{run_id}", width="stretch", on_click="ignore")
         if row["status"] == "running":
             if primary.button("⏸ Durdur", key=f"pause_{run_id}", width="stretch", disabled=bool(row["pause_requested"])):
                 db.request_pause(run_id)
@@ -965,19 +1016,21 @@ def home_page() -> None:
         idea = st.text_area("Ne geliştirmek istiyorsun?", key="idea_input", height=100,
                             placeholder="Örn: Küçük işletme için stok takip uygulaması; ürün ekleme, stok hareketi ve kritik stok uyarısı")
         catalog = questions()
-        type_col, stack_col = st.columns([1, 2])
+        type_col, stack_col = st.columns([1, 2], vertical_alignment="bottom")
         project_type = type_col.selectbox(
-            catalog["project_type"]["question"], catalog["project_type"]["options"],
+            "Proje türü", catalog["project_type"]["options"], help=catalog["project_type"]["question"],
             key="project_type_input", format_func=lambda value: choice_label("project_type", value),
         )
-        stack = stack_col.text_input(catalog["stack"]["question"], key="stack_input", placeholder="Örn: Node.js/Express, pnpm, sade HTML/CSS/JS")
+        stack = stack_col.text_input("Dil ve teknolojiler", help=catalog["stack"]["question"],
+                                     key="stack_input", placeholder="Örn: Node.js/Express, pnpm, sade HTML/CSS/JS")
         decisions = {"project_type": project_type, "stack": stack}
         options = [(name, item) for name, item in catalog.items()
                    if name not in FORM_FIELDS and (not item.get("when") or project_type in item["when"])]
         if options:
-            for column, (name, item) in zip(st.columns(len(options)), options):
+            labels = {"database": "Veritabanı", "cache": "Önbellek", "observability": "İzleme", "ui": "Web arayüzü"}
+            for column, (name, item) in zip(st.columns(len(options), vertical_alignment="bottom"), options):
                 decisions[name] = column.selectbox(
-                    item["question"], item["options"], key=f"choice_{name}",
+                    labels.get(name, item["question"]), item["options"], key=f"choice_{name}", help=item["question"],
                     format_func=lambda value, key=name: choice_label(key, value),
                 )
         decisions["constraints"] = st.text_area(catalog["constraints"]["question"], key="constraints_input", height=80,
