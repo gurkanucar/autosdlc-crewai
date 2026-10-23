@@ -24,6 +24,20 @@
 
 These status examples use the same fictional project data shown above. The retry state is simulated; screenshots do not represent a real model run.
 
+### Generated documents
+
+Every stage writes a Markdown document that you can read, edit and download. These are cropped views of the example project (English interface, fictional data):
+
+| Requirements (Analysis Agent) | Architecture with Mermaid diagrams (Design Agent) |
+| --- | --- |
+| ![Requirements document with FR and NFR lists](docs/media/doc-requirements.png) | ![Architecture document with component and sequence diagrams](docs/media/doc-architecture.png) |
+| **Architecture review (Review Agent)** | **Traceability matrix (Test Agent)** |
+| ![Review report with a severity table and a verdict](docs/media/doc-review.png) | ![Traceability matrix linking every FR and NFR to tests](docs/media/doc-traceability.png) |
+
+**Edit any section, not just the whole file.** Pick a heading or a single requirement, then ask a question, rewrite, add, delete or edit it by hand. The agent's proposal is shown as a diff that you accept or reject; accepting it marks the later stages as out of date.
+
+![Section-level edit: rewrite FR-02 and review the proposed diff](docs/media/doc-section-edit.png)
+
 ## What it does
 
 - Plans, analyzes requirements, designs and reviews architecture, writes code, runs tests, prepares deployment, and documents maintenance.

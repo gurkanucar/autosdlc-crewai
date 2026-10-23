@@ -24,6 +24,20 @@
 
 Bu durum örnekleri aynı kurgusal proje verisini kullanır. Retry durumu simülasyondur; görseller gerçek bir model çalıştırmasını göstermez.
 
+### Üretilen belgeler
+
+Her aşama okuyabileceğiniz, düzenleyebileceğiniz ve indirebileceğiniz bir Markdown belgesi yazar. Aşağıdakiler örnek projeden kırpılmış görünümlerdir (İngilizce arayüz, kurgusal veri):
+
+| Gereksinimler (Analiz Ajanı) | Mermaid diyagramlı mimari (Tasarım Ajanı) |
+| --- | --- |
+| ![FR ve NFR listeleri içeren gereksinim belgesi](docs/media/doc-requirements.png) | ![Bileşen ve sıralama diyagramları içeren mimari belge](docs/media/doc-architecture.png) |
+| **Mimari inceleme (İnceleme Ajanı)** | **İzlenebilirlik matrisi (Test Ajanı)** |
+| ![Önem tablosu ve karar içeren inceleme raporu](docs/media/doc-review.png) | ![Her FR ve NFR'yi testlere bağlayan izlenebilirlik matrisi](docs/media/doc-traceability.png) |
+
+**Yalnızca tüm dosyayı değil, herhangi bir bölümü düzenleyin.** Bir başlık ya da tek bir gereksinim seçin; ardından soru sorun, yeniden yazdırın, ekleyin, silin veya elle düzenleyin. Ajanın önerisi kabul ya da reddedeceğiniz bir diff olarak görünür; kabul ederseniz sonraki aşamalar güncel değil olarak işaretlenir.
+
+![Bölüm düzeyinde düzenleme: FR-02'yi yeniden yazdırıp önerilen diff'i inceleme](docs/media/doc-section-edit.png)
+
 ## Neler yapar?
 
 - Planlama, gereksinim analizi, mimari tasarım ve inceleme, kodlama, test, dağıtım ve bakım belgelerini üretir.
