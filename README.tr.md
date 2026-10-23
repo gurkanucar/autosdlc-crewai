@@ -4,13 +4,13 @@
 
 **Bir yazılım fikrini yapay zekâ ajanlarıyla testleri ve belgeleri olan bir projeye dönüştürün.** AutoSDLC, CrewAI Flows ile sekiz ajanı yazılım geliştirme yaşam döngüsünde koordine eder ve çalışmayı canlı olarak gösterir. Her proje için teknoloji yığınını siz seçersiniz: üretici Python ile yazılmıştır, oluşturduğu uygulamalar başka dilleri ve framework'leri kullanabilir.
 
+![AutoSDLC uçtan uca: şablon, canlı ajanlar, bir soru, inceleme ve onarım döngüleri, başarısız API çağrısı ve Retry](docs/media/workflow.gif)
+
+*Baştan sona bir çalışma: şablon seç, ajanların canlı çalışmasını izle, bir ajanın sorusunu yanıtla, incelemenin tasarımı geri gönderdiğini ve testlerin onarımı tetiklediğini gör, ardından API kesintisinden sonra Retry yap. Kayıt, senaryolu bir demo motoruyla sürülen gerçek arayüzdür; buradaki proje verileri ve konuşmalar kurgusaldır, model çağrısı yapılmamıştır.*
+
 ![AutoSDLC proje çalışma alanı](docs/media/workspace.png)
 
-*Örnek proje ve ajan sorusu. Görsellerdeki proje verileri ve konuşma kurgusaldır; bunları hazırlarken model çağrısı yapılmamıştır.*
-
 ![Proje oluşturma ekranı](docs/media/new-project.png)
-
-![Ajan sorusunu yanıtlama](docs/media/workflow.gif)
 
 ### SDLC sonuçları
 

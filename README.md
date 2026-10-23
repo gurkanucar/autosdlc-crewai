@@ -4,13 +4,13 @@
 
 **Turn a software idea into a tested, documented project with a team of AI agents.** AutoSDLC coordinates eight agents through the software development lifecycle with CrewAI Flows, and gives you a live view of their work. Choose the stack for each project: the generator is Python, but the applications it creates can use other languages and frameworks.
 
+![AutoSDLC end to end: template, live agents, a question, review and repair loops, a failed API call and Retry](docs/media/workflow.gif)
+
+*One run from start to finish: pick a template, watch the agents work live, answer an agent's question, see the review send the design back and the tests trigger a repair, then retry after an API outage. The recording is the real interface driven by a scripted demo engine; all project data and conversations here are fictional and no model was called.*
+
 ![AutoSDLC project workspace](docs/media/workspace.png)
 
-*Example project and agent question. All project data and the conversation in these images are fictional; no model call was made to create them.*
-
 ![Create a project](docs/media/new-project.png)
-
-![Answer an agent question](docs/media/workflow.gif)
 
 ### Workflow outcomes
 
