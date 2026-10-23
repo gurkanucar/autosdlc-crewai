@@ -91,16 +91,17 @@ def wait_for_answer(current_id: str, stage: str, prompt: str) -> str:
     raise TimeoutError("Kullanıcı yanıtı bir saat içinde gelmedi")
 
 
-def _spawn(run_id: str, name: str, **kwargs) -> None:
-    WORKER_ERRORS.pop(run_id, None)
+def _spawn(job_id: str, name: str, **kwargs) -> None:
+    # job_id, run_project'e giden run_id/resume_run_id ile aynı değerdir ama çakışmasın diye ayrı adlandırılır.
+    WORKER_ERRORS.pop(job_id, None)
 
     def worker() -> None:
         try:
             run_project(workspace=ROOT, on_question=wait_for_answer, **kwargs)
         except Exception as exc:
-            WORKER_ERRORS[run_id] = str(exc)
+            WORKER_ERRORS[job_id] = str(exc)
 
-    threading.Thread(target=worker, daemon=True, name=f"autosdlc-{name}-{run_id}").start()
+    threading.Thread(target=worker, daemon=True, name=f"autosdlc-{name}-{job_id}").start()
 
 
 def start_run(idea: str, decisions: dict[str, str], output: Path | None, model: str, api_key: str | None) -> str:

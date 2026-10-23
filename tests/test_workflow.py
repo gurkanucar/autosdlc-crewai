@@ -579,3 +579,29 @@ def test_lifecycle_states_and_diagram():
     assert loops["coverage"] == "75" and loops["revisions"] == 0
     svg = render_svg(stage_states(events[:4], "running"), counters(events[:4]))
     assert svg.startswith("<svg") and "revizyon ×1" in svg and "sdlc-halo" in svg
+
+
+
+def test_streamlit_create_button_starts_a_run(monkeypatch):
+    """Gerçek arayüzü çalıştırıp "Projeyi oluştur"a basar; run_project'e geçerli argümanlar gitmeli."""
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
+    calls = []
+    monkeypatch.setattr("autosdlc.runner.run_project", lambda *args, **kwargs: calls.append(kwargs))
+    monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
+    app = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30).run()
+    assert not app.exception
+    app.text_area[0].set_value("Basit envanter takip uygulaması")
+    app.text_input[0].set_value("Node.js, pnpm, sade HTML")
+    next(button for button in app.button if "Projeyi oluştur" in button.label).click()
+    app.run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert not app.error, [e.value for e in app.error]
+    import time
+    for _ in range(50):
+        if calls:
+            break
+        time.sleep(0.1)
+    assert calls and calls[0]["idea"] == "Basit envanter takip uygulaması"
+    assert calls[0]["run_id"] and calls[0]["decisions"]["stack"] == "Node.js, pnpm, sade HTML"
