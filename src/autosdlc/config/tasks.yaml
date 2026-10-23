@@ -1,0 +1,54 @@
+# Variables beginning with $ are filled by the application at runtime.
+planning:
+  description: |
+    Project idea: $idea
+    Write a planning document with scope, exclusions, milestones, deliverables and risks.
+    Keep the example to a single small Python FastAPI CRUD service.
+    Output Markdown only. Do not claim tests or deployment have run.
+  expected_output: A concrete Markdown plan.
+
+analysis:
+  description: |
+    Project idea: $idea
+    Previous SDLC artifacts:
+    $context
+    Write user stories, acceptance criteria, API behavior and nonfunctional requirements.
+    Keep the example to a single small Python FastAPI CRUD service.
+    Output Markdown only. Do not claim tests or deployment have run.
+  expected_output: Testable requirements in Markdown.
+
+design:
+  description: |
+    Project idea: $idea
+    Previous SDLC artifacts:
+    $context
+    Design components, SQLite schema, API routes, error handling, testing and deployment.
+    Keep the example to a single small Python FastAPI CRUD service.
+    Output Markdown only. Do not claim tests or deployment have run.
+  expected_output: A concrete Markdown architecture document.
+
+development:
+  description: |
+    Project idea: $idea
+    SDLC documents:
+    $context
+    $feedback
+    Return ONLY a JSON object with key "files", mapping relative paths to complete UTF-8 file contents.
+    Supply app/__init__.py and app/main.py. Use FastAPI, Pydantic, Python standard library and SQLite only.
+    Use TASK_DB_PATH to make the SQLite database path configurable.
+    No markdown fences, package installation, network requests, shell calls, dynamic code execution or external tools.
+    Keep all source in app/*.py. For repairs, return complete replacement files, not patches.
+  expected_output: Valid JSON containing complete Python source files under the files key.
+
+testing:
+  description: |
+    Project idea: $idea
+    SDLC documents:
+    $context
+    Implementation:
+    $files
+    Return ONLY a JSON object with key "files", mapping relative paths to complete file contents.
+    Supply tests/test_app.py using pytest and FastAPI TestClient.
+    Test successful behavior and at least one invalid input. Use tmp_path and monkeypatch for database isolation.
+    No markdown fences, network requests, shell calls or dynamic code execution.
+  expected_output: Valid JSON containing complete pytest source files under the files key.
