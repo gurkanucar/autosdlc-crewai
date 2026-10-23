@@ -1,208 +1,210 @@
-# $ ile başlayan değişkenleri uygulama çalışma sırasında doldurur.
+# The application fills the variables that start with $ at run time. Prompts are written in English; the language of
+# the documents the agents produce is set per project by language_rules (the $language variable).
 
-# Her ajan isteminin sonuna eklenir (aşama görevleri, bölüm düzenleme ve etki analizi dahil).
+# Appended to the end of every agent prompt (stage tasks, section editing and impact analysis included).
 language_rules: |
-  DİL KURALLARI:
-  - Belgeleri Türkçe yaz; ancak yazılımda yerleşik İngilizce terimleri ÇEVİRME, olduğu gibi kullan:
-    backend, frontend, fullstack, CLI, library, framework, API, endpoint, request, response,
-    database, cache, deployment, container, pipeline, middleware, package manager, test case,
-    mock, commit, branch, repository vb. Örneğin "arka uç" değil "backend", "tam yığın" değil
-    "fullstack", "uç nokta" değil "endpoint", "çatı" değil "framework" yaz.
-  - Kod tamamen İngilizce olur: değişken, fonksiyon/metot, sınıf, modül, dosya ve klasör adları,
-    kod içi yorumlar, docstring'ler, log ve hata mesajları, test adları ve commit mesajları İngilizce.
-    Türkçe kelimeli ya da Türkçe karakter içeren tanımlayıcı kullanma (ör. urunEkle değil addProduct).
-    Yalnızca son kullanıcının gördüğü arayüz metinleri kullanıcının istediği dilde olabilir.
+  LANGUAGE RULES:
+  - Write every document, report, explanation, heading and user-facing text in $language.
+  - Do NOT translate technical terms, in ANY language: keep them in English exactly as they are, never translate or
+    transliterate them: $terms. For example write "backend", not a translation of it. The same goes for product
+    and tool names (Docker, pytest, SQLite, Playwright…). Keep protocol tokens exactly as specified in the task
+    (VERDICT, START, SKIP, QUESTION, USER_QUESTION), Mermaid syntax, FR-xx/NFR-xx ids, file names, JSON keys
+    and the severity words Critical/High/Medium/Low in English.
+  - All code is English: variable, function/method, class, module, file and folder names, comments inside the code,
+    docstrings, log and error messages, test names and commit messages. Do not use identifiers made of non-English
+    words or containing non-ASCII letters (e.g. addProduct, not urunEkle). Only the UI texts the end user sees may
+    be in the language the user asked for.
+
 planning:
   description: |
-    Proje fikri: $idea
-    Mimari kararlar ve kullanıcı kısıtları:
+    Project idea: $idea
+    Architecture decisions and user constraints:
     $context
-    Bütün belgeyi Türkçe yaz. Gerçekçi bir proje planı hazırla: hedefler, kapsam,
-    kapsam dışı işler, paydaşlar, kilometre taşları, teslimatlar, varsayımlar,
-    bağımlılıklar ve önlemleriyle birlikte risk tablosu.
-    İstenen proje türüne ve teknolojiye uy; belirli bir dil veya framework dayatma.
-    Yalnızca Markdown döndür. Testlerin ya da dağıtımın yapıldığını iddia etme.
-  expected_output: Türkçe ve somut bir Markdown proje planı.
+    Write the whole document in $language. Prepare a realistic project plan: goals, scope,
+    out-of-scope work, stakeholders, milestones, deliverables, assumptions,
+    dependencies and a risk table with mitigations.
+    Follow the requested project type and technology; do not impose a specific language or framework.
+    Return Markdown only. Do not claim that tests or deployment have been done.
+  expected_output: A concrete Markdown project plan in the project's document language.
 
 analysis:
   description: |
-    Proje fikri: $idea
-    Önceki SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
+    Project idea: $idea
+    Earlier SDLC documents, architecture decisions and user constraints:
     $context
-    Bütün belgeyi Türkçe yaz. FR-01 gibi numaralı işlevsel gereksinimler,
-    kullanıcı hikâyeleri ve kabul kriterleri, NFR-01 gibi işlevsel olmayan
-    gereksinimler ve gereksinimleri planlanan testlere bağlayan izlenebilirlik
-    tablosu hazırla. Veri ve API davranışını yalnızca projede varsa açıkla.
-    Seçilen teknolojiye ve tüm kararlara uy. Yalnızca Markdown döndür.
-  expected_output: Türkçe, sınanabilir gereksinimler ve izlenebilirlik tablosu.
+    Write the whole document in $language. Prepare numbered functional requirements such as FR-01,
+    user stories and acceptance criteria, non-functional requirements such as NFR-01, and a
+    traceability table linking the requirements to the planned tests. Describe data and API behavior
+    only if the project has them. Follow the chosen technology and all decisions. Return Markdown only.
+  expected_output: Testable requirements and a traceability table in the project's document language.
 
 design:
   description: |
-    Proje fikri: $idea
-    Önceki SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
+    Project idea: $idea
+    Earlier SDLC documents, architecture decisions and user constraints:
     $context
-    Bütün belgeyi Türkçe yaz. Seçilen teknolojiyle bileşenleri, arayüzleri,
-    hata yönetimini, test yaklaşımını ve dağıtımı tasarla.
-    En az bir Mermaid bileşen diyagramı ve bir Mermaid sıralama diyagramı ekle.
-    Veritabanı seçildiyse erDiagram ve anahtarları/indeksleriyle veri şeması ekle.
-    API varsa endpoint'leri, request/response sözleşmelerini ve HTTP status kodlarını yaz.
-    Kararların gerekçelerini ve ödünleşimleri açıkla. Yalnızca Markdown döndür.
-  expected_output: Türkçe mimari belgesi, Mermaid diyagramları ve uygun veri şeması.
+    Write the whole document in $language. Design the components, interfaces, error handling, test approach
+    and deployment with the chosen technology.
+    Include at least one Mermaid component diagram and one Mermaid sequence diagram.
+    If a database is selected, include an erDiagram and the data schema with keys/indexes.
+    If there is an API, write the endpoints, request/response contracts and HTTP status codes.
+    Explain the rationale and trade-offs of the decisions. Return Markdown only.
+  expected_output: An architecture document with Mermaid diagrams and a suitable data schema, in the project's document language.
 
 review:
   description: |
-    Proje fikri: $idea
-    İncelenecek tasarım, gereksinimler ve kararlar:
+    Project idea: $idea
+    The design, requirements and decisions to review:
     $context
-    Bütün raporu Türkçe yaz. Tasarımı bağımsız bir gözden geçirmeci olarak denetle:
-    her FR'nin tasarımda karşılığı var mı (izlenebilirlik), NFR'ler (performans,
-    güvenlik, erişilebilirlik vb.) nasıl karşılanıyor, API sözleşmeleri ve veri
-    şeması tutarlı mı, kullanıcının seçtiği teknoloji ve kısıtlara uyuluyor mu,
-    hata yönetimi ve test edilebilirlik yeterli mi.
-    Bulguları "| No | Önem (Kritik/Yüksek/Orta/Düşük) | Bulgu | Öneri |" tablosu ile ver.
-    Kritik veya Yüksek önemde bulgu varsa karar REVİZYON, yoksa ONAY olmalı.
-    Raporun son satırı tam olarak "KARAR: ONAY" veya "KARAR: REVİZYON" olsun.
-    Yalnızca Markdown döndür; tasarımı kendin yeniden yazma.
-  expected_output: Bulgu tablosu ve KARAR satırı içeren Türkçe mimari inceleme raporu.
+    Write the whole report in $language. Audit the design as an independent reviewer:
+    does every FR have a counterpart in the design (traceability), how are the NFRs (performance,
+    security, accessibility, etc.) met, are the API contracts and data schema consistent,
+    are the user's chosen technology and constraints followed, are error handling and
+    testability sufficient.
+    Give the findings in a table "| No | Severity (Critical/High/Medium/Low) | Finding | Recommendation |"
+    and write the severity as exactly one of the English words Critical, High, Medium, Low.
+    If there is a finding of Critical or High severity the verdict must be REVISE, otherwise APPROVE.
+    The last line of the report must be exactly "VERDICT: APPROVE" or "VERDICT: REVISE".
+    Return Markdown only; do not rewrite the design yourself.
+  expected_output: An architecture review report with a findings table and a VERDICT line, in the project's document language.
 
 development:
   description: |
-    Proje fikri: $idea
-    SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
+    Project idea: $idea
+    SDLC documents, architecture decisions and user constraints:
     $context
     $feedback
-    İstenen dil, framework, package manager ve UI sadeliğine tam uy. Kod İngilizce yazılır.
-    YALNIZCA şu JSON biçimini döndür: {"files": {"goreli/yol": "dosyanın tam içeriği", ...}}.
-    Seçilen teknolojiye uygun Dockerfile ve şu anahtarları taşıyan project.yaml üret:
-      port: 1024-65535 arasında tamsayı (web hizmetinin portu)
-      setup: [çalıştırılabilir, argüman, ...] (isteğe bağlı bağımlılık kurulumu)
-      unit_test: [çalıştırılabilir, argüman, ...] (CLI/library için zorunlu)
-      api_test: [çalıştırılabilir, argüman, ...] (backend/fullstack için zorunlu)
-      ui_test: [çalıştırılabilir, argüman, ...] (web UI varsa zorunlu)
-      start: [çalıştırılabilir, argüman, ...] (web UI varsa zorunlu)
-    Test dosyası yazma: testleri Test Ajanı tests/ klasörü altında yazar.
-    Test komutları tek bir dosyayı değil tests klasörünü çalıştırsın (ör. pytest -q tests);
-    böylece sonradan eklenen testler de koşar.
-    Bu komutlar proje kökünde kabuk kullanılmadan çalıştırılır. Python için
-    çalıştırılabilir olarak "python" yaz; uygulama doğru yorumlayıcıyı seçer.
-    API testleri gerçek HTTP davranışını sınamalı. Arayüz testleri Playwright ile
-    BASE_URL adresindeki çalışan uygulamada görünür bir etkileşimi doğrulamalı.
-    Bağımlılık dosyalarını ve tüm kaynak dosyalarını ekle. Python setup komutu
-    kullanılıyorsa pytest ve gereken HTTP/tarayıcı test bağımlılıklarını da kur;
-    uygulama bu bağımlılıkları projeye özel sanal ortama yükler.
-    Python pytest-playwright testi için ui_test listesine
-    [-p, pytest_playwright.pytest_playwright] ekle; otomatik eklenti yükleme kapalı.
-    SQLite için TASK_DB_PATH, Postgres için DATABASE_URL, Redis için REDIS_URL,
-    telemetri için OTEL_EXPORTER_OTLP_ENDPOINT ortam değişkenlerini kullan.
-    En fazla 40 dosya, dosya başına en fazla 50 KB. Kilit dosyası (package-lock.json,
-    pnpm-lock.yaml, go.sum vb.) üretme; kurulum komutu bunları oluşturur.
-    .env dosyası yazma; gerekiyorsa .env.example kullan.
-    Markdown kod bloğu döndürme. Düzeltmede yama değil tam dosya içeriği ver.
-  expected_output: Dockerfile, project.yaml ve eksiksiz kaynak dosyalarını içeren geçerli JSON.
+    Follow the requested language, framework, package manager and UI simplicity exactly. Code is written in English.
+    Return ONLY this JSON format: {"files": {"relative/path": "complete file content", ...}}.
+    Produce a Dockerfile suited to the chosen technology and a project.yaml with these keys:
+      port: integer between 1024 and 65535 (the web service port)
+      setup: [executable, argument, ...] (optional dependency installation)
+      unit_test: [executable, argument, ...] (required for CLI/library)
+      api_test: [executable, argument, ...] (required for backend/fullstack)
+      ui_test: [executable, argument, ...] (required if there is a web UI)
+      start: [executable, argument, ...] (required if there is a web UI)
+    Do not write test files: the Test Agent writes the tests under the tests/ folder.
+    The test commands must run the tests folder, not a single file (e.g. pytest -q tests),
+    so tests added later run too.
+    These commands run at the project root without a shell. For Python write "python" as the
+    executable; the application picks the right interpreter.
+    API tests must verify real HTTP behavior. UI tests must verify a visible interaction with Playwright on the
+    application running at BASE_URL.
+    Include the dependency files and all source files. If a Python setup command is used,
+    also install pytest and the HTTP/browser test dependencies needed; the application installs
+    these dependencies into a project-specific virtual environment.
+    For a Python pytest-playwright test add
+    [-p, pytest_playwright.pytest_playwright] to the ui_test list; automatic plugin loading is off.
+    Use the environment variables TASK_DB_PATH for SQLite, DATABASE_URL for Postgres, REDIS_URL for Redis
+    and OTEL_EXPORTER_OTLP_ENDPOINT for telemetry.
+    At most 40 files, at most 50 KB per file. Do not produce lock files (package-lock.json,
+    pnpm-lock.yaml, go.sum, etc.); the setup command creates them.
+    Do not write a .env file; use .env.example if needed.
+    Do not return a Markdown code block. When fixing, give complete file contents, not patches.
+  expected_output: Valid JSON containing the Dockerfile, project.yaml and complete source files.
 
 testing:
   description: |
-    Proje fikri: $idea
-    SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
+    Project idea: $idea
+    SDLC documents, architecture decisions and user constraints:
     $context
-    Uygulama dosyaları:
+    Application files:
     $files
-    Bütün açıklamaları Türkçe yaz. Seçilen dil ve framework'e uygun testleri YALNIZCA
-    tests/ (ya da test/) klasörü altında üret; proje köküne test dosyası koyma. YALNIZCA {"files": {"goreli/yol": "tam içerik"}}
-    biçiminde JSON döndür. Testleri FR/NFR kimlikleriyle ilişkilendir; başarılı
-    ve hatalı kullanımları kapsa. Her testin adında veya açıklamasında ilgili
-    kimliği (ör. FR-01) açıkça yaz; izlenebilirlik matrisi bu kimliklerden üretilir.
-    Her FR en az bir testle kapsanmalı. Backend/fullstack projede gerçek API HTTP
-    endpoint'lerini sına. Web UI varsa Playwright ile BASE_URL adresini aç
-    ve görünür bir etkileşimi doğrula. Test verisini yalıt ve deterministik tut.
-    Test komutları uygulamanın project.yaml dosyasında belirtilmiştir.
-  expected_output: Seçilen teknolojiye uygun eksiksiz test dosyalarını içeren geçerli JSON.
+    Write all explanations in $language. Produce tests suited to the chosen language and framework ONLY under
+    the tests/ (or test/) folder; do not put test files at the project root. Return ONLY JSON of the form
+    {"files": {"relative/path": "complete content"}}. Link the tests to the FR/NFR ids; cover successful
+    and faulty usage. Write the related id (e.g. FR-01) explicitly in the name or description of every test;
+    the traceability matrix is built from these ids.
+    Every FR must be covered by at least one test. In a backend/fullstack project test the real API HTTP
+    endpoints. If there is a web UI, open BASE_URL with Playwright
+    and verify a visible interaction. Keep the test data isolated and deterministic.
+    The test commands are specified in the application's project.yaml.
+  expected_output: Valid JSON containing complete test files suited to the chosen technology.
 
 deployment:
   description: |
-    Proje fikri: $idea
-    Önceki SDLC belgeleri ve gerçek test sonucu:
+    Project idea: $idea
+    Earlier SDLC documents and the actual test result:
     $context
-    Bütün belgeyi Türkçe yaz. Seçilen teknoloji için ön koşulları, ortam
-    değişkenlerini, docker compose build/up adımlarını, sağlık kontrollerini,
-    geri alma ve yedekleme adımlarını içeren dağıtım kılavuzu hazırla.
-    Dockerfile ve compose.yaml hazırlanmıştır; imajın oluşturulduğunu veya
-    uygulamanın dağıtıldığını iddia etme. Testler başarısızsa açıkça belirt.
-    Gizli anahtarları yazma. Yalnızca Markdown döndür.
-  expected_output: Türkçe, gerçek durumu yansıtan dağıtım kılavuzu.
+    Write the whole document in $language. Prepare a deployment guide for the chosen technology with the
+    prerequisites, environment variables, docker compose build/up steps, health checks,
+    and rollback and backup steps.
+    The Dockerfile and compose.yaml are already prepared; do not claim that the image was built or
+    the application was deployed. If the tests failed, say so clearly.
+    Do not write secrets. Return Markdown only.
+  expected_output: A deployment guide that reflects the real situation, in the project's document language.
 
 maintenance:
   description: |
-    Proje fikri: $idea
-    Önceki SDLC belgeleri ve gerçek test sonucu:
+    Project idea: $idea
+    Earlier SDLC documents and the actual test result:
     $context
-    Bütün belgeyi Türkçe yaz. Sorumlulukları, izleme sinyallerini, olay
-    müdahalesini, yedekleme/geri yüklemeyi, bağımlılık güncellemelerini,
-    bilinen sınırları, açık test hatalarını ve öncelikli iyileştirmeleri yaz.
-    Sorunların çözüldüğünü veya üretimde izleme yapıldığını iddia etme.
-    Yalnızca Markdown döndür.
-  expected_output: Türkçe ve uygulanabilir bakım planı.
+    Write the whole document in $language. Write the responsibilities, monitoring signals, incident
+    response, backup/restore, dependency updates, known limits, open test failures and prioritized
+    improvements. Do not claim that problems were resolved or that production monitoring exists.
+    Return Markdown only.
+  expected_output: An actionable maintenance plan in the project's document language.
 
-# Aşağıdakiler SDLC aşaması değil; kullanıcının belge ve değişiklik müdahaleleri için kullanılır.
+# The following are not SDLC stages; they are used for the user's document and change interventions.
 section_edit:
   description: |
-    Proje fikri: $idea
-    Bağlam (kararlar ve ilgili önceki belgeler):
+    Project idea: $idea
+    Context (decisions and the relevant earlier documents):
     $context
-    Belgenin tamamı:
+    The whole document:
     $document
-    Üzerinde çalışılacak bölüm:
+    The section to work on:
     $section
-    Kullanıcının talimatı: $instruction
-    İşlem: $operation
-    Türkçe yaz ve belgenin mevcut biçimine (başlık seviyesi, tablo/madde yapısı) uy.
-    Mevcut FR/NFR kimliklerini değiştirme; yeni gereksinim eklenirse belgedeki
-    en büyük numaradan sonraki numarayı kullan. Talimatın dışındaki şeyleri değiştirme.
-    Yalnızca Markdown döndür; açıklama, ön söz veya kod bloğu çiti ekleme.
-  expected_output: Yalnızca bölümün yeni hâli ya da eklenecek yeni içerik (Markdown).
+    The user's instruction: $instruction
+    Operation: $operation
+    Write in $language and follow the document's existing format (heading level, table/bullet structure).
+    Do not change existing FR/NFR ids; if a new requirement is added use the number after the
+    largest number in the document. Do not change anything outside the instruction.
+    Return Markdown only; do not add explanations, a preamble or a code fence.
+  expected_output: Only the new version of the section or the new content to add (Markdown).
 
 section_question:
   description: |
-    Proje fikri: $idea
-    Bağlam (kararlar ve ilgili önceki belgeler):
+    Project idea: $idea
+    Context (decisions and the relevant earlier documents):
     $context
-    Belgenin tamamı:
+    The whole document:
     $document
-    Kullanıcının sorduğu bölüm:
+    The section the user asked about:
     $section
-    Soru: $instruction
-    İşlem: $operation
-    Türkçe, kısa ve somut yanıt ver. Gerekçeni belgeye ve kararlara dayandır;
-    belgede olmayan bir şeyi varmış gibi anlatma. Gerekirse bölümün nasıl
-    iyileştirilebileceğini öner ama belgeyi yeniden yazma.
-  expected_output: Türkçe, kısa ve gerekçeli bir yanıt.
+    Question: $instruction
+    Operation: $operation
+    Answer in $language, briefly and concretely. Base your reasoning on the document and the decisions;
+    do not describe something that is not in the document as if it were. If useful, suggest how the
+    section could be improved but do not rewrite the document.
+  expected_output: A short answer with reasoning, in the project's document language.
 
 impact:
   description: |
-    Proje fikri: $idea
-    Mevcut SDLC belgeleri, izlenebilirlik matrisi ve dosya listesi:
+    Project idea: $idea
+    Existing SDLC documents, traceability matrix and file list:
     $context
-    Değişiklik talebi:
+    Change request:
     $change
-    Türkçe bir etki analizi raporu yaz:
-    1. Talebin özeti ve türü (yeni özellik / hata / değişiklik).
-    2. Etkilenen gereksinimler: değişecek FR/NFR kimlikleri ve eklenecek yeni gereksinimler.
-    3. Etkilenen tasarım bölümleri ve API/veri şeması değişiklikleri.
-    4. Değişmesi muhtemel kaynak dosyalar ve eklenecek/güncellenecek testler.
-    5. Riskler ve regresyon riski taşıyan alanlar.
-    6. "## Açık sorular": talep belirsizse ya da birden fazla makul yorum varsa, uygulamaya
-       geçmeden kullanıcının netleştirmesi gereken noktaları her biri ayrı satırda
-       "SORU: <tek, açık soru>" biçiminde yaz (en fazla 5). Varsayım yapma; kararı kullanıcıya bırak.
-       Gerçekten belirsizlik yoksa bu bölüme yalnızca "Açık soru yok." yaz.
-    Hata taleplerinde önce hatayı yeniden üreten bir test yazılacağını varsay.
-    Sondan bir önceki satır, bu değişiklikten ETKİLENMEYEN ve yeniden yazılması gerekmeyen aşamaları
-    göstersin: "ATLA: review, deployment, maintenance" gibi (seçenekler: analysis, design, review,
-    deployment, maintenance; kodlama ve test hiçbir zaman atlanmaz). Port, bağımlılık, ortam değişkeni
-    ya da çalıştırma biçimi değişmiyorsa deployment; izleme/operasyon etkilenmiyorsa maintenance;
-    tasarım değişmiyorsa review atlanabilir. Atlanacak aşama yoksa "ATLA: yok" yaz.
-    Raporun son satırı tam olarak şu biçimde olsun ve değişikliğin ilk dokunması
-    gereken aşamayı göstersin: "BAŞLANGIÇ: analysis" (yeni/değişen gereksinim),
-    "BAŞLANGIÇ: design" (gereksinim aynı, tasarım değişiyor) veya
-    "BAŞLANGIÇ: development" (yalnızca kod/hata düzeltmesi).
-    Yalnızca Markdown döndür.
-  expected_output: Etkilenen öğeleri listeleyen ve BAŞLANGIÇ satırıyla biten Türkçe etki analizi.
+    Write an impact analysis report in $language:
+    1. Summary and type of the request (new feature / bug / change).
+    2. Affected requirements: the FR/NFR ids that will change and the new requirements to add.
+    3. Affected design sections and API/data schema changes.
+    4. Source files likely to change and tests to add/update.
+    5. Risks and areas with regression risk.
+    6. "## Open questions": if the request is unclear or has more than one reasonable interpretation, list the
+       points the user must clarify before it is applied, each on its own line in the form
+       "QUESTION: <one clear question>" (at most 5). Do not assume; leave the decision to the user.
+       If there is really no uncertainty write only "No open questions." in this section.
+    For bug requests assume that a test reproducing the bug is written first.
+    The second-to-last line must name the stages NOT affected by this change that need no rewriting,
+    like "SKIP: review, deployment, maintenance" (options: analysis, design, review,
+    deployment, maintenance; development and testing are never skipped). Deployment may be skipped if the port,
+    dependencies, environment variables and way of running do not change; maintenance if monitoring/operations
+    are unaffected; review if the design does not change. If no stage can be skipped write "SKIP: none".
+    The last line of the report must be exactly in this form and name the first stage the change
+    must touch: "START: analysis" (new/changed requirement),
+    "START: design" (requirements the same, design changes) or
+    "START: development" (code/bug fix only).
+    Return Markdown only.
+  expected_output: An impact analysis listing the affected items and ending with a START line, in the project's document language.

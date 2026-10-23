@@ -1,4 +1,4 @@
-"""Çalışma oluşturma ve inceleme için FastAPI arayüzü."""
+"""FastAPI interface for creating and inspecting runs."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .storage import History
 
 
 WORKSPACE = Path.cwd()
-app = FastAPI(title="AutoSDLC Yönetim API'si", version="0.1.0")
+app = FastAPI(title="AutoSDLC Management API", version="0.1.0")
 
 
 class RunRequest(BaseModel):
@@ -65,6 +65,6 @@ def list_runs() -> list[dict]:
 def get_run(run_id: str) -> dict:
     result = History(WORKSPACE / "runs" / "history.sqlite3").get(run_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Çalışma bulunamadı")
+        raise HTTPException(status_code=404, detail="Run not found")
     return result
 

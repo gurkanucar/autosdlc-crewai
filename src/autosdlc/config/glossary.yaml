@@ -1,0 +1,26 @@
+# Technical terms that are never translated, in any language: agent prompts list them and a test checks that
+# no translation catalog changes them. Product and tool names (Docker, pytest, SQLite, Playwright…) are
+# never translated either and need no entry.
+keep_english:
+  - backend
+  - frontend
+  - fullstack
+  - CLI
+  - library
+  - framework
+  - API
+  - endpoint
+  - HTTP request
+  - HTTP response
+  - middleware
+  - pipeline
+  - container
+  - package manager
+  - mock
+  - commit
+  - branch
+  - repository
+
+# Literal translations that must not appear, per language code (they are what a model or translator tends to write).
+avoid:
+  tr: ["arka uç", "ön uç", "tam yığın", "uç nokta", "çatı", "kütüphane", "komut satırı arayüzü", "paket yöneticisi", "kod deposu"]

@@ -1,4 +1,4 @@
-"""OpenCode Go modelleri: bu uygulamanın kullandığı chat/completions endpoint'i."""
+"""OpenCode Go models: the chat/completions endpoint this application uses."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ CHAT_MODELS = (
 
 
 def available_models() -> list[str]:
-    """Canlı katalogla kesiştir; erişilemezse belgelenmiş modelleri göster."""
+    """Intersect with the live catalog; if it is unreachable show the documented models."""
     try:
         response = httpx.get(MODELS_URL, timeout=8)
         response.raise_for_status()

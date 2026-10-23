@@ -1,46 +1,38 @@
-# Arayüzdeki "Örnek proje şablonu" listesi. Her şablon formu doldurur; kullanıcı sonra değiştirebilir.
-# decisions anahtarları questions.yaml ile aynıdır. Fikir en fazla 1000, yığın en fazla 200 karakter olmalı.
-# İlk şablon bilerek çok küçüktür: konsepti birkaç dakikada uçtan uca görmek için (sunucu, API/UI testi, bağımlılık yok).
-- id: hizli-demo
-  title: ⚡ Hızlı demo — sıcaklık dönüştürücü (Python, library)
-  description: Konsepti birkaç dakikada görmek için en küçük örnek; iki fonksiyon, tek test dosyası, kısa belgeler.
-  idea: >-
-    Celsius ve Fahrenheit arasında dönüşüm yapan küçük bir Python library'si: celsius_to_fahrenheit
-    ve fahrenheit_to_celsius fonksiyonları. Mutlak sıfırın (-273.15 °C) altındaki değerler için
-    ValueError fırlatılsın.
+# Example project templates shown in the UI. Each one fills the form; the user can change it afterwards.
+# The decisions keys are the same as in questions.yaml. Idea at most 1000, stack at most 200 characters.
+# The first template is deliberately tiny: to see the concept end to end in a few minutes.
+# Texts are English source strings; other languages are in locales/<code>/content.yaml.
+- id: quick-demo
+  title: ⚡ Quick demo — temperature converter (Python, library)
+  description: The smallest example to see the concept in a few minutes; two functions, one test file, short documents.
+  idea: 'A small Python library that converts between Celsius and Fahrenheit: celsius_to_fahrenheit and fahrenheit_to_celsius
+    functions. Raise a ValueError for values below absolute zero (-273.15 °C).'
   decisions:
     scale: small
     project_type: library
     stack: Python 3.12, pytest
-    constraints: >-
-      Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü,
-      tests/ altında tek test dosyası, project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla
-      yarım sayfa); en fazla 3 FR ve 2 NFR yaz.
-
-- id: envanter-takip
-  title: Envanter takip uygulaması (Node.js, fullstack)
-  description: Ürün adı, kategori ve konum bilgisiyle stok kaydı tutan basit bir web uygulaması.
-  idea: >-
-    Basit bir envanter takip uygulaması. Ürünler; ürün adı, kategori ve konum (depo/raf)
-    bilgisiyle saklanacak. Ürün ekleme, düzenleme, silme ve listeleme olacak; liste ürün adına
-    göre aranabilecek, kategoriye ve konuma göre süzülebilecek.
+    constraints: 'Use no external dependencies; no setup command is needed. Fewest files: one source module, a single
+      test file under tests/, project.yaml and a Dockerfile. Keep every SDLC document short (at most half a page
+      each); write at most 3 FRs and 2 NFRs.'
+- id: inventory-tracker
+  title: Inventory tracker (Node.js, fullstack)
+  description: A simple web application that keeps stock records with product name, category and location.
+  idea: A simple inventory tracking application. Products are stored with product name, category and location (warehouse/shelf).
+    It supports adding, editing, deleting and listing products; the list can be searched by product name and filtered
+    by category and location.
   decisions:
     project_type: fullstack
-    stack: Node.js (Express), pnpm, sade HTML/CSS/JS arayüz
+    stack: Node.js (Express), pnpm, plain HTML/CSS/JS interface
     database: sqlite
     cache: none
     observability: none
-    constraints: >-
-      Frontend'de framework kullanma, düz HTML/CSS/JS yaz. Kullanıcı arayüzü metinleri Türkçe olsun.
-      Native derleme gerektirmeyen bir SQLite çözümü tercih et.
-
-- id: gorev-api
-  title: Görev takip API'si (Python, backend)
-  description: Görev oluşturma, listeleme, tamamlama ve silme endpoint'leri olan REST API.
-  idea: >-
-    Küçük ekipler için görev takip API'si. Görevler başlık, açıklama, son tarih ve durum
-    (yapılacak, sürüyor, bitti) alanlarına sahip olacak. Görev oluşturma, listeleme, duruma göre
-    süzme, güncelleme ve silme endpoint'leri bulunacak.
+    constraints: Do not use a framework in the frontend, write plain HTML/CSS/JS. The user interface texts should
+      be in Turkish. Prefer a SQLite solution that needs no native compilation.
+- id: task-api
+  title: Task tracking API (Python, backend)
+  description: A REST API with endpoints to create, list, complete and delete tasks.
+  idea: A task tracking API for small teams. Tasks have a title, description, due date and status (todo, in progress,
+    done). It has endpoints to create, list, filter by status, update and delete tasks.
   decisions:
     project_type: backend
     stack: Python 3.12, FastAPI, pytest
@@ -48,30 +40,26 @@
     cache: none
     observability: none
     ui: none
-    constraints: Girdi doğrulaması ve anlamlı hata kodları (400, 404) olsun.
-
-- id: birim-donusturucu-cli
-  title: Birim dönüştürücü (Python, CLI)
-  description: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren küçük bir CLI aracı.
-  idea: >-
-    Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren CLI aracı. Örneğin
-    "convert 10 km mi" komutu 10 kilometreyi mile çevirsin. Desteklenen birimleri listeleyen
-    bir komut ve hatalı birim için açık hata mesajı olsun.
+    constraints: Include input validation and meaningful error codes (400, 404).
+- id: unit-converter-cli
+  title: Unit converter (Python, CLI)
+  description: A small CLI tool that converts length, weight and temperature units.
+  idea: A CLI tool that converts length, weight and temperature units. For example the command "convert 10 km mi"
+    converts 10 kilometers to miles. It has a command that lists the supported units and a clear error message for
+    an invalid unit.
   decisions:
     scale: small
     project_type: cli
     stack: Python 3.12, argparse, pytest
-    constraints: Dış bağımlılık kullanma; yalnızca standard library.
-
-- id: metin-kutuphanesi
-  title: Metin yardımcıları (Python, library)
-  description: Türkçe karakterlere duyarlı slug üretme ve metin temizleme işlevleri sunan library.
-  idea: >-
-    Türkçe karakterlere duyarlı metin yardımcıları library'si: URL için slug üretme,
-    fazla boşlukları temizleme, kelime sayma ve belirli uzunlukta akıllı kısaltma.
-    Her işlev belgelenmiş ve tip ipuçlu olsun.
+    constraints: Use no external dependencies; standard library only.
+- id: text-helpers
+  title: Text helpers (Python, library)
+  description: A library offering slug generation and text cleanup functions that handle Turkish characters correctly.
+  idea: 'A text helpers library that handles Turkish characters correctly: slug generation for URLs, collapsing
+    extra whitespace, word counting and smart truncation to a given length. Every function should be documented
+    and type-hinted.'
   decisions:
     scale: small
     project_type: library
     stack: Python 3.12, pytest
-    constraints: Dış bağımlılık kullanma; yalnızca standard library.
+    constraints: Use no external dependencies; standard library only.

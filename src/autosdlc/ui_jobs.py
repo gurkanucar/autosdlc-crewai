@@ -1,3 +1,3 @@
-"""Streamlit yeniden çalışırken arka plan işlerinin başlangıç hatalarını tutar."""
+"""Holds the start-up errors of background jobs while Streamlit reruns."""
 
 WORKER_ERRORS: dict[str, str] = {}

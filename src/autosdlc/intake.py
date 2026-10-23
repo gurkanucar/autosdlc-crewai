@@ -4,26 +4,31 @@ from importlib.resources import files
 
 import yaml
 
+from .i18n import t
+
 
 CHOICE_LABELS = {
-    # Yerleşik yazılım terimleri çevrilmez (backend, fullstack, CLI…).
+    # Established software terms are not translated (backend, fullstack, CLI…).
     "project_type": {"backend": "Backend", "frontend": "Frontend", "fullstack": "Fullstack", "cli": "CLI", "library": "Library"},
-    "database": {"none": "Yok", "sqlite": "SQLite", "postgres": "PostgreSQL"},
-    "cache": {"none": "Yok", "redis": "Redis"},
-    "observability": {"none": "Yok", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
-    "ui": {"none": "Yok", "web": "Web UI"},
-    "scale": {"normal": "Normal", "small": "Küçük"},
+    "database": {"none": "None", "sqlite": "SQLite", "postgres": "PostgreSQL"},
+    "cache": {"none": "None", "redis": "Redis"},
+    "observability": {"none": "None", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
+    "ui": {"none": "None", "web": "Web UI"},
+    "scale": {"normal": "Normal", "small": "Small"},
+    # Language names are always written in their own language.
+    "language": {"en": "English", "tr": "Türkçe"},
 }
 
 
 def choice_label(name: str, value: str) -> str:
-    return CHOICE_LABELS.get(name, {}).get(value, value)
+    label = CHOICE_LABELS.get(name, {}).get(value, value)
+    return label if name == "language" else t(label)
 
 
 def parse_choice(name: str, answer: str) -> str:
     normalized = answer.strip().casefold()
     for code, label in CHOICE_LABELS.get(name, {}).items():
-        if normalized in {code.casefold(), label.casefold()}:
+        if normalized in {code.casefold(), label.casefold(), choice_label(name, code).casefold()}:
             return code
     return answer.strip()
 
@@ -33,10 +38,20 @@ def questions() -> dict[str, dict]:
     return yaml.safe_load(source.read_text(encoding="utf-8"))
 
 
+def question_text(name: str) -> str:
+    """The question for a decision, in the active language."""
+    return t(questions()[name]["question"])
+
+
 def templates() -> list[dict]:
-    """Arayüzde formu dolduran örnek proje şablonları."""
+    """Example project templates that fill the form in the UI, translated into the active language."""
     source = files("autosdlc").joinpath("config/templates.yaml")
-    return yaml.safe_load(source.read_text(encoding="utf-8"))
+    translated = []
+    for item in yaml.safe_load(source.read_text(encoding="utf-8")):
+        decisions = {key: (t(value) if key in {"stack", "constraints"} else value) for key, value in item["decisions"].items()}
+        translated.append({**item, "title": t(item["title"]), "description": t(item["description"]),
+                           "idea": t(item["idea"]), "decisions": decisions})
+    return translated
 
 
 def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
@@ -44,20 +59,20 @@ def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
     catalog = questions()
     unknown = set(selected) - set(catalog)
     if unknown:
-        raise ValueError(f"Bilinmeyen mimari kararlar: {', '.join(sorted(unknown))}")
+        raise ValueError(f"Unknown architecture decisions: {', '.join(sorted(unknown))}")
     project_type = selected.get("project_type")
     if project_type not in catalog["project_type"]["options"]:
-        raise ValueError("Proje türünü seç: " + ", ".join(catalog["project_type"]["options"]))
+        raise ValueError("Choose the project type: " + ", ".join(catalog["project_type"]["options"]))
     missing = [name for name, item in catalog.items() if not item.get("optional") and (not item.get("when") or project_type in item["when"]) and name not in selected]
     if missing:
-        raise ValueError(f"Şu mimari kararlar gerekli: {', '.join(missing)}")
+        raise ValueError(f"These architecture decisions are required: {', '.join(missing)}")
     for name, value in selected.items():
         if catalog[name].get("free_text"):
             if not isinstance(value, str) or (not catalog[name].get("optional") and not value.strip()) or len(value) > (1000 if catalog[name].get("optional") else 200):
-                raise ValueError(f"Geçersiz {name}: kısa bir metin gir")
+                raise ValueError(f"Invalid {name}: enter a short text")
         elif value not in catalog[name]["options"]:
-            raise ValueError(f"Geçersiz {name}: {value}. Seçenekler: {catalog[name]['options']}")
-    # Proje türüne uymayan kararlar (ör. cli + postgres) yok sayılır.
+            raise ValueError(f"Invalid {name}: {value}. Options: {catalog[name]['options']}")
+    # Decisions that do not fit the project type (e.g. cli + postgres) are ignored.
     normalized = {
         name: "none" if item.get("when") and project_type not in item["when"]
         else selected.get(name, item.get("default", "" if item.get("optional") else "none"))

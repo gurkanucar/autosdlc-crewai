@@ -1,4 +1,5 @@
 import json
+import re
 import json as json_module
 from pathlib import Path
 
@@ -101,10 +102,10 @@ def test_yaml_config_and_opencode_request_header(monkeypatch):
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
     engine = CrewAIEngine(api_key="test-key", model="glm-5.3-flash")
-    assert engine.agents["analysis"]["role"] == "Analiz Ajanı"
-    assert "kabul kriterleri" in engine.tasks["analysis"]["description"]
-    assert len(engine.agents) == 9 and engine.agents["impact"]["role"] == "Etki Analizi Ajanı"
-    assert engine.agents["review"]["role"] == "Mimari İnceleme Ajanı"
+    assert engine.agents["analysis"]["role"] == "Analysis Agent"
+    assert "acceptance criteria" in engine.tasks["analysis"]["description"]
+    assert len(engine.agents) == 9 and engine.agents["impact"]["role"] == "Impact Analysis Agent"
+    assert engine.agents["review"]["role"] == "Architecture Review Agent"
     assert engine.llm.call("hello") == "OK"
     assert seen["url"].endswith("/openai/v1/chat/completions")
     assert seen["headers"]["Authorization"] == "Bearer test-key"
@@ -202,14 +203,14 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     result = run_project("Book tracker", workspace=tmp_path, engine=engine, decisions=BACKEND)
     assert result.status == "completed", result.error
     assert result.attempts == 1
-    assert "BAŞARILI" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
+    assert "PASSED" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
     # Ajan yanıtları akış olarak alındı ve canlı gösterim dosyalarına yazıldı.
     assert len(streamed) == 10  # 6 belge aşaması + test + kodlamada plan ve iki dosya grubu
     assert "book tracker" in (result.output_dir / "live" / "planning.md").read_text(encoding="utf-8").lower()
 
 
 def test_architecture_choices_and_compose():
-    with pytest.raises(ValueError, match="gerekli"):
+    with pytest.raises(ValueError, match="required"):
         validate_decisions({"project_type": "backend", "stack": "Go/Gin"})
     cli = validate_decisions({"project_type": "cli", "stack": "Rust"})
     assert cli["database"] == "none"
@@ -253,7 +254,7 @@ def test_yaml_request_passes_stack_and_output_to_runner(tmp_path, monkeypatch):
 
 
 def test_plain_make_run_prompts_for_idea_and_decisions(tmp_path, monkeypatch):
-    answers = iter(["A tiny CLI", "cli", "Rust", "", ""])
+    answers = iter(["A tiny CLI", "cli", "Rust", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     captured = {}
 
@@ -302,7 +303,7 @@ def test_ui_choice_runs_playwright_against_live_app(tmp_path, monkeypatch):
     result = run_project("A small UI", workspace=tmp_path, decisions=choices, engine=UiEngine(), max_repairs=0)
     assert result.status == "completed", result.error
     report = (result.output_dir / "test_report.md").read_text(encoding="utf-8")
-    assert "API testleri" in report and "Arayüz testleri" in report
+    assert "API tests" in report and "UI tests" in report
 
 
 def test_stage_question_waits_for_answer_and_records_it(tmp_path, monkeypatch):
@@ -310,7 +311,7 @@ def test_stage_question_waits_for_answer_and_records_it(tmp_path, monkeypatch):
 
     class AskingEngine(StubEngine):
         def document(self, stage, idea, context):
-            if stage == "planning" and "Yanıt: küçük işletme" not in context:
+            if stage == "planning" and "Answer: küçük işletme" not in context:
                 raise ClarificationNeeded("Hedef kullanıcı kim?")
             return super().document(stage, idea, context)
 
@@ -404,7 +405,7 @@ def test_delete_rejects_workspace_itself(tmp_path):
     reports.mkdir()
     db.create(run_id, "Unsafe", reports, tmp_path)
     db.finish(run_id, "failed", 0, None)
-    with pytest.raises(ValueError, match="güvenli"):
+    with pytest.raises(ValueError, match="safe deletion"):
         delete_project(tmp_path, run_id)
     assert tmp_path.is_dir()
     assert db.get(run_id) is not None
@@ -417,7 +418,7 @@ def test_pause_while_question_waits_then_resume(tmp_path, monkeypatch):
 
     class AskingEngine(StubEngine):
         def document(self, stage, idea, context):
-            if stage == "planning" and "Yanıt: işletme sahibi" not in context:
+            if stage == "planning" and "Answer: işletme sahibi" not in context:
                 raise ClarificationNeeded("Hedef kullanıcı kim?")
             return super().document(stage, idea, context)
 
@@ -482,7 +483,7 @@ def test_traceability_matrix_recognises_test_name_formats():
         {"tests/test_api.py": "def test_fr01_create(): ...\ndef test_FR_02_list(): ..."},
     )
     assert coverage == {"FR": 1.0, "NFR": 0.0}
-    assert "| NFR-01 | — | Test yok |" in matrix
+    assert "| NFR-01 | — | No test |" in matrix
 
 
 def test_repair_cannot_overwrite_tests_and_traceability_is_written(tmp_path, monkeypatch):
@@ -500,8 +501,8 @@ def test_repair_cannot_overwrite_tests_and_traceability_is_written(tmp_path, mon
     events = History(tmp_path / "runs" / "history.sqlite3").get(result.id)["events"]
     assert any(e["status"] == "tests_protected" for e in events)
     matrix = (result.project_dir / "docs" / "traceability.md").read_text(encoding="utf-8")
-    assert "| FR-01 | `tests/test_api.py` | Kapsanıyor |" in matrix
-    assert "| FR-02 | — | Test yok |" in matrix
+    assert "| FR-01 | `tests/test_api.py` | Covered |" in matrix
+    assert "| FR-02 | — | No test |" in matrix
 
 
 def test_quality_gate_asks_agent_to_rewrite_once(tmp_path, monkeypatch):
@@ -518,7 +519,7 @@ def test_quality_gate_asks_agent_to_rewrite_once(tmp_path, monkeypatch):
 
     result = run_project("Gate API", workspace=tmp_path, engine=SloppyEngine(), decisions=BACKEND)
     assert result.status == "completed", result.error
-    assert len(calls) == 2 and "KALİTE KAPISINDAN GEÇEMEDİ" in calls[1]
+    assert len(calls) == 2 and "FAILED THE QUALITY GATE" in calls[1]
 
 
 def test_late_stages_see_answers_and_test_result_despite_long_documents(tmp_path, monkeypatch):
@@ -528,7 +529,7 @@ def test_late_stages_see_answers_and_test_result_despite_long_documents(tmp_path
     class VerboseEngine(StubEngine):
         def document(self, stage, idea, context):
             contexts[stage] = context
-            if stage == "planning" and "Yanıt: öğrenciler" not in context:
+            if stage == "planning" and "Answer: öğrenciler" not in context:
                 raise ClarificationNeeded("Hedef kullanıcı kim?")
             return super().document(stage, idea, context) + "x" * 50_000
 
@@ -538,7 +539,7 @@ def test_late_stages_see_answers_and_test_result_despite_long_documents(tmp_path
     )
     assert result.status == "completed", result.error
     head = contexts["maintenance"][:12000]
-    assert "Yanıt: öğrenciler" in head and "Gerçek test sonucu: BAŞARILI" in head
+    assert "Answer: öğrenciler" in head and "Actual test result: PASSED" in head
 
 
 
@@ -551,7 +552,7 @@ def test_review_requests_revision_then_approves(tmp_path, monkeypatch):
             if stage == "review":
                 seen.append("review")
                 return "KARAR: ONAY" if "REVİZE" in context else "| 1 | Kritik | FR-02 tasarımda yok | Ekle |\nKARAR: REVİZYON"
-            if stage == "design" and "MİMARİ İNCELEME BULGULARI" in context:
+            if stage == "design" and "ARCHITECTURE REVIEW FINDINGS" in context:
                 seen.append("revision")
                 return super().document(stage, idea, context) + "\nREVİZE: FR-02 eklendi\n"
             return super().document(stage, idea, context)
@@ -561,7 +562,7 @@ def test_review_requests_revision_then_approves(tmp_path, monkeypatch):
     assert seen == ["review", "revision", "review"]
     assert "REVİZE" in (result.project_dir / "docs" / "architecture.md").read_text(encoding="utf-8")
     report = (result.output_dir / "design_review.md").read_text(encoding="utf-8")
-    assert "ONAYLANDI" in report and "2 tur" in report
+    assert "APPROVED" in report and "2 rounds" in report
 
 
 def test_regenerate_from_stage_keeps_earlier_work(tmp_path, monkeypatch):
@@ -620,9 +621,9 @@ def test_lifecycle_states_and_diagram():
     # Yeniden üretim geçmişi silmez: bir kez geri dönülmüşse sayaç kalır.
     assert loops["coverage"] == "75" and loops["revisions"] == 1
     svg = render_svg(stage_states(events[:5], "running"), counters(events[:5]), runs={"design": 2, "review": 1})
-    assert svg.startswith("<svg") and "↺ revizyon ×1" in svg and "sdlc-halo" in svg
+    assert svg.startswith("<svg") and "↺ revision ×1" in svg and "sdlc-halo" in svg
     assert svg.count(">×2<") == 1  # Tasarım düğümünde ×2 rozeti; tek kez çalışan İnceleme'de rozet yok.
-    assert "onarım döngüsü" in svg  # Hiç onarım olmadıysa döngü soluk ve sayaçsız kalır.
+    assert "repair loop" in svg  # Hiç onarım olmadıysa döngü soluk ve sayaçsız kalır.
 
 
 def test_stale_marking_after_document_edit():
@@ -651,7 +652,7 @@ def test_streamlit_create_button_starts_a_run(monkeypatch):
     assert not app.exception
     app.text_area[0].set_value("Basit envanter takip uygulaması")
     app.text_input[0].set_value("Node.js, pnpm, sade HTML")
-    next(button for button in app.button if "Projeyi oluştur" in button.label).click()
+    next(button for button in app.button if "Create the project" in button.label).click()
     app.run()
     assert not app.exception, [e.value for e in app.exception]
     assert not app.error, [e.value for e in app.error]
@@ -672,7 +673,7 @@ def test_templates_are_valid_decisions():
     for item in items:
         assert 0 < len(item["idea"].strip()) <= 1000, item["id"]
         validate_decisions(item["decisions"])
-    inventory = next(item for item in items if item["id"] == "envanter-takip")["decisions"]
+    inventory = next(item for item in items if item["id"] == "inventory-tracker")["decisions"]
     assert inventory["project_type"] == "fullstack" and "pnpm" in inventory["stack"]
 
 
@@ -682,15 +683,15 @@ def test_streamlit_template_fills_the_form(monkeypatch):
     monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
     app = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30).run()
     assert not app.exception and app.button(key="apply_template").disabled
-    app.selectbox(key="template_choice").select("envanter-takip").run()
+    app.selectbox(key="template_choice").select("inventory-tracker").run()
     app.button(key="apply_template").click().run()
     assert not app.exception, [e.value for e in app.exception]
-    assert "envanter takip" in app.text_area(key="idea_input").value
+    assert "inventory tracking" in app.text_area(key="idea_input").value
     assert app.selectbox(key="project_type_input").value == "fullstack"
     assert "pnpm" in app.text_input(key="stack_input").value
     assert app.selectbox(key="choice_database").value == "sqlite"
-    assert "Türkçe" in app.text_area(key="constraints_input").value
-    app.selectbox(key="template_choice").select("gorev-api").run()
+    assert "Turkish" in app.text_area(key="constraints_input").value
+    app.selectbox(key="template_choice").select("task-api").run()
     app.button(key="apply_template").click().run()
     assert app.selectbox(key="project_type_input").value == "backend"
     assert app.selectbox(key="choice_ui").value == "none"
@@ -717,7 +718,7 @@ def test_stage_metrics_count_runs_and_exclude_waiting_time():
     assert metrics["planning"]["seconds"] == 30 and metrics["planning"]["runs"] == 1
     assert metrics["testing"]["runs"] == 2 and metrics["testing"]["seconds"] == 50
     assert metrics["development"]["runs"] == 1 and metrics["development"]["seconds"] == 60
-    assert format_duration(30) == "30sn" and format_duration(125) == "2dk 05sn"
+    assert format_duration(30) == "30s" and format_duration(125) == "2m 05s"
 
 
 def test_user_notes_reach_later_agents(tmp_path, monkeypatch):
@@ -760,7 +761,7 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
 
     class AskingEngine(StubEngine):
         def document(self, stage, idea, context):
-            if stage == "planning" and "Yanıt: öğrenciler" not in context:
+            if stage == "planning" and "Answer: öğrenciler" not in context:
                 question_asked.set()
                 raise ClarificationNeeded("Hedef kullanıcı kim?")
             return super().document(stage, idea, context)
@@ -769,9 +770,9 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
         idea, engine=AskingEngine(), **{k: v for k, v in kw.items() if k not in {"model", "api_key"}}))
     monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
     app = _app(tmp_path, monkeypatch).run()
-    app.selectbox(key="template_choice").select("gorev-api").run()
+    app.selectbox(key="template_choice").select("task-api").run()
     app.button(key="apply_template").click().run()
-    next(button for button in app.button if "Projeyi oluştur" in button.label).click().run()
+    next(button for button in app.button if "Create the project" in button.label).click().run()
     assert not app.exception, [e.value for e in app.exception]
     assert question_asked.wait(20)
     db = History(tmp_path / "runs" / "history.sqlite3")
@@ -783,7 +784,7 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
     app.run()
     assert not app.exception, [e.value for e in app.exception]
     assert any("Hedef kullanıcı kim?" in w.value for w in app.warning)
-    assert "sorusunu yanıtla" in app.chat_input[0].proto.placeholder
+    assert "question" in app.chat_input[0].proto.placeholder
     app.chat_input[0].set_value("öğrenciler").run()
     for _ in range(200):
         if db.get(run_id)["status"] != "running":
@@ -798,7 +799,7 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
     app.session_state[f"stage_{run_id}"] = "review"
     app.run()
     assert not app.exception, [e.value for e in app.exception]
-    assert any("Mimari İnceleme Ajanı" in md.value for md in app.markdown)
+    assert any("Architecture Review Agent" in md.value for md in app.markdown)
 
 
 def test_gateway_400_is_retried_once_and_reason_is_reported(monkeypatch):
@@ -816,7 +817,7 @@ def test_gateway_400_is_retried_once_and_reason_is_reported(monkeypatch):
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
     engine = CrewAIEngine(api_key="test-key")
     assert engine.llm.call("merhaba") == "OK"
-    with pytest.raises(RuntimeError, match="400 döndürdü: .*context too long"):
+    with pytest.raises(RuntimeError, match="returned HTTP 400: .*context too long"):
         engine.llm.call("merhaba")
 
 
@@ -856,7 +857,7 @@ class ChangeAwareEngine(StubEngine):
     def document(self, stage, idea, context):
         self.contexts.setdefault(stage, []).append(context)
         text = super().document(stage, idea, context)
-        if stage == "analysis" and "DEĞİŞİKLİK MODU" in context:
+        if stage == "analysis" and "CHANGE MODE" in context:
             text += "FR-03: Ürünleri listele [CR-001]\n"
         return text
 
@@ -896,7 +897,7 @@ def test_feature_change_request_updates_only_affected_parts(tmp_path, monkeypatc
     assert result.status == "completed", result.error
     assert "planning" not in engine.contexts
     analysis = engine.contexts["analysis"][0]
-    assert "DEĞİŞİKLİK MODU" in analysis and "MEVCUT BELGE" in analysis and "FR-01: provide an HTTP response" in analysis
+    assert "CHANGE MODE" in analysis and "EXISTING DOCUMENT" in analysis and "FR-01: provide an HTTP response" in analysis
     assert engine.code_changes and "Ürün listeleme" in engine.code_changes[0][0]
     assert (result.project_dir / "tests/test_api.py").is_file() and (result.project_dir / "tests/test_items.py").is_file()
     db = History(tmp_path / "runs" / "history.sqlite3")
@@ -967,15 +968,15 @@ def test_streamlit_section_edit_marks_downstream_stale(tmp_path, monkeypatch):
         def __init__(self, api_key=None, model=None):
             pass
 
-        def section(self, stage, idea, context, document, section, instruction, mode):
+        def section(self, stage, idea, context, document, section, instruction, mode, language=None):
             assert stage == "analysis" and "FR-02" in section and "arşivle" in instruction
             return "```markdown\nFR-02: Ürünü silmek yerine arşivle.\n```"
 
     monkeypatch.setattr("autosdlc.crewai_engine.CrewAIEngine", FakeEngine)
     app = _app(tmp_path, monkeypatch).run()
-    app.selectbox(key="template_choice").select("gorev-api").run()
+    app.selectbox(key="template_choice").select("task-api").run()
     app.button(key="apply_template").click().run()
-    next(button for button in app.button if "Projeyi oluştur" in button.label).click().run()
+    next(button for button in app.button if "Create the project" in button.label).click().run()
     db = History(tmp_path / "runs" / "history.sqlite3")
     for _ in range(200):
         items = db.list()
@@ -1001,10 +1002,10 @@ def test_streamlit_section_edit_marks_downstream_stale(tmp_path, monkeypatch):
     assert "arşivle" in (output / "requirements.md").read_text(encoding="utf-8")
     assert list((output / "versions").glob("requirements.*.md"))
     assert any(e["status"] == "stale" and e["detail"] == "analysis" for e in db.get(run_id)["events"])
-    assert any("Güncel değil" in warning.value for warning in app.warning)
+    assert any("Out of date" in warning.value for warning in app.warning)
     app.button(key=f"focus_{prefix}").click().run()
     assert not app.exception, [e.value for e in app.exception]
-    assert any(button.label == "← Geri" for button in app.button)
+    assert any(button.label == "← Back" for button in app.button)
 
 
 def test_language_rules_reach_every_agent_and_terms_are_not_translated(monkeypatch):
@@ -1028,9 +1029,14 @@ def test_language_rules_reach_every_agent_and_terms_are_not_translated(monkeypat
     engine = CrewAIEngine(api_key="test-key")
     engine.document("planning", "Envanter", "")
     engine.section("analysis", "Envanter", "", "# Doc\nFR-01: x", "FR-01: x", "Neden?", "question")
-    assert all("DİL KURALLARI" in prompt and "addProduct" in prompt for prompt in prompts)
+    assert all("LANGUAGE RULES" in prompt and "addProduct" in prompt for prompt in prompts)
     assert choice_label("project_type", "fullstack") == "Fullstack" and choice_label("project_type", "backend") == "Backend"
-    assert "Arka uç" not in str(questions()) and "Backend" in questions()["ui"]["question"]
+    assert "backend" in questions()["ui"]["question"]
+    # Turkish documents: the prompt names the language and forbids translating the jargon.
+    prompts.clear()
+    engine.language = "tr"
+    engine.document("planning", "Envanter", "")
+    assert "in Turkish" in prompts[0] and "backend" in prompts[0] and '"arka uç"' in prompts[0] and "USER_QUESTION: <one clear question in Turkish>" in prompts[0]
 
 
 def test_empty_manifest_commands_mean_absent(tmp_path):
@@ -1051,7 +1057,7 @@ def test_invalid_manifest_is_sent_back_to_developer(tmp_path, monkeypatch):
     class SloppyDeveloper(StubEngine):
         def code(self, idea, docs, feedback=None, change=None):
             files = super().code(idea, docs, feedback=None)
-            if feedback and "PROJE YAPILANDIRMASI" in feedback:
+            if feedback and "PROJECT CONFIGURATION COULD NOT BE VALIDATED" in feedback:
                 feedbacks.append(feedback)
                 return {"project.yaml": "port: 8000\napi_test: [python, -m, pytest, -q, tests]\n"}
             if feedback:
@@ -1093,7 +1099,7 @@ def test_truncated_output_is_reported_and_development_is_batched(monkeypatch):
     with pytest.raises(OutputTruncated):
         engine._ask("testing", idea="x", context="", files="{}")
     assert engine._ask_files("testing", idea="x", context="", files="{}") == {"a.py": "x = 1"}
-    assert "uzunluk sınırında kesildi" in prompts[-1] and "daha az ve daha kısa" in prompts[-1]
+    assert "length limit" in prompts[-1] and "fewer and shorter files" in prompts[-1]
 
     plan_calls = []
     monkeypatch.setattr(engine, "_ask", lambda stage, extra="", **values: (plan_calls.append(extra), '{"plan": ['
@@ -1101,14 +1107,14 @@ def test_truncated_output_is_reported_and_development_is_batched(monkeypatch):
     batches = []
 
     def fake_files(stage, extra="", **values):
-        names = extra.split("ŞİMDİ YALNIZCA şu dosyaları eksiksiz yaz: ")[1].split(". ")[0].split(", ")
+        names = extra.split("NOW WRITE ONLY these files, completely: ")[1].split(". ")[0].split(", ")
         batches.append(names)
         return {name: "pass" for name in names}
 
     monkeypatch.setattr(engine, "_ask_files", fake_files)
     files = engine.code("x", "docs")
     assert batches == [["f0.py", "f1.py", "f2.py", "f3.py"], ["f4.py", "f5.py"]]
-    assert set(files) == {f"f{i}.py" for i in range(6)} and "BU ADIMDA KOD YAZMA" in plan_calls[0]
+    assert set(files) == {f"f{i}.py" for i in range(6)} and "DO NOT WRITE CODE IN THIS STEP" in plan_calls[0]
 
 
 def test_tests_written_outside_tests_dir_are_sent_back_once(tmp_path, monkeypatch):
@@ -1119,7 +1125,7 @@ def test_tests_written_outside_tests_dir_are_sent_back_once(tmp_path, monkeypatc
         def tests(self, idea, docs, files, change=None):
             contexts.append(docs)
             content = super().tests(idea, docs, files)["tests/test_api.py"]
-            return {"tests/test_api.py": content} if "REDDEDİLDİ" in docs else {"test_api.py": content}
+            return {"tests/test_api.py": content} if "REJECTED" in docs else {"test_api.py": content}
 
     result = run_project("Root tests", workspace=tmp_path, engine=RootTester(), decisions=BACKEND)
     assert result.status == "completed", result.error
@@ -1137,7 +1143,7 @@ def test_open_folder_uses_platform_file_manager(tmp_path, monkeypatch, platform,
     monkeypatch.setattr(desktop.subprocess, "run", lambda command, **kwargs: calls.append(command[:1]))
     desktop.open_folder(tmp_path)
     assert calls == [expected]
-    with pytest.raises(ValueError, match="bulunamadı"):
+    with pytest.raises(ValueError, match="not found"):
         desktop.open_folder(tmp_path / "yok")
 
 
@@ -1163,7 +1169,7 @@ def test_each_finished_iteration_is_kept_as_a_version(tmp_path, monkeypatch):
     # Netleştirme yanıtı, delta modundaki ajanlara kesin karar olarak ulaştı.
     assert "Hayır, ValueError" in engine.contexts["analysis"][0]
     versions = db.iterations(first.id)
-    assert [item["label"] for item in versions] == ["v1 · İlk sürüm", f"v2 · {change_id} · Yeni özellik: Kelvin desteği"]
+    assert [item["label"] for item in versions] == ["v1 · Initial version", f"v2 · {change_id} · New feature: Kelvin desteği"]
     assert versions[0]["last_event_id"] < versions[1]["first_event_id"] <= versions[1]["last_event_id"]
     v1, v2 = (Path(item["snapshot_dir"]) for item in versions)
     # v1'in kopyası, CR sonrası değişen dosyalardan etkilenmez.
@@ -1187,7 +1193,7 @@ def test_apply_patch_replaces_matching_sections_and_inserts_new_ones():
     assert merged.index("## Kısıtlar") < merged.index("## İşlevsel olmayan")
     whole = "# Gereksinimler\n\n" + "yeni içerik\n" * 30
     assert apply_patch(base, whole)[0].strip() == whole.strip()
-    assert apply_patch(base, "DEĞİŞİKLİK YOK") == (base, 0, 0)
+    assert apply_patch(base, "NO CHANGES") == (base, 0, 0) and apply_patch(base, "DEĞİŞİKLİK YOK") == (base, 0, 0)
 
 
 class PatchingEngine(ChangeAwareEngine):
@@ -1195,9 +1201,9 @@ class PatchingEngine(ChangeAwareEngine):
 
     def document(self, stage, idea, context):
         self.contexts.setdefault(stage, []).append(context)
-        if "YALNIZCA DEĞİŞEN BÖLÜMLER" in context and stage == "analysis":
+        if "CHANGED SECTIONS ONLY" in context and stage == "analysis":
             return "# Requirements\n\nFR-01: provide an HTTP response.\nFR-02: list items.\nFR-03: Ürünleri listele [CR-001]\nNFR-01: respond quickly.\n"
-        if "YALNIZCA DEĞİŞEN BÖLÜMLER" in context:
+        if "CHANGED SECTIONS ONLY" in context:
             return "DEĞİŞİKLİK YOK"
         return StubEngine.document(self, stage, idea, context)
 
@@ -1218,9 +1224,9 @@ def test_change_request_uses_section_patches_and_skips_unaffected_stages(tmp_pat
     assert "FR-03" in (result.output_dir / "requirements.md").read_text(encoding="utf-8")
     events = db.get(first.id)["events"]
     assert [e["stage"] for e in events if e["status"] == "skipped"] == ["review", "deployment", "maintenance"]
-    assert any(e["stage"] == "design" and e["status"] == "delta" and "gerekmedi" in e["detail"] for e in events)
+    assert any(e["stage"] == "design" and e["status"] == "delta" and "no change needed" in e["detail"] for e in events)
     deployment = (result.output_dir / "deployment.md").read_text(encoding="utf-8")
-    assert deployment.count("Doğrulanan test sonucu") == 1
+    assert deployment.count("Verified test result") == 1
     states = stage_states(events, "completed")
     assert states["review"] == "skipped" and states["testing"] == "done"
 
@@ -1244,12 +1250,12 @@ def test_small_scale_revises_design_only_for_critical_findings(tmp_path, monkeyp
     high = CriticalReviewEngine("Yüksek")
     run_project("Küçük API", workspace=tmp_path / "a", engine=high, decisions=small)
     assert high.design_calls == 1
-    assert any("KÜÇÜK PROJE" in context for stage, context in high.prompts if stage == "analysis")
+    assert any("SMALL PROJECT" in context for stage, context in high.prompts if stage == "analysis")
     critical = CriticalReviewEngine("Kritik")
     run_project("Küçük API", workspace=tmp_path / "b", engine=critical, decisions=small)
     assert critical.design_calls == 2
     # Revizyon yalnızca değişen bölümleri ister.
-    assert any("YALNIZCA DEĞİŞEN BÖLÜMLER" in context for stage, context in critical.prompts if stage == "design")
+    assert any("CHANGED SECTIONS ONLY" in context for stage, context in critical.prompts if stage == "design")
     normal = CriticalReviewEngine("Yüksek")
     run_project("Normal API", workspace=tmp_path / "c", engine=normal, decisions=BACKEND)
     assert normal.design_calls == 2
@@ -1258,3 +1264,50 @@ def test_small_scale_revises_design_only_for_critical_findings(tmp_path, monkeyp
 def test_scale_defaults_to_normal():
     assert validate_decisions(BACKEND)["scale"] == "normal"
     assert validate_decisions({**BACKEND, "scale": "small"})["scale"] == "small"
+
+
+def test_turkish_project_gets_turkish_documents_and_prompts(tmp_path, monkeypatch):
+    """The document language is a project decision: reports written by the application and the agent prompts follow it."""
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+
+    class Recording(StubEngine):
+        languages = set()
+
+        def document(self, stage, idea, context):
+            Recording.languages.add(getattr(self, "language", None))
+            return super().document(stage, idea, context)
+
+    turkish = run_project("Stok API", workspace=tmp_path / "tr", engine=Recording(), decisions={**BACKEND, "language": "tr"})
+    assert turkish.status == "completed", turkish.error
+    assert Recording.languages == {"tr"}
+    report = (turkish.output_dir / "test_report.md").read_text(encoding="utf-8")
+    assert "Test raporu" in report and "BAŞARILI" in report
+    assert "Mimari inceleme raporu" in (turkish.output_dir / "design_review.md").read_text(encoding="utf-8")
+    assert "Doğrulanan test sonucu" in (turkish.output_dir / "deployment.md").read_text(encoding="utf-8")
+    assert "İzlenebilirlik matrisi" in (turkish.output_dir / "traceability.md").read_text(encoding="utf-8")
+    assert "Üretilen proje" in (turkish.project_dir / "README.md").read_text(encoding="utf-8")
+    # Stored events and errors stay English; the UI translates them when displayed.
+    events = History(tmp_path / "tr" / "runs" / "history.sqlite3").get(turkish.id)["events"]
+    assert not [event for event in events if re.search(r"[çğıöşüÇĞİÖŞÜ]", event["detail"])]
+
+    english = run_project("Stock API", workspace=tmp_path / "en", engine=StubEngine(), decisions=BACKEND)
+    assert "Test report" in (english.output_dir / "test_report.md").read_text(encoding="utf-8")
+    assert "Verified test result" in (english.output_dir / "deployment.md").read_text(encoding="utf-8")
+
+
+def test_streamlit_ui_language_switch_translates_the_interface(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
+    path = str(Path(__file__).resolve().parent.parent / "streamlit_app.py")
+    app = AppTest.from_file(path, default_timeout=30).run()
+    assert not app.exception
+    assert any("New project" in title.value for title in app.title)
+    assert app.selectbox(key="ui_language").value == "en"
+    app.selectbox(key="ui_language").select("tr").run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("Yeni proje" in title.value for title in app.title)
+    # The new project's document language follows the interface language; jargon in the options is untouched.
+    assert app.selectbox(key="choice_language").value == "tr"
+    assert app.selectbox(key="project_type_input").options[2] == "Fullstack"
+    assert any(button.label == "Uygula" for button in app.button)

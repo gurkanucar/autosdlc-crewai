@@ -1,4 +1,4 @@
-"""YAML ile tanımlanan ve OpenCode Go kullanan CrewAI ajanları."""
+"""CrewAI agents defined in YAML that use OpenCode Go."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from typing import Any, Callable
 import httpx
 from dotenv import load_dotenv
 
+from .i18n import jargon_rule, prompt_language
+
 
 GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
 DEFAULT_MODEL = "glm-5.3-flash"
@@ -21,13 +23,13 @@ RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
 def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None]) -> tuple[str, str | None]:
-    """SSE akışını okur ve biriken metni her parçada on_text'e verir; sunucu akış vermezse düz JSON'a düşer.
+    """Reads the SSE stream and passes the accumulated text to on_text on every chunk; falls back to plain JSON if the server does not stream.
 
-    (metin, finish_reason) döndürür.
+    Returns (text, finish_reason).
     """
     with httpx.stream("POST", url, headers=headers, json={**payload, "stream": True}, timeout=300) as response:
         if response.status_code >= 400:
-            response.read()  # Hata gövdesi (sunucunun gerekçesi) mesajda gösterilebilsin.
+            response.read()  # So the error body (the server's reason) can be shown in the message.
         response.raise_for_status()
         if "text/event-stream" not in response.headers.get("content-type", ""):
             response.read()
@@ -52,18 +54,18 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
 
 
 class OutputTruncated(ValueError):
-    """Model, çıktı uzunluk sınırına ulaştığı için yanıtı yarıda kesti."""
+    """The model cut the response short because it reached the output length limit."""
 
 
 PLAN_INSTRUCTION = (
-    "\nBU ADIMDA KOD YAZMA. Yukarıdaki JSON biçimi yerine YALNIZCA dosya planını döndür: "
-    '{"plan": [{"path": "goreli/yol", "purpose": "tek cümlelik amaç"}]}. '
-    "project.yaml ve Dockerfile dahil gereken bütün dosyaları listele; en fazla 30 dosya, kilit dosyası yok."
+    "\nDO NOT WRITE CODE IN THIS STEP. Instead of the JSON format above, return ONLY the file plan: "
+    '{"plan": [{"path": "relative/path", "purpose": "one-sentence purpose"}]}. '
+    "List every file needed, including project.yaml and the Dockerfile; at most 30 files, no lock files."
 )
 
 
 class ClarificationNeeded(Exception):
-    """Bir ajan, devam etmeden önce kullanıcıdan tek bir karar ister."""
+    """An agent asks the user for a single decision before it continues."""
 
     def __init__(self, question: str):
         super().__init__(question)
@@ -80,7 +82,7 @@ def _parse_plan(raw: str) -> list[dict]:
             seen.add(path)
             plan.append({"path": path.strip(), "purpose": item.get("purpose", "") if isinstance(item, dict) else ""})
     if not plan:
-        raise ValueError("Ajan geçerli bir dosya planı döndürmedi")
+        raise ValueError("The agent did not return a valid file plan")
     return plan[:40]
 
 
@@ -91,14 +93,14 @@ def _extract_json(raw: str):
     try:
         value = json.loads(text)
     except json.JSONDecodeError:
-        # Modeller JSON'un önüne/arkasına açıklama ekleyebiliyor; en dıştaki nesneyi dene.
+        # Models may add explanations before/after the JSON; try the outermost object.
         start, end = text.find("{"), text.rfind("}")
         try:
             value = json.loads(text[start:end + 1]) if 0 <= start < end else None
         except json.JSONDecodeError:
             value = None
         if value is None:
-            raise ValueError("Ajan geçerli JSON dosyaları döndürmedi")
+            raise ValueError("The agent did not return valid JSON files")
     return value
 
 
@@ -108,7 +110,7 @@ def _parse_file_bundle(raw: str) -> dict[str, str]:
     if not isinstance(files, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in files.items()
     ):
-        raise ValueError("Ajan çıktısı files alanı içeren bir JSON nesnesi olmalı")
+        raise ValueError("The agent output must be a JSON object with a files field")
     return files
 
 
@@ -118,12 +120,12 @@ class CrewAIEngine:
             from crewai import Agent, BaseLLM, Crew, Process, Task
             import yaml
         except ImportError as exc:
-            raise RuntimeError("Bağımlılıklar eksik. Kurulum için make setup çalıştır") from exc
+            raise RuntimeError("Dependencies are missing. Run make setup to install them") from exc
 
         load_dotenv()
         self.key = api_key or os.getenv("OPENCODE_API_KEY", "")
         if not self.key:
-            raise RuntimeError("OPENCODE_API_KEY gerekli; yerel .env dosyasını kontrol et")
+            raise RuntimeError("OPENCODE_API_KEY is required; check the local .env file")
         self.model = model or os.getenv("AUTOSDLC_MODEL", DEFAULT_MODEL)
         self.session_id = "ses_" + uuid.uuid4().hex
 
@@ -132,9 +134,9 @@ class CrewAIEngine:
                 super().__init__(model=model_name, temperature=0.2)
                 inner.key = key
                 inner.session_id = session_id
-                # Tanımlıysa yanıt akış olarak alınır ve biriken metin canlı gösterim için buraya verilir.
+                # If set, the response is streamed and the accumulated text is passed here for the live view.
                 inner.listener = None
-                # Son yanıt modelin çıktı uzunluk sınırında kesildiyse True (finish_reason == "length").
+                # True if the last response was cut at the model's output length limit (finish_reason == "length").
                 inner.truncated = False
 
             def call(
@@ -146,10 +148,10 @@ class CrewAIEngine:
                 **_kwargs: Any,
             ) -> str:
                 if tools:
-                    raise ValueError("Bu projede ajanlara harici araç izni verilmez")
+                    raise ValueError("External tools are not allowed for agents in this project")
                 if isinstance(messages, str):
                     messages = [{"role": "user", "content": messages}]
-                # Geçici ağ/hız sınırı hatalarında üstel bekleme ile üç deneme.
+                # Three attempts with exponential backoff on temporary network/rate-limit errors.
                 for attempt in range(3):
                     url = f"{GO_BASE_URL}/chat/completions"
                     headers = {"Authorization": f"Bearer {inner.key}", "x-opencode-session": inner.session_id}
@@ -164,7 +166,7 @@ class CrewAIEngine:
                             content, finish = choice["message"]["content"], choice.get("finish_reason")
                         break
                     except httpx.HTTPStatusError as exc:
-                        # 400 normalde kalıcıdır; ama ağ geçidi geçici olarak da 400 dönebildiği için bir kez yeniden denenir.
+                        # A 400 is normally permanent, but a gateway can return a temporary 400 too, so it is retried once.
                         status_code = exc.response.status_code
                         if (status_code in RETRY_STATUSES or (status_code == 400 and attempt == 0)) and attempt < 2:
                             time.sleep(2 ** (attempt + 1))
@@ -174,18 +176,18 @@ class CrewAIEngine:
                         except httpx.ResponseNotRead:
                             reason = ""
                         raise RuntimeError(
-                            f"OpenCode Go HTTP {exc.response.status_code} döndürdü" + (f": {reason}" if reason else "")
+                            f"OpenCode Go returned HTTP {exc.response.status_code}" + (f": {reason}" if reason else "")
                         ) from exc
                     except httpx.TransportError as exc:
                         if attempt < 2:
                             time.sleep(2 ** (attempt + 1))
                             continue
-                        raise RuntimeError("OpenCode Go isteği başarısız") from exc
+                        raise RuntimeError("The OpenCode Go request failed") from exc
                     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
-                        raise RuntimeError("OpenCode Go isteği veya yanıtı başarısız") from exc
+                        raise RuntimeError("The OpenCode Go request or response failed") from exc
                 inner.truncated = finish == "length"
                 if not isinstance(content, str) or not content.strip():
-                    raise RuntimeError("OpenCode Go boş yanıt döndürdü")
+                    raise RuntimeError("OpenCode Go returned an empty response")
                 return content
 
             def supports_function_calling(inner) -> bool:
@@ -203,25 +205,30 @@ class CrewAIEngine:
         self.Process = Process
         self.Task = Task
         self.current_files: dict[str, str] = {}
-        # (aşama, o ana kadarki ajan çıktısı); RunSession canlı çıktı dosyasına yazmak için ayarlar.
+        # (stage, the agent output so far); RunSession sets it to write the live output file.
         self.output_listener: Callable[[str, str], None] | None = None
+        # Language of every document the agents write; RunSession sets it from the project's decisions.
+        self.language = "en"
         config_dir = resource_files("autosdlc").joinpath("config")
         self.agents = yaml.safe_load(config_dir.joinpath("agents.yaml").read_text(encoding="utf-8"))
         self.tasks = yaml.safe_load(config_dir.joinpath("tasks.yaml").read_text(encoding="utf-8"))
 
-    def _ask(self, stage: str, extra: str = "", task: str | None = None, ask_user: bool = True, **values: str) -> str:
-        """stage ajanın kimliğini (agents.yaml), task görev şablonunu (tasks.yaml; varsayılan stage) belirler."""
+    def _ask(self, stage: str, extra: str = "", task: str | None = None, ask_user: bool = True,
+             language: str | None = None, **values: str) -> str:
+        """stage selects the agent identity (agents.yaml), task the task template (tasks.yaml; default stage)."""
         agent_config = self.agents[stage]
         task_config = self.tasks[task or stage]
-        prompt = Template(task_config["description"]).substitute(values) + extra
-        prompt += "\n" + self.tasks.get("language_rules", "")
+        document_language = prompt_language(language or self.language)
+        prompt = Template(task_config["description"]).substitute({**values, "language": document_language}) + extra
+        prompt += "\n" + Template(self.tasks.get("language_rules", "")).safe_substitute(
+            language=document_language, terms=jargon_rule(language or self.language))
         listener = self.output_listener
         self.llm.listener = (lambda text: listener(stage, text)) if listener else None
         if ask_user:
             prompt += (
-                "\nKritik bir kullanıcı kararı eksikse varsayım yapmadan yalnızca "
-                "'KULLANICI_SORUSU: <tek, açık Türkçe soru>' biçiminde yanıt ver. "
-                "Yeterli bilgi varsa bu biçimi kullanma; görevin normal çıktısını üret."
+                "\nIf a critical user decision is missing, do not assume; reply only in the form "
+                f"'USER_QUESTION: <one clear question in {document_language}>'. "
+                "If you have enough information do not use this form; produce the task's normal output."
             )
         agent = self.Agent(
             role=agent_config["role"],
@@ -243,29 +250,29 @@ class CrewAIEngine:
         ).kickoff()
         raw = result.raw.strip()
         if self.llm.truncated:
-            raise OutputTruncated("Ajan çıktısı modelin uzunluk sınırında kesildi")
-        match = re.fullmatch(r"KULLANICI_SORUSU:\s*(.{1,1000})", raw, re.DOTALL)
+            raise OutputTruncated("The agent output was cut at the model's length limit")
+        match = re.fullmatch(r"(?:USER_QUESTION|KULLANICI_SORUSU):\s*(.{1,1000})", raw, re.DOTALL)
         if match:
             raise ClarificationNeeded(match.group(1).strip())
         return raw
 
     def _ask_files(self, stage: str, extra: str = "", **values: str) -> dict[str, str]:
-        """Dosya paketi ister; JSON bozuksa ajana hatayı söyleyip bir kez daha sorar."""
+        """Asks for a file bundle; if the JSON is broken, tells the agent the error and asks once more."""
         try:
             return _parse_file_bundle(self._ask(stage, extra=extra, **values))
         except ValueError as exc:
-            shorter = (" Bu kez daha az ve daha kısa dosya döndür; yalnızca gerekenleri yaz."
+            shorter = (" This time return fewer and shorter files; write only what is needed."
                        if isinstance(exc, OutputTruncated) else "")
             return _parse_file_bundle(self._ask(stage, extra=extra + (
-                f"\nÖNCEKİ YANITIN REDDEDİLDİ: {exc}.{shorter} Açıklama veya Markdown ekleme; "
-                'yalnızca {"files": {...}} biçiminde geçerli JSON döndür.'
+                f"\nYOUR PREVIOUS RESPONSE WAS REJECTED: {exc}.{shorter} Do not add explanations or Markdown; "
+                'return only valid JSON in the form {"files": {...}}.'
             ), **values))
 
     def _ask_files_batched(self, stage: str, batch_size: int = 4, **values: str) -> dict[str, str]:
-        """Büyük projeyi tek yanıtta yazdırmak çıktı sınırına takılır: önce dosya planı, sonra küçük gruplar.
+        """Writing a big project in one response hits the output limit: first a file plan, then small groups.
 
-        Her grup, daha önce yazılan dosyaları görür; böylece modüller arası arayüzler tutarlı kalır.
-        Plan alınamazsa tek parça üretime geri dönülür.
+        Every group sees the files written earlier, so interfaces between modules stay consistent.
+        If no plan can be obtained it falls back to single-piece generation.
         """
         try:
             plan = _parse_plan(self._ask(stage, extra=PLAN_INSTRUCTION, **values))
@@ -276,11 +283,11 @@ class CrewAIEngine:
         for start in range(0, len(plan), batch_size):
             batch = [item["path"] for item in plan[start:start + batch_size]]
             extra = (
-                f"\nDOSYA PLANI (bütün proje):\n{plan_text}\n"
-                f"Daha önce yazılan dosyalar (bunlarla tutarlı ol, tekrar yazma):\n"
+                f"\nFILE PLAN (the whole project):\n{plan_text}\n"
+                f"Files already written (stay consistent with them, do not write them again):\n"
                 f"{json.dumps(files, ensure_ascii=False)[:16000]}\n"
-                f"ŞİMDİ YALNIZCA şu dosyaları eksiksiz yaz: {', '.join(batch)}. "
-                'Yalnızca {"files": {"goreli/yol": "tam içerik"}} JSON döndür.'
+                f"NOW WRITE ONLY these files, completely: {', '.join(batch)}. "
+                'Return only JSON of the form {"files": {"relative/path": "full content"}}.'
             )
             files.update(self._ask_files(stage, extra=extra, **values))
         return files
@@ -290,21 +297,21 @@ class CrewAIEngine:
 
     def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]:
         current = (
-            "tests/ ve test/ altındaki dosyalar Test Ajanı'na aittir ve değiştirilmez. Yalnızca değişen veya yeni dosyaları döndür.\n"
-            "Mevcut dosyalar (testler dahil):\n"
+            "Files under tests/ and test/ belong to the Test Agent and must not be changed. Return only changed or new files.\n"
+            "Existing files (including tests):\n"
             f"{json.dumps(self.current_files, ensure_ascii=False)[:30000]}\n"
         )
         if change:
-            # Değişiklik talebi: mevcut uygulama korunur, yalnızca talebin gerektirdiği dosyalar değişir.
-            instruction = f"MEVCUT UYGULAMAYI BU DEĞİŞİKLİĞE GÖRE GÜNCELLE:\n{change[:6000]}\n"
+            # Change request: the existing application is kept, only the files the request requires change.
+            instruction = f"UPDATE THE EXISTING APPLICATION FOR THIS CHANGE:\n{change[:6000]}\n"
             if feedback:
-                instruction += f"Hatayı yeniden üreten test çıktısı:\n{feedback[-6000:]}\n"
+                instruction += f"Output of the test that reproduces the bug:\n{feedback[-6000:]}\n"
             instruction += current
         elif feedback:
-            # Hata özeti genellikle çıktının sonundadır; bu yüzden sondan alınır.
-            instruction = f"Bu test çıktısına göre uygulamayı düzelt:\n{feedback[-8000:]}\n" + current
+            # The error summary is usually at the end of the output, so it is taken from the end.
+            instruction = f"Fix the application according to this test output:\n{feedback[-8000:]}\n" + current
         else:
-            files = self._ask_files_batched("development", idea=idea, context=docs[:20000], feedback="İlk uygulamayı oluştur.\n")
+            files = self._ask_files_batched("development", idea=idea, context=docs[:20000], feedback="Create the first version of the application.\n")
             self.current_files.update(files)
             return files
         files = self._ask_files("development", idea=idea, context=docs[:20000], feedback=instruction)
@@ -315,11 +322,11 @@ class CrewAIEngine:
         extra = ""
         if change:
             extra = (
-                f"\nDEĞİŞİKLİK TALEBİ İÇİN TEST YAZIYORSUN:\n{change[:6000]}\n"
-                "Mevcut test dosyaları uygulama dosyalarıyla birlikte yukarıda; onları koru. "
-                "Yalnızca yeni veya güncellenmesi gereken test dosyalarını döndür. Yeni/değişen gereksinimlerin "
-                "kimliklerini (ör. FR-07) test adlarına yaz. Talep bir hataysa, hatayı yeniden üreten ve "
-                "şu anki kodla BAŞARISIZ olması beklenen bir regresyon testi yaz."
+                f"\nYOU ARE WRITING TESTS FOR A CHANGE REQUEST:\n{change[:6000]}\n"
+                "The existing test files are above together with the application files; keep them. "
+                "Return only new or updated test files. Put the ids of new/changed requirements "
+                "(e.g. FR-07) into the test names. If the request is a bug, write a regression test that "
+                "reproduces the bug and is EXPECTED TO FAIL with the current code."
             )
         return self._ask_files(
             "testing", extra=extra, idea=idea, context=docs[:16000],
@@ -327,18 +334,18 @@ class CrewAIEngine:
         )
 
     def section(self, stage: str, idea: str, context: str, document: str, section: str,
-                instruction: str, mode: str) -> str:
-        """Belgenin tek bölümü için: mode 'question' ise yanıt, 'rewrite'/'add' ise yeni Markdown döndürür."""
+                instruction: str, mode: str, language: str | None = None) -> str:
+        """For one section of a document: returns an answer for mode 'question', new Markdown for 'rewrite'/'add'."""
         task = "section_question" if mode == "question" else "section_edit"
         operation = {
-            "rewrite": "Bölümü talimata göre YENİDEN YAZ ve bölümün yeni hâlini (başlığıyla birlikte) döndür.",
-            "add": "Bölümün HEMEN ALTINA eklenecek YENİ içeriği yaz; mevcut bölümü tekrar etme.",
-            "question": "Soruyu yanıtla; belgeyi değiştirme.",
+            "rewrite": "REWRITE the section according to the instruction and return the section's new version (with its heading).",
+            "add": "Write the NEW content to be added RIGHT BELOW the section; do not repeat the existing section.",
+            "question": "Answer the question; do not change the document.",
         }[mode]
         return self._ask(
             stage, task=task, ask_user=False, idea=idea, context=context[:12000], document=document[:14000],
-            section=section[:6000], instruction=instruction[:2000], operation=operation,
+            section=section[:6000], instruction=instruction[:2000], operation=operation, language=language,
         )
 
-    def impact(self, idea: str, context: str, change: str) -> str:
-        return self._ask("impact", ask_user=False, idea=idea, context=context[:24000], change=change[:6000])
+    def impact(self, idea: str, context: str, change: str, language: str | None = None) -> str:
+        return self._ask("impact", ask_user=False, language=language, idea=idea, context=context[:24000], change=change[:6000])

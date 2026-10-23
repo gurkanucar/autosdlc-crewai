@@ -1,4 +1,4 @@
-"""AutoSDLC: proje oluşturma, canlı yaşam döngüsü, ajan chat'i, belge düzenleme ve proje yönetimi için yerel arayüz."""
+"""AutoSDLC: local UI for creating projects, the live lifecycle, agent chat, document editing and project management."""
 
 from __future__ import annotations
 
@@ -16,17 +16,18 @@ import yaml
 from dotenv import load_dotenv
 
 from autosdlc.crewai_engine import CrewAIEngine
-from autosdlc.exports import export_files, export_zip
+from autosdlc.exports import export_files, export_zip, project_zip
 from autosdlc.desktop import open_folder
-from autosdlc.intake import choice_label, questions, templates, validate_decisions
+from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
+from autosdlc.intake import choice_label, question_text, templates, questions, validate_decisions
 from autosdlc.lifecycle import (
-    STAGE_KEYS, STAGE_NAMES, STAGES, counters, format_duration, render_svg, stage_metrics, stage_states,
+    STAGE_KEYS, STAGES, counters, format_duration, render_svg, stage_description, stage_label, stage_metrics, stage_states,
 )
 from autosdlc.models import available_models, default_model
 from autosdlc.project_management import delete_project
 from autosdlc.runner import (
     CHANGE_KINDS, DOC_BUDGET, SKIPPABLE_STAGES, STAGE_INPUTS, RunPaused, backup_versions, completed_from_events,
-    open_questions,
+    open_questions, suggested_skips, parse_start_stage,
     run_project,
 )
 from autosdlc.sections import (
@@ -36,60 +37,71 @@ from autosdlc.storage import History
 from autosdlc.ui_jobs import WORKER_ERRORS
 
 
-# AUTOSDLC_WORKSPACE testlerde geçici klasör kullanmak içindir; normalde depo kökü.
+# AUTOSDLC_WORKSPACE lets tests use a temporary folder; normally it is the repository root.
 ROOT = Path(os.getenv("AUTOSDLC_WORKSPACE") or Path(__file__).resolve().parent).resolve()
 load_dotenv(Path(__file__).resolve().parent / ".env")
 st.set_page_config(page_title="AutoSDLC", page_icon="🧭", layout="wide")
 
+
+def use_language() -> None:
+    """Applies the language chosen in this browser session; called at the top of every script run, fragment and dialog."""
+    if "ui_language" not in st.session_state:
+        st.session_state["ui_language"] = normalize(st.query_params.get("lang"))
+    set_language(st.session_state["ui_language"])
+
+
+use_language()
+
 STATUS_LABELS = {
-    "running": ("🔵", "Çalışıyor", "blue"), "paused": ("🟠", "Duraklatıldı", "orange"),
-    "completed": ("🟢", "Tamamlandı", "green"), "failed": ("🔴", "Başarısız", "red"),
+    "running": ("🔵", "Running", "blue"), "paused": ("🟠", "Paused", "orange"),
+    "completed": ("🟢", "Completed", "green"), "failed": ("🔴", "Failed", "red"),
 }
 STATE_ICONS = {"pending": "○", "running": "🔵", "question": "❔", "done": "✅", "failed": "❌", "paused": "⏸", "stale": "↻",
                "skipped": "↷"}
-STATE_LABELS = {"pending": "Sırada", "running": "Çalışıyor", "question": "Yanıt bekliyor", "done": "Tamamlandı",
-                "failed": "Başarısız", "paused": "Duraklatıldı", "stale": "Güncel değil", "skipped": "Atlandı"}
-SECTION_ACTIONS = {"question": "💬 Sor", "rewrite": "✍️ Yeniden yaz", "add": "➕ Ekle", "delete": "🗑️ Sil", "manual": "✏️ Elle"}
-CHANGE_STATUS = {"draft": "📝 Taslak", "analyzed": "🔍 Analiz edildi", "in_progress": "🔵 Uygulanıyor",
-                 "done": "✅ Tamamlandı", "failed": "❌ Başarısız", "rejected": "✖ Reddedildi"}
-START_STAGE = re.compile(r"BAŞLANGIÇ:\s*\**\s*(analysis|design|development)", re.IGNORECASE)
-SKIP_LINE = re.compile(r"ATLA:\s*\**\s*([a-z, ]*)", re.IGNORECASE)
+STATE_LABELS = {"pending": "Pending", "running": "Running", "question": "Waiting for answer", "done": "Completed",
+                "failed": "Failed", "paused": "Paused", "stale": "Out of date", "skipped": "Skipped"}
+SECTION_ACTIONS = {"question": "💬 Ask", "rewrite": "✍️ Rewrite", "add": "➕ Add", "delete": "🗑️ Delete", "manual": "✏️ Manual"}
+CHANGE_STATUS = {"draft": "📝 Draft", "analyzed": "🔍 Analyzed", "in_progress": "🔵 In progress",
+                 "done": "✅ Completed", "failed": "❌ Failed", "rejected": "✖ Rejected"}
 ITERATION_ICONS = {"completed": "✅", "failed": "❌"}
 EVENT_NAMES = {
-    "started": "Başladı", "completed": "Tamamlandı", "passed": "Testler geçti",
-    "failed": "Başarısız", "repair_started": "Onarım başladı", "repair_completed": "Onarım tamamlandı",
-    "question": "Kullanıcı kararı bekleniyor", "answered": "Yanıtlandı",
-    "gate_failed": "Kalite kapısı: yeniden yazılıyor", "traceability": "İzlenebilirlik matrisi",
-    "tests_protected": "Test dosyası değişikliği reddedildi", "approved": "İnceleme: ONAY",
-    "changes_requested": "İnceleme: REVİZYON", "revision_started": "Revizyon başladı",
-    "revision_completed": "Revizyon tamamlandı", "paused": "Duraklatıldı", "interrupted": "Kesintiye uğradı",
-    "reset": "Yeniden üretim istendi", "edited": "Elle düzenlendi", "stale": "Sonraki aşamalar güncel değil",
-    "section_question": "Bölüm sorusu", "change_started": "Değişiklik başladı", "change_completed": "Değişiklik tamamlandı",
-    "change_failed": "Değişiklik başarısız", "bug_reproduced": "Hata testle yeniden üretildi",
-    "bug_not_reproduced": "Hata yeniden üretilemedi", "regression": "Regresyon testi", "tests_not_covered": "Çalıştırılmayan test",
+    "started": "Started", "completed": "Completed", "passed": "Tests passed",
+    "failed": "Failed", "repair_started": "Repair started", "repair_completed": "Repair completed",
+    "question": "Waiting for user decision", "answered": "Answered",
+    "gate_failed": "Quality gate: rewriting", "traceability": "Traceability matrix",
+    "tests_protected": "Test file change rejected", "approved": "Review: APPROVE",
+    "changes_requested": "Review: REVISE", "revision_started": "Revision started",
+    "revision_completed": "Revision completed", "paused": "Paused", "interrupted": "Interrupted",
+    "reset": "Regeneration requested", "edited": "Edited manually", "stale": "Later stages out of date",
+    "section_question": "Section question", "change_started": "Change started", "change_completed": "Change completed",
+    "change_failed": "Change failed", "bug_reproduced": "Bug reproduced by a test",
+    "bug_not_reproduced": "Bug not reproduced", "regression": "Regression test", "tests_not_covered": "Test not executed",
+    "delta": "Section patch", "skipped": "Stage skipped", "revision_skipped": "Revision not needed",
 }
-# Aşama → (dosya, etiket, düzenlenince yeniden üretime başlanacak aşama). None: salt okunur.
+# Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
-    "planning": [("planning.md", "Proje planı", "analysis")],
-    "analysis": [("requirements.md", "Gereksinimler", "design")],
-    "design": [("architecture.md", "Mimari tasarım", "review")],
-    "review": [("design_review.md", "Mimari inceleme", "development")],
-    "testing": [("test_report.md", "Test raporu", None), ("traceability.md", "İzlenebilirlik matrisi", None)],
-    "deployment": [("deployment.md", "Dağıtım kılavuzu", "maintenance")],
-    "maintenance": [("maintenance_report.md", "Bakım planı", None)],
+    "planning": [("planning.md", "Project plan", "analysis")],
+    "analysis": [("requirements.md", "Requirements", "design")],
+    "design": [("architecture.md", "Architecture design", "review")],
+    "review": [("design_review.md", "Architecture review", "development")],
+    "testing": [("test_report.md", "Test report", None), ("traceability.md", "Traceability matrix", None)],
+    "deployment": [("deployment.md", "Deployment guide", "maintenance")],
+    "maintenance": [("maintenance_report.md", "Maintenance plan", None)],
 }
-LANGUAGES = {".py": "python", ".js": "javascript", ".ts": "typescript", ".go": "go", ".rs": "rust", ".java": "java",
-             ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".html": "html", ".css": "css", ".md": "markdown",
-             ".toml": "toml", ".sql": "sql", ".sh": "bash"}
+CODE_LANGUAGES = {".py": "python", ".js": "javascript", ".ts": "typescript", ".go": "go", ".rs": "rust", ".java": "java",
+                  ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".html": "html", ".css": "css", ".md": "markdown",
+                  ".toml": "toml", ".sql": "sql", ".sh": "bash"}
 MERMAID_BLOCK = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 MERMAID_SCRIPT = (
     '<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";'
     'mermaid.initialize({startOnLoad:false,theme:"neutral",securityLevel:"strict"});'
     'try {await mermaid.run({querySelector:".mermaid"});} catch(e) {'
-    'document.querySelector(".mermaid").textContent="Diyagram çizilemedi. Markdown dosyasını indirerek kaynağı inceleyebilirsin.";}'
+    'document.querySelector(".mermaid").textContent=%s;}'
     '</script>'
 )
 FORM_FIELDS = {"project_type", "stack", "constraints"}
+FORM_LABELS = {"database": "Database", "cache": "Cache", "observability": "Observability", "ui": "Web UI",
+               "scale": "Scale", "language": "Document language"}
 
 st.html("""<style>
 .block-container {padding-top:4.5rem; padding-bottom:5rem; max-width:1600px;}
@@ -119,11 +131,11 @@ div[data-testid="stChatMessageAvatarUser"], div[data-testid="stChatMessageAvatar
 </style>""")
 
 
-# ---------------------------------------------------------------- arka plan işleri
+# ---------------------------------------------------------------- background jobs
 
 def history() -> History:
     db = History(ROOT / "runs" / "history.sqlite3")
-    # Arayüz yeniden başlatıldıysa yarım kalan çalışmalar kilitli kalmasın.
+    # If the UI was restarted, runs left half-way must not stay locked.
     db.recover_stale()
     return db
 
@@ -144,11 +156,11 @@ def wait_for_answer(current_id: str, stage: str, prompt: str) -> str:
         if item and item["answer"] is not None:
             return item["answer"]
         time.sleep(0.5)
-    raise TimeoutError("Kullanıcı yanıtı bir saat içinde gelmedi")
+    raise TimeoutError("The user's answer did not arrive within one hour")
 
 
 def _spawn(job_id: str, name: str, **kwargs) -> None:
-    # job_id, run_project'e giden run_id/resume_run_id ile aynı değerdir ama çakışmasın diye ayrı adlandırılır.
+    # job_id is the same value as the run_id/resume_run_id passed to run_project but is named apart to avoid a clash.
     WORKER_ERRORS.pop(job_id, None)
 
     def worker() -> None:
@@ -172,43 +184,44 @@ def resume_run(run_id: str, api_key: str | None) -> None:
 
 def regenerate(db: History, run_id: str, stage: str, api_key: str | None) -> None:
     if not db.reset_from(run_id, stage):
-        raise ValueError("Çalışan bir proje yeniden üretilemez; önce durdur.")
+        raise ValueError(t("A running project cannot be regenerated; stop it first."))
     resume_run(run_id, api_key)
 
 
-# ---------------------------------------------------------------- küçük yardımcılar
+# ---------------------------------------------------------------- small helpers
 
 def api_key_field(prefix: str) -> tuple[bool, str | None]:
-    """(anahtar hazır mı, kullanıcı anahtarı). .env anahtarı tarayıcıya hiç gönderilmez."""
-    if os.getenv("OPENCODE_API_KEY") and not st.toggle("Farklı API anahtarı kullan", key=f"{prefix}_override"):
-        st.caption("🔐 API anahtarı yerel `.env` dosyasından okunacak.")
+    """(key ready?, user key). The .env key is never sent to the browser."""
+    if os.getenv("OPENCODE_API_KEY") and not st.toggle(t("Use a different API key"), key=f"{prefix}_override"):
+        st.caption(t("🔐 The API key will be read from the local `.env` file."))
         return True, None
-    key = st.text_input("OpenCode Go API anahtarı", type="password", key=f"{prefix}_key", placeholder="oc_sk_…") or None
+    key = st.text_input(t("OpenCode Go API key"), type="password", key=f"{prefix}_key", placeholder="oc_sk_…") or None
     return bool(key), key
 
 
 def show_diagram(svg: str, *, zoom: int = 100) -> None:
-    # SVG'nin oranını koru. İçerik yüksekliği genişlik/zoom ile birlikte ölçülür; alt etiketler kesilmez.
+    # Keep the SVG aspect ratio. Content height is measured with width/zoom so bottom labels are not clipped.
     st.iframe(
         '<style>html,body{margin:0;padding:0;background:transparent} '
         'svg{display:block;width:100%;height:auto} .graph{min-width:860px}</style>'
         f'<div class="graph" style="width:{zoom}%">{svg}</div>',
-        height="content", alt="SDLC yaşam döngüsü düğüm grafiği",
+        height="content", alt=t("SDLC lifecycle node graph"),
     )
 
 
 def render_markdown(content: str) -> None:
-    """Markdown'ı gösterir; ```mermaid blokları gerçek diyagram olarak çizilir (internet gerekir, yoksa metin kalır)."""
+    """Shows Markdown; ```mermaid blocks are drawn as real diagrams (needs internet, otherwise the text stays)."""
     position = 0
+    failure = json.dumps(t("The diagram could not be drawn. Download the Markdown file to inspect the source."))
     for match in MERMAID_BLOCK.finditer(content):
         if content[position:match.start()].strip():
             st.markdown(content[position:match.start()])
-        # Mermaid kodu LLM çıktısıdır: escape() ile yalnızca metin olarak verilir, Mermaid de "strict" güvenlik modunda çizer.
+        # Mermaid code is LLM output: escape() passes it as text only and Mermaid renders in "strict" security mode.
         st.iframe('<style>html,body{margin:0;padding:0} .mermaid{margin:0;padding:12px 0;white-space:pre-wrap;'
                   'font-family:system-ui;box-sizing:border-box} .mermaid svg{display:block;width:100%;'
                   'height:auto;max-height:none!important;margin:auto}</style>'
-                  f'<pre class="mermaid">{escape(match.group(1))}</pre>{MERMAID_SCRIPT}',
-                  height="content", alt="Belge Mermaid diyagramı")
+                  f'<pre class="mermaid">{escape(match.group(1))}</pre>{MERMAID_SCRIPT % failure}',
+                  height="content", alt=t("Document Mermaid diagram"))
         position = match.end()
     if content[position:].strip():
         st.markdown(content[position:])
@@ -221,6 +234,10 @@ def read_text(path: Path) -> str | None:
         return None
 
 
+def event_name(status: str) -> str:
+    return t(EVENT_NAMES.get(status, status))
+
+
 def active_stage(states: dict[str, str]) -> str:
     for wanted in ("question", "running", "failed", "paused"):
         found = next((key for key in STAGE_KEYS if states[key] == wanted), None)
@@ -231,71 +248,75 @@ def active_stage(states: dict[str, str]) -> str:
 
 
 def describe_activity(row: dict, states: dict[str, str]) -> str:
-    stale = [STAGE_NAMES[key] for key in STAGE_KEYS if states[key] == "stale"]
+    stale = [stage_label(key) for key in STAGE_KEYS if states[key] == "stale"]
     if stale and row["status"] != "running":
-        return f"Belgeler düzenlendi; {len(stale)} aşama güncel değil. Aşağıdaki uyarıdan güncelleyebilirsin."
+        return t("Documents were edited; {count} stages are out of date. Update them from the warning below.", count=len(stale))
     if row["status"] == "completed":
-        return "Tüm aşamalar tamamlandı ve testler geçti."
+        return t("All stages completed and the tests passed.")
     if row["status"] == "failed":
-        return row["error"] or "Çalışma tamamlanamadı; olayları ve test raporunu incele."
+        return translate_stored(row["error"]) if row["error"] else t("The run could not be completed; check the events and the test report.")
     if row["status"] == "paused":
         interrupted = any(event["status"] == "interrupted" for event in row["events"][-3:])
-        return "Süreç kesintiye uğradı; kaldığı yerden devam ettirebilirsin." if interrupted else "Çalışma duraklatıldı; tamamlanan aşamalar korunuyor."
+        return (t("The process was interrupted; you can resume where it stopped.") if interrupted
+                else t("The run is paused; completed stages are kept."))
     if row["pause_requested"]:
-        return "Durdurma istendi; süren ajan çağrısı bitince çalışma duraklayacak."
+        return t("Stop requested; the run will pause when the current agent call finishes.")
     waiting = next((key for key in STAGE_KEYS if states[key] == "question"), None)
     if waiting:
-        return f"{STAGE_NAMES[waiting]} ajanı senden bir karar bekliyor — aşağıdaki chat kutusuna yanıtını yaz."
+        return t("The {stage} agent is waiting for a decision — type your answer in the chat box below.", stage=stage_label(waiting))
     last = row["events"][-1] if row["events"] else None
     if last is None:
-        return "Çalışma başlatılıyor…"
-    stage = STAGE_NAMES.get(last["stage"], last["stage"])
-    return f"{stage} · {EVENT_NAMES.get(last['status'], last['status'])}" + (f" — {last['detail'][:140]}" if last["detail"] else "")
+        return t("Starting the run…")
+    stage = stage_label(last["stage"]) if last["stage"] in STAGE_KEYS else last["stage"]
+    return f"{stage} · {event_name(last['status'])}" + (f" — {translate_stored(last['detail'])[:140]}" if last["detail"] else "")
 
 
 # ---------------------------------------------------------------- chat
 
 def chat_messages(row: dict) -> list[tuple[str, str, str]]:
-    """(zaman, rol, metin) listesi: ajan olayları, sorular, kullanıcı yanıtları ve notları kronolojik."""
-    agents = {stage.key: stage.agent for stage in STAGES}
+    """(time, role, text) list: agent events, questions, user answers and notes in chronological order."""
+    agents = {stage.key: t(stage.agent) for stage in STAGES}
     messages = []
     for event in row["events"]:
-        stage, status, detail = event["stage"], event["status"], event["detail"]
-        agent = agents.get(stage, "İş akışı")
+        stage, status = event["stage"], event["status"]
+        detail = translate_stored(event["detail"])
+        agent = agents.get(stage, t("Workflow"))
+        name = stage_label(stage) if stage in STAGE_KEYS else stage
+        detail_stage = stage_label(event["detail"]) if event["detail"] in STAGE_KEYS else None
         text = {
-            "started": f"▶ **{STAGE_NAMES.get(stage, stage)}** aşamasına başladım.",
-            "completed": f"✅ Hazır: `{detail}`" if detail and len(detail) < 80 else "✅ Aşama tamamlandı.",
-            "gate_failed": f"⚠️ Kalite kapısından geçemedi: {detail} — yeniden yazıyorum.",
-            "changes_requested": f"🔁 Tasarımda düzeltilmesi gereken bulgular var ({detail}); Tasarım Ajanı'na geri gönderiyorum.",
-            "approved": f"✅ Tasarımı onayladım ({detail}).",
-            "revision_started": "✏️ İnceleme bulgularına göre tasarımı revize ediyorum.",
-            "revision_skipped": f"➡️ Revizyon gerekmedi: {detail}.",
-            "delta": f"🧩 Yalnızca değişen bölümler: {detail}.",
-            "skipped": f"↷ Aşama atlandı: {detail}; önceki belge korundu.",
-            "passed": f"✅ Testler geçti ({detail}).",
-            "failed": f"❌ Testler başarısız ({detail})." if stage == "testing" else f"❌ {detail}",
-            "repair_started": "🛠️ Test hatalarına göre kodu düzeltiyorum.",
-            "tests_protected": f"🛡️ Test dosyalarını değiştirme girişimi reddedildi: {detail}",
-            "traceability": f"🔗 İzlenebilirlik matrisi çıkarıldı: {detail}.",
-            "question": f"❔ **Sorum var:** {detail}",
-            "paused": "⏸ Çalışma duraklatıldı.",
-            "interrupted": "⚠️ Süreç kesintiye uğradı; kaldığı yerden devam ettirilebilir.",
-            "reset": f"🔁 **{STAGE_NAMES.get(detail, detail)}** aşamasından itibaren yeniden üretim istendi.",
-            "edited": f"✏️ `{detail}` düzenlendi.",
-            "stale": f"↻ **{STAGE_NAMES.get(detail, 'Mimari kararlar')}** değişti; sonraki aşamalar güncel değil.",
+            "started": t("▶ I started the **{stage}** stage.", stage=name),
+            "completed": t("✅ Ready: `{detail}`", detail=detail) if detail and len(detail) < 80 else t("✅ Stage completed."),
+            "gate_failed": t("⚠️ It failed the quality gate: {detail} — rewriting.", detail=detail),
+            "changes_requested": t("🔁 The design has findings to fix ({detail}); sending it back to the Design Agent.", detail=detail),
+            "approved": t("✅ I approved the design ({detail}).", detail=detail),
+            "revision_started": t("✏️ I am revising the design according to the review findings."),
+            "revision_skipped": t("➡️ No revision needed: {detail}.", detail=detail),
+            "delta": t("🧩 Only the changed sections: {detail}.", detail=detail),
+            "skipped": t("↷ Stage skipped: {detail}; the previous document was kept.", detail=detail),
+            "passed": t("✅ Tests passed ({detail}).", detail=detail),
+            "failed": t("❌ Tests failed ({detail}).", detail=detail) if stage == "testing" else f"❌ {detail}",
+            "repair_started": t("🛠️ I am fixing the code according to the test failures."),
+            "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
+            "traceability": t("🔗 Traceability matrix produced: {detail}.", detail=detail),
+            "question": t("❔ **I have a question:** {detail}", detail=detail),
+            "paused": t("⏸ The run was paused."),
+            "interrupted": t("⚠️ The process was interrupted; it can be resumed where it stopped."),
+            "reset": t("🔁 Regeneration was requested from the **{stage}** stage.", stage=detail_stage or detail),
+            "edited": t("✏️ `{detail}` was edited.", detail=detail),
+            "stale": t("↻ **{stage}** changed; later stages are out of date.", stage=detail_stage or t("Architecture decisions")),
             "section_question": f"💬 {detail}",
-            "change_started": f"🔁 Değişiklik iterasyonu başladı: **{detail}**",
-            "change_completed": f"✅ Değişiklik tamamlandı: **{detail}**",
-            "change_failed": f"❌ Değişiklik başarısız: **{detail}**",
-            "bug_reproduced": "🐞 Hatayı yeniden üreten regresyon testi yazdım; test şu an başarısız (beklenen).",
-            "bug_not_reproduced": "⚠️ Yazdığım regresyon testi hatayı yeniden üretemedi; yine de düzeltme deneniyor.",
-            "regression": f"🔁 Regresyon: {detail}.",
-            "tests_not_covered": f"⚠️ project.yaml komutlarınca çalıştırılmayan test dosyaları: {detail}",
+            "change_started": t("🔁 Change iteration started: **{detail}**", detail=detail),
+            "change_completed": t("✅ Change completed: **{detail}**", detail=detail),
+            "change_failed": t("❌ Change failed: **{detail}**", detail=detail),
+            "bug_reproduced": t("🐞 I wrote a regression test that reproduces the bug; it fails right now (expected)."),
+            "bug_not_reproduced": t("⚠️ My regression test could not reproduce the bug; trying the fix anyway."),
+            "regression": t("🔁 Regression: {detail}.", detail=detail),
+            "tests_not_covered": t("⚠️ Test files not executed by the project.yaml commands: {detail}", detail=detail),
         }.get(status)
         if text:
             messages.append((event["created_at"], agent, text))
     for item in row["questions"]:
-        if item["answer"] and item["answered_at"] and item["answer"] != "Önceki soru yenilendi":
+        if item["answer"] and item["answered_at"] and item["answer"] not in {"Previous question was superseded", "Önceki soru yenilendi"}:
             messages.append((item["answered_at"], "user", item["answer"]))
     for note in row.get("notes", []):
         messages.append((note["created_at"], "user", f"📝 {note['content']}"))
@@ -303,39 +324,40 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
 
 
 def chat_feed(run_id: str) -> None:
-    """Ajan akışı: kronolojik; Streamlit sabit yükseklikli chat kutusunu en alta (en yeni mesaja) kaydırır."""
+    """Agent feed: chronological; Streamlit scrolls a fixed-height chat box to the bottom (the newest message)."""
+    use_language()
     db = history()
     row = db.get(run_id)
     if row is None:
         return
     pending = db.pending_question(run_id) if row["status"] == "running" else None
     if pending:
-        st.warning(f"**{STAGE_NAMES.get(pending['stage'], pending['stage'])} ajanı soruyor:** {pending['prompt']}  \n"
-                   "↓ Yanıtını aşağıdaki kutuya yaz.", icon="❔")
-    st.caption("💬 Ajan akışı")
+        st.warning(t("**The {stage} agent is asking:** {prompt}", stage=stage_label(pending["stage"]), prompt=pending["prompt"])
+                   + "  \n" + t("↓ Type your answer in the box below."), icon="❔")
+    st.caption(t("💬 Agent feed"))
     with st.container(height=300 if pending else 400, border=True):
         messages = chat_messages(row)[-80:]
         if not messages:
-            st.caption("Ajanların mesajları burada akacak.")
+            st.caption(t("The agents' messages will flow here."))
         for moment, role, text in messages:
             user = role == "user"
             with st.chat_message("user" if user else "assistant", avatar="🧑" if user else "🤖"):
-                who = "Sen" if user else escape(role)
+                who = t("You") if user else escape(role)
                 st.markdown(f"<small><b>{who}</b> · {moment[11:19]}</small>  \n{text}", unsafe_allow_html=True)
 
 
 def chat_placeholder(db: History, row: dict) -> tuple[dict | None, str]:
     pending = db.pending_question(row["id"]) if row["status"] == "running" and not row["pause_requested"] else None
-    placeholder = (f"❔ {STAGE_NAMES.get(pending['stage'], pending['stage'])} ajanının sorusunu yanıtla…" if pending
-                   else "Ajanlara not yaz (ör. 'arayüz koyu tema olsun'); sonraki aşamalarda dikkate alınır…")
+    placeholder = (t("❔ Answer the {stage} agent's question…", stage=stage_label(pending["stage"])) if pending
+                   else t("Write a note to the agents (e.g. 'the UI should use a dark theme'); later stages take it into account…"))
     return pending, placeholder
 
 
 def handle_chat(db: History, row: dict) -> None:
-    """Gönderilen chat mesajını sayfa çizilmeden işler: bekleyen soru varsa yanıt, yoksa yönlendirme notu.
+    """Processes a submitted chat message before the page is drawn: an answer if a question is pending, else a steering note.
 
-    Chat kutusu sayfa altına sabitlenmesin (sabitlenirse Streamlit sayfayı hep en alta kaydırır) diye
-    satır içi çizilir; değeri ise burada, akış bölümleri çizilmeden önce okunur.
+    The chat box is drawn inline (a bottom-pinned one makes Streamlit always scroll the page down), so its value is
+    read here, before the feed sections are drawn.
     """
     text = st.session_state.get(f"chat_{row['id']}")
     if not text:
@@ -344,19 +366,19 @@ def handle_chat(db: History, row: dict) -> None:
     try:
         if pending:
             if not db.answer(row["id"], pending["id"], text):
-                st.toast("Bu soru zaten yanıtlandı.")
+                st.toast(t("This question was already answered."))
         else:
             db.add_note(row["id"], text)
-            st.toast("Not kaydedildi; sonraki aşamaların bağlamına eklenecek." if row["status"] == "running"
-                     else "Not kaydedildi; yeniden üretimde dikkate alınacak.")
+            st.toast(t("Note saved; it will be added to the context of later stages.") if row["status"] == "running"
+                     else t("Note saved; it will be taken into account on regeneration."))
     except ValueError as exc:
-        st.toast(str(exc))
+        st.toast(translate_stored(str(exc)))
 
 
-# ---------------------------------------------------------------- aşama detayı
+# ---------------------------------------------------------------- stage detail
 
 def project_files(project_dir: Path) -> list[Path]:
-    # Nokta dosyaları sona: ilk açılan dosya .dockerignore değil, gerçek kaynak olsun.
+    # Dotfiles last: the first file opened should be real source, not .dockerignore.
     return sorted(export_files(project_dir), key=lambda item: (item.name.startswith("."), str(item)))
 
 
@@ -379,9 +401,9 @@ def pending_edits_path(row: dict) -> Path:
 
 def accept_edit(db: History, row: dict, stage: str, filename: str, before: str, after: str, summary: str,
                 stale_from: str | None = None) -> None:
-    """Düzenlemeyi kaydeder, sonraki aşamaları 'güncel değil' işaretler ve delta güncelleme için not alır.
+    """Saves the edit, marks later stages 'out of date' and records it for the delta update.
 
-    stale_from: hangi aşamadan sonrası etkilenir; "decisions" verilirse bütün aşamalar (varsayılan: stage).
+    stale_from: the stage after which everything is affected; "decisions" affects all stages (default: stage).
     """
     save_document(db, row, filename, after, stage)
     path = pending_edits_path(row)
@@ -392,34 +414,40 @@ def accept_edit(db: History, row: dict, stage: str, filename: str, before: str, 
 
 
 def propagate(db: History, row: dict, start: str, delta: bool, api_key: str | None) -> None:
-    """Güncel olmayan aşamaları yeniden çalıştırır; delta ise önceki belgeler korunup yalnızca etkilenen kısımlar değişir."""
+    """Re-runs out-of-date stages; in delta mode earlier documents are kept and only affected parts change."""
     path = pending_edits_path(row)
     edits = json.loads(read_text(path) or "[]")
     if delta:
-        description = "Kullanıcı şu belge düzenlemelerini yaptı; sonraki aşamaları bunlara göre güncelle:\n" + "\n".join(
+        description = "The user made these document edits; update the later stages accordingly:\n" + "\n".join(
             f"- {edit['file']} · {edit['summary']}\n{edit['diff'][:1500]}" for edit in edits
         )
-        change_id = db.create_change(row["id"], "edit", f"Belge düzenlemeleri ({len(edits) or 1})", description[:3990], status="in_progress")
+        change_id = db.create_change(row["id"], "edit", f"Document edits ({len(edits) or 1})", description[:3990], status="in_progress")
         db.update_change(row["id"], change_id, start_stage=start)
     regenerate(db, row["id"], start, api_key)
     path.unlink(missing_ok=True)
 
 
 def stage_context(row: dict, stage: str) -> str:
-    """Bölüm işlemleri için ajan bağlamı: kararlar ve aşamanın girdisi olan önceki belgeler."""
+    """Agent context for section operations: the decisions and the earlier documents that are this stage's input."""
     output = Path(row["output_dir"])
-    parts = [f"Mimari kararlar:\n{read_text(output / 'decisions.yaml') or ''}"]
+    parts = [f"Architecture decisions:\n{read_text(output / 'decisions.yaml') or ''}"]
     names = {"planning": "planning.md", "analysis": "requirements.md", "design": "architecture.md", "review": "design_review.md",
              "deployment": "deployment.md", "maintenance": "maintenance_report.md"}
     for name in STAGE_INPUTS.get(stage, ()):
         text = read_text(output / names.get(name, "")) if name in names else None
         if text:
-            parts.append(f"--- {name} belgesi ---\n{text[:DOC_BUDGET]}")
+            parts.append(f"--- {name} document ---\n{text[:DOC_BUDGET]}")
     return "\n\n".join(parts)
 
 
 def make_engine(row: dict, api_key: str | None) -> CrewAIEngine:
     return CrewAIEngine(api_key=api_key, model=row["model"] or None)
+
+
+def document_language(row: dict) -> str:
+    path = Path(row["output_dir"]) / "decisions.yaml"
+    decisions = yaml.safe_load(read_text(path) or "") or {}
+    return normalize(decisions.get("language"))
 
 
 def open_focus(row: dict, path: Path, title: str) -> None:
@@ -428,18 +456,21 @@ def open_focus(row: dict, path: Path, title: str) -> None:
 
 
 def focus_view(focus: dict) -> None:
-    """Belgeyi ya da README'yi tam genişlikte, kutu yüksekliği sınırı olmadan gösterir."""
+    """Shows a document or the README at full width, without the box height limit."""
+    use_language()
     back, title, download = st.columns([1.2, 6, 1.5], vertical_alignment="center")
-    if back.button("← Geri", width="stretch"):
+    if back.button(t("← Back"), width="stretch"):
         st.session_state.pop("focus")
         st.rerun()
-    title.markdown(f"#### {escape(focus['title'])}")
+    title.markdown(f"#### {escape(t(focus['title']))}")
     if focus.get("kind") == "graph":
-        zoom = st.slider("Grafik boyutu", 100, 200, 125, 25, format="%%%d")
+        zoom = st.slider(t("Graph size"), 100, 200, 125, 25, format="%%%d")
+
         def live_graph():
+            use_language()
             row = history().get(focus["run"])
             svg = lifecycle_svg(row)
-            st.download_button("SVG indir", svg, file_name="yasam-dongusu.svg", mime="image/svg+xml",
+            st.download_button(t("Download SVG"), svg, file_name="lifecycle.svg", mime="image/svg+xml",
                                icon=":material/download:", on_click="ignore")
             show_diagram(svg, zoom=zoom)
             st.caption(describe_activity(row, stage_states(row["events"], row["status"])))
@@ -449,55 +480,56 @@ def focus_view(focus: dict) -> None:
     path = Path(focus["path"])
     content = read_text(path)
     if content is None:
-        st.warning("Dosya bulunamadı.")
+        st.warning(t("File not found."))
     else:
-        download.download_button("İndir", content, file_name=path.name, mime="text/markdown",
+        download.download_button(t("Download"), content, file_name=path.name, mime="text/markdown",
                                  icon=":material/download:", width="stretch", on_click="ignore")
         render_markdown(content)
 
 
 def section_panel(db: History, row: dict, stage: str, filename: str, content: str, can_edit: bool) -> None:
-    """Belgenin bir bölümü (başlık ya da FR/NFR) üzerinde soru sorma ve öneri-diff-onay ile düzenleme."""
+    """Asking questions about and editing one section (heading or FR/NFR) of a document with proposal → diff → approval."""
     sections = split_sections(content)
     if not sections:
-        st.caption("Belgede başlık ya da gereksinim bulunamadı.")
+        st.caption(t("No heading or requirement found in the document."))
         return
     prefix = f"{row['id']}_{filename}"
-    labels = {item.key: "\u2003" * (item.level - 1) + ("📌 " if item.kind == "requirement" else "§ ") + item.title for item in sections}
-    key = st.selectbox("Bölüm", [item.key for item in sections], format_func=labels.get, key=f"section_{prefix}")
+    labels = {item.key: " " * (item.level - 1) + ("📌 " if item.kind == "requirement" else "§ ") + item.title for item in sections}
+    key = st.selectbox(t("Section"), [item.key for item in sections], format_func=labels.get, key=f"section_{prefix}")
     section = next(item for item in sections if item.key == key)
     lines = content.split("\n")
     with st.container(height=130, border=True):
         st.markdown(section.text(lines))
     actions = ["question"] + (["rewrite", "add", "delete", "manual"] if can_edit else [])
-    action = st.segmented_control("İşlem", actions, format_func=SECTION_ACTIONS.get, default="question",
+    action = st.segmented_control(t("Action"), actions, format_func=lambda name: t(SECTION_ACTIONS[name]), default="question",
                                   key=f"action_{prefix}", label_visibility="collapsed") or "question"
     proposal_key, answer_key = f"proposal_{prefix}", f"answer_{prefix}"
     if action == "manual":
-        new_text = st.text_area("Bölümün yeni hâli", section.text(lines), height=160, key=f"manual_{prefix}_{key}")
-        if st.button("Değişikliği önizle", key=f"preview_manual_{prefix}"):
+        new_text = st.text_area(t("New version of the section"), section.text(lines), height=160, key=f"manual_{prefix}_{key}")
+        if st.button(t("Preview change"), key=f"preview_manual_{prefix}"):
             st.session_state[proposal_key] = {"before": content, "after": replace_section(content, section, new_text),
-                                              "summary": f"Elle düzenlendi · {section.title}"}
+                                              "summary": f"Edited manually · {section.title}"}
     elif action == "delete":
-        if st.button("Silmeyi önizle", key=f"preview_delete_{prefix}"):
+        if st.button(t("Preview deletion"), key=f"preview_delete_{prefix}"):
             st.session_state[proposal_key] = {"before": content, "after": delete_section(content, section),
-                                              "summary": f"Silindi · {section.title}"}
+                                              "summary": f"Deleted · {section.title}"}
     else:
-        placeholders = {"question": "Ör: Bu gereksinim neden gerekli? Kabul kriteri yeterli mi?",
-                        "rewrite": "Ör: Kabul kriterlerini Given/When/Then biçiminde yeniden yaz.",
-                        "add": "Ör: Bu bölümün altına ürün barkoduyla arama gereksinimi ekle."}
-        instruction = st.text_area("Soru" if action == "question" else "Talimat", key=f"instruction_{prefix}_{action}",
+        placeholders = {"question": t("E.g. Why is this requirement needed? Are the acceptance criteria enough?"),
+                        "rewrite": t("E.g. Rewrite the acceptance criteria in Given/When/Then form."),
+                        "add": t("E.g. Add a requirement under this section for searching products by barcode.")}
+        instruction = st.text_area(t("Question") if action == "question" else t("Instruction"), key=f"instruction_{prefix}_{action}",
                                    height=70, placeholder=placeholders[action])
         ready, api_key = api_key_field(f"section_{prefix}")
-        label = "Sor" if action == "question" else "Öneri al"
+        label = t("Ask") if action == "question" else t("Get proposal")
         if st.button(label, key=f"ask_{prefix}", type="primary", disabled=not (ready and instruction.strip())):
-            agent = next(item.agent for item in STAGES if item.key == stage)
+            agent = t(next(item.agent for item in STAGES if item.key == stage))
             try:
-                with st.spinner(f"{agent} çalışıyor…"):
+                with st.spinner(t("{agent} is working…", agent=agent)):
                     text = make_engine(row, api_key).section(stage, row["idea"], stage_context(row, stage), content,
-                                                             section.text(lines), instruction, action)
+                                                             section.text(lines), instruction, action,
+                                                             language=document_language(row))
             except (RuntimeError, ValueError) as exc:
-                st.error(str(exc))
+                st.error(translate_stored(str(exc)))
                 return
             if action == "question":
                 st.session_state[answer_key] = text
@@ -506,36 +538,36 @@ def section_panel(db: History, row: dict, stage: str, filename: str, content: st
                 new_text = strip_fences(text)
                 after = replace_section(content, section, new_text) if action == "rewrite" else insert_after(content, section, new_text)
                 st.session_state[proposal_key] = {"before": content, "after": after,
-                                                  "summary": f"{SECTION_ACTIONS[action][2:]} · {section.title}: {instruction.strip()[:200]}"}
+                                                  "summary": f"{action.capitalize()} · {section.title}: {instruction.strip()[:200]}"}
     if action == "question" and st.session_state.get(answer_key):
         with st.container(height=200, border=True):
             st.markdown(st.session_state[answer_key])
     proposal = st.session_state.get(proposal_key)
     if proposal and action != "question":
         if proposal["before"] != content:
-            st.session_state.pop(proposal_key)  # Belge bu arada değişti; eski öneri geçersiz.
+            st.session_state.pop(proposal_key)  # The document changed meanwhile; the old proposal is invalid.
             return
         diff = unified_diff(proposal["before"], proposal["after"], filename)
-        st.caption("Önerilen değişiklik — kabul edersen kaydedilir ve sonraki aşamalar 'güncel değil' olarak işaretlenir.")
+        st.caption(t("Proposed change — if you accept it, it is saved and later stages are marked 'out of date'."))
         with st.container(height=220, border=True):
-            st.code(diff or "(değişiklik yok)", language="diff")
+            st.code(diff or t("(no change)"), language="diff")
         accept, reject = st.columns(2)
-        if accept.button("✅ Kabul et", key=f"accept_{prefix}", type="primary", width="stretch", disabled=not diff):
+        if accept.button(t("✅ Accept"), key=f"accept_{prefix}", type="primary", width="stretch", disabled=not diff):
             accept_edit(db, row, stage, filename, proposal["before"], proposal["after"], proposal["summary"])
             st.session_state.pop(proposal_key)
-            st.toast("Değişiklik kaydedildi; sonraki aşamalar 'güncel değil' olarak işaretlendi.")
+            st.toast(t("Change saved; later stages were marked 'out of date'."))
             st.rerun()
-        if reject.button("✖ Reddet", key=f"reject_{prefix}", width="stretch"):
+        if reject.button(t("✖ Reject"), key=f"reject_{prefix}", width="stretch"):
             st.session_state.pop(proposal_key)
             st.rerun()
 
 
 def live_output(row: dict, stage: str) -> None:
     text = read_text(Path(row["output_dir"]) / "live" / f"{stage}.md")
-    st.caption("🟢 Ajanın çıktısı canlı akıyor (son kısım gösteriliyor)")
+    st.caption(t("🟢 The agent's output is streaming live (the latest part is shown)"))
     with st.container(height=360, border=True):
         if not text:
-            st.caption("Ajan düşünüyor… ilk sözcükler birazdan burada görünecek.")
+            st.caption(t("The agent is thinking… the first words will appear here shortly."))
         elif stage in {"development", "testing"}:
             st.code(text[-5000:], language="json", wrap_lines=True)
         else:
@@ -546,34 +578,35 @@ def document_view(db: History, row: dict, stage: str) -> None:
     output = Path(row["output_dir"])
     available = [item for item in STAGE_DOCUMENTS.get(stage, []) if (output / item[0]).is_file()]
     if not available:
-        st.caption("Bu aşamanın belgesi henüz üretilmedi.")
+        st.caption(t("This stage's document has not been produced yet."))
         return
     if len(available) > 1:
-        choice = st.segmented_control("Belge", [name for name, _, _ in available], key=f"doc_{row['id']}_{stage}",
-                                      format_func=lambda name: next(label for n, label, _ in available if n == name),
+        choice = st.segmented_control(t("Document"), [name for name, _, _ in available], key=f"doc_{row['id']}_{stage}",
+                                      format_func=lambda name: t(next(label for n, label, _ in available if n == name)),
                                       default=available[0][0], label_visibility="collapsed") or available[0][0]
     else:
         choice = available[0][0]
     filename, label, regen_from = next(item for item in available if item[0] == choice)
+    label = t(label)
     content = read_text(output / filename) or ""
     can_edit = regen_from is not None and row["status"] != "running"
-    modes = {"read": "📖 Oku", "section": "🎯 Bölüm", **({"full": "✏️ Tamamı"} if can_edit else {})}
+    modes = {"read": t("📖 Read"), "section": t("🎯 Section"), **({"full": t("✏️ Whole")} if can_edit else {})}
     info, mode_col = st.columns([2, 3], vertical_alignment="center")
-    info.caption(f"📄 `{filename}`" + ("" if can_edit else " · salt okunur" if regen_from is None else " · çalışma sürerken düzenlenemez"))
-    mode = mode_col.segmented_control("Mod", list(modes), format_func=modes.get, default="read",
+    info.caption(f"📄 `{filename}`" + ("" if can_edit else t(" · read-only") if regen_from is None else t(" · cannot be edited while running")))
+    mode = mode_col.segmented_control(t("Mode"), list(modes), format_func=modes.get, default="read",
                                       key=f"mode_{row['id']}_{filename}", label_visibility="collapsed") or "read"
     with st.container(horizontal=True):
-        if st.button("Büyüt", icon=":material/open_in_full:", key=f"focus_{row['id']}_{filename}", help="Belgeyi tam genişlikte aç"):
+        if st.button(t("Enlarge"), icon=":material/open_in_full:", key=f"focus_{row['id']}_{filename}", help=t("Open the document at full width")):
             open_focus(row, output / filename, label)
-        st.download_button("İndir", content, file_name=filename, mime="text/markdown",
+        st.download_button(t("Download"), content, file_name=filename, mime="text/markdown",
                            icon=":material/download:", key=f"download_{row['id']}_{filename}", on_click="ignore")
     if mode == "section":
         section_panel(db, row, stage, filename, content, can_edit)
     elif mode == "full":
         edited = st.text_area(label, content, height=320, key=f"editor_{row['id']}_{filename}", label_visibility="collapsed")
-        if st.button("💾 Kaydet", key=f"save_{row['id']}_{filename}", disabled=edited == content):
-            accept_edit(db, row, stage, filename, content, edited, "Belgenin tamamı elle düzenlendi")
-            st.toast("Kaydedildi; sonraki aşamalar 'güncel değil' olarak işaretlendi.")
+        if st.button(t("💾 Save"), key=f"save_{row['id']}_{filename}", disabled=edited == content):
+            accept_edit(db, row, stage, filename, content, edited, "The whole document was edited manually")
+            st.toast(t("Saved; later stages were marked 'out of date'."))
             st.rerun()
     else:
         with st.container(border=True):
@@ -584,21 +617,21 @@ def code_view(row: dict) -> None:
     project_dir = Path(row["project_dir"])
     files = project_files(project_dir) if project_dir.is_dir() else []
     if not files:
-        st.caption("Henüz kaynak dosya yok.")
+        st.caption(t("There are no source files yet."))
         return
     pick, download = st.columns([3, 1], vertical_alignment="bottom")
-    selected = pick.selectbox(f"Dosyalar ({len(files)})", files, format_func=lambda path: path.as_posix(), key=f"file_{row['id']}")
-    download.download_button("Kod ZIP", lambda: export_zip(project_dir, Path(row["output_dir"]), "code"),
-                             file_name=f"{row['id']}-kod.zip", icon=":material/download:",
-                             mime="application/zip", width="stretch", on_click="ignore")
-    st.download_button("Dosyayı indir", lambda: (project_dir / selected).read_bytes(), file_name=selected.name,
+    selected = pick.selectbox(t("Files ({count})", count=len(files)), files, format_func=lambda path: path.as_posix(), key=f"file_{row['id']}")
+    download.download_button(t("Code ZIP"), lambda: export_zip(project_dir, Path(row["output_dir"]), "code"),
+                            file_name=f"{row['id']}-code.zip", icon=":material/download:",
+                            mime="application/zip", width="stretch", on_click="ignore")
+    st.download_button(t("Download file"), lambda: (project_dir / selected).read_bytes(), file_name=selected.name,
                        icon=":material/download:", key=f"source_download_{row['id']}", on_click="ignore")
     text = read_text(project_dir / selected)
     with st.container(border=True):
         if text is None:
-            st.caption("Metin olmayan dosya.")
+            st.caption(t("Not a text file."))
         else:
-            language = LANGUAGES.get(selected.suffix, "docker" if selected.name == "Dockerfile" else None)
+            language = CODE_LANGUAGES.get(selected.suffix, "docker" if selected.name == "Dockerfile" else None)
             st.code(text[:60_000], language=language, line_numbers=True)
 
 
@@ -608,10 +641,10 @@ def stage_detail(db: History, row: dict, stage_key: str, states: dict[str, str],
     item = metrics[stage_key]
     state = states[stage_key]
     head, m1, m2 = st.columns([3, 1, 1], vertical_alignment="center")
-    head.markdown(f"#### {index + 1}. {stage.label} <small style='color:#64748b;font-weight:400'>· {stage.agent}</small>", unsafe_allow_html=True)
-    m1.metric("Süre", format_duration(item["seconds"]), help="Ajanın aktif çalıştığı süre; senin yanıtını beklediği süre dahil değil.")
-    m2.metric("Çalışma", f"{item['runs']}×", help="Aşamanın kaç kez çalıştığı (onarım ve revizyon turları dahil).")
-    st.caption(f"{STATE_ICONS[state]} {STATE_LABELS[state]} · {stage.description}")
+    head.markdown(f"#### {index + 1}. {stage_label(stage_key)} <small style='color:#64748b;font-weight:400'>· {t(stage.agent)}</small>", unsafe_allow_html=True)
+    m1.metric(t("Duration"), format_duration(item["seconds"]), help=t("Time the agent was actively working; the time it waited for your answer is not included."))
+    m2.metric(t("Runs"), f"{item['runs']}×", help=t("How many times the stage ran (including repair and revision rounds)."))
+    st.caption(f"{STATE_ICONS[state]} {t(STATE_LABELS[state])} · {stage_description(stage_key)}")
     if state in {"running", "question"} and row["status"] == "running":
         live_output(row, stage_key)
     elif stage_key == "development":
@@ -620,12 +653,12 @@ def stage_detail(db: History, row: dict, stage_key: str, states: dict[str, str],
         document_view(db, row, stage_key)
     events = [event for event in row["events"] if event["stage"] == stage_key]
     if events:
-        with st.expander(f"Bu aşamanın olayları ({len(events)})"):
-            st.dataframe([{"Zaman": event["created_at"][11:19], "Olay": EVENT_NAMES.get(event["status"], event["status"]),
-                           "Ayrıntı": event["detail"]} for event in reversed(events)], hide_index=True, width="stretch")
+        with st.expander(t("Events of this stage ({count})", count=len(events))):
+            st.dataframe([{t("Time"): event["created_at"][11:19], t("Event"): event_name(event["status"]),
+                           t("Detail"): translate_stored(event["detail"])} for event in reversed(events)], hide_index=True, width="stretch")
 
 
-# ---------------------------------------------------------------- çalışma alanı
+# ---------------------------------------------------------------- workspace
 
 def selected_stage(run_id: str, states: dict[str, str]) -> tuple[str, bool]:
     picked = st.session_state.get(f"stage_{run_id}")
@@ -640,11 +673,12 @@ def lifecycle_svg(row: dict, selected: str | None = None) -> str:
 
 
 def overview(run_id: str) -> None:
-    """Diyagram, tıklanabilir aşama seçici ve metrikler. Çalışırken kendi kendine yenilenir."""
+    """Diagram, clickable stage picker and metrics. Refreshes itself while running."""
+    use_language()
     db = history()
     row = db.get(run_id)
     if row is None:
-        st.info("Çalışma başlatılıyor…")
+        st.info(t("Starting the run…"))
         return
     states = stage_states(row["events"], row["status"])
     loops = counters(row["events"])
@@ -653,33 +687,33 @@ def overview(run_id: str) -> None:
     svg = lifecycle_svg(row, selected)
     with st.container(border=True):
         heading, actions = st.columns([3, 2], vertical_alignment="center")
-        heading.markdown("#### Yaşam döngüsü")
+        heading.markdown("#### " + t("Lifecycle"))
         with actions.container(horizontal=True, horizontal_alignment="right"):
-            if st.button("Büyüt", icon=":material/open_in_full:", key=f"graph_focus_{run_id}"):
-                st.session_state["focus"] = {"run": run_id, "kind": "graph", "title": "Yaşam döngüsü"}
+            if st.button(t("Enlarge"), icon=":material/open_in_full:", key=f"graph_focus_{run_id}"):
+                st.session_state["focus"] = {"run": run_id, "kind": "graph", "title": "Lifecycle"}
                 st.rerun()
-            st.download_button("SVG indir", svg, file_name="yasam-dongusu.svg", mime="image/svg+xml",
+            st.download_button(t("Download SVG"), svg, file_name="lifecycle.svg", mime="image/svg+xml",
                                icon=":material/download:", key=f"graph_download_{run_id}", on_click="ignore")
         show_diagram(svg)
     choice = st.segmented_control(
-        "Aşama", STAGE_KEYS, key=f"stage_{run_id}", label_visibility="collapsed", width="stretch",
-        format_func=lambda key: f"{STATE_ICONS[states[key]]} {STAGE_NAMES[key]}",
+        t("Stage"), STAGE_KEYS, key=f"stage_{run_id}", label_visibility="collapsed", width="stretch",
+        format_func=lambda key: f"{STATE_ICONS[states[key]]} {stage_label(key)}",
     )
     done = sum(value in {"done", "skipped"} for value in states.values())
     cells = st.columns(6)
-    cells[0].metric("Aşama", f"{done}/{len(STAGES)}")
-    cells[1].metric("Ajan süresi", format_duration(sum(value["seconds"] for value in metrics.values())))
-    cells[2].metric("İnceleme", f"{loops['review_rounds']} tur")
-    cells[3].metric("Test", f"{loops['test_runs']}×")
-    cells[4].metric("Onarım", loops["repairs"])
-    cells[5].metric("FR kapsamı", f"%{loops['coverage']}" if loops["coverage"] is not None else "—")
+    cells[0].metric(t("Stage"), f"{done}/{len(STAGES)}")
+    cells[1].metric(t("Agent time"), format_duration(sum(value["seconds"] for value in metrics.values())))
+    cells[2].metric(t("Review"), t("{count} rounds", count=loops["review_rounds"]))
+    cells[3].metric(t("Tests"), f"{loops['test_runs']}×")
+    cells[4].metric(t("Repairs"), loops["repairs"])
+    cells[5].metric(t("FR coverage"), f"{loops['coverage']}%" if loops["coverage"] is not None else "—")
     activity = describe_activity(row, states)
     {"completed": st.success, "failed": st.error, "paused": st.warning}.get(row["status"], st.info)(
-        activity + ("" if picked else "  \n_Bir aşamaya tıkla; seçmezsen görünüm aktif aşamayı izler._"))
+        activity + ("" if picked else "  \n_" + t("Click a stage; if you do not pick one, the view follows the active stage.") + "_"))
     stale = [key for key in STAGE_KEYS if states[key] == "stale"]
     if stale and row["status"] != "running":
         stale_banner(db, row, stale)
-    # Aşama tıklanınca, durum ya da bekleyen soru değişince detay, chat ve üst bar da güncellensin.
+    # When a stage is clicked, or the status or a pending question changes, the detail, chat and top bar refresh too.
     pending = db.pending_question(run_id) if row["status"] == "running" else None
     signature = (row["status"], row["pause_requested"], pending and pending["id"], run_id in WORKER_ERRORS, choice)
     key = f"signature_{run_id}"
@@ -691,23 +725,24 @@ def overview(run_id: str) -> None:
 
 def stale_banner(db: History, row: dict, stale: list[str]) -> None:
     text, action = st.columns([4, 1.4], vertical_alignment="center")
-    text.warning(f"↻ **Güncel değil:** {', '.join(STAGE_NAMES[key] for key in stale)}. Önceki bir belge değişti; "
-                 "bu aşamaları güncelle ki kod ve testler belgelerle tutarlı olsun.")
-    with action.popover("Etkilenenleri güncelle", width="stretch", type="primary"):
-        mode = st.radio("Nasıl?", ["delta", "full"], key=f"propagate_mode_{row['id']}", format_func={
-            "delta": "Delta — mevcut belgeleri ve kodu koru, yalnızca etkilenen kısımları güncelle",
-            "full": "Baştan üret — bu aşamaları sıfırdan yeniden yaz",
+    text.warning(t("↻ **Out of date:** {stages}. An earlier document changed; update these stages so the code and tests stay consistent with the documents.",
+                   stages=", ".join(stage_label(key) for key in stale)))
+    with action.popover(t("Update affected stages"), width="stretch", type="primary"):
+        mode = st.radio(t("How?"), ["delta", "full"], key=f"propagate_mode_{row['id']}", format_func={
+            "delta": t("Delta — keep the existing documents and code, update only the affected parts"),
+            "full": t("Regenerate — rewrite these stages from scratch"),
         }.get)
         ready, key = api_key_field(f"propagate_{row['id']}")
-        if st.button("Başlat", key=f"propagate_{row['id']}", type="primary", disabled=not ready):
+        if st.button(t("Start"), key=f"propagate_{row['id']}", type="primary", disabled=not ready):
             try:
                 propagate(db, row, stale[0], mode == "delta", key)
                 st.rerun()
             except ValueError as exc:
-                st.error(str(exc))
+                st.error(translate_stored(str(exc)))
 
 
 def detail_panel(run_id: str) -> None:
+    use_language()
     db = history()
     row = db.get(run_id)
     if row is None:
@@ -716,117 +751,122 @@ def detail_panel(run_id: str) -> None:
     stage_detail(db, row, selected_stage(run_id, states)[0], states, stage_metrics(row["events"]))
 
 
-def suggested_skips(report: str) -> list[str]:
-    """Etki analizinin 'ATLA: deployment, maintenance' satırındaki atlanabilir aşamalar."""
-    found = SKIP_LINE.search(report)
-    names = [name.strip().lower() for name in found.group(1).split(",")] if found else []
-    return [name for name in SKIPPABLE_STAGES if name in names]
-
-
 def impact_context(row: dict) -> str:
     output = Path(row["output_dir"])
-    parts = [f"Mimari kararlar:\n{read_text(output / 'decisions.yaml') or ''}"]
+    parts = [f"Architecture decisions:\n{read_text(output / 'decisions.yaml') or ''}"]
     for name, budget in (("requirements.md", 9000), ("architecture.md", 7000), ("traceability.md", 3000)):
         text = read_text(output / name)
         if text:
             parts.append(f"--- {name} ---\n{text[:budget]}")
     project_dir = Path(row["project_dir"])
     if project_dir.is_dir():
-        parts.append("Proje dosyaları:\n" + "\n".join(path.as_posix() for path in project_files(project_dir)))
+        parts.append("Project files:\n" + "\n".join(path.as_posix() for path in project_files(project_dir)))
     return "\n\n".join(parts)
 
 
-@st.dialog("📝 Değişiklik talepleri", width="large")
+@st.dialog(t("📝 Change requests"), width="large")
 def changes_dialog(run_id: str) -> None:
-    """Yeni özellik / hata / değişiklik: oluştur → etki analizi → onayla ve uygula (delta iterasyonu)."""
+    """New feature / bug / change: create → impact analysis → approve and apply (delta iteration)."""
+    use_language()
     db = history()
     row = db.get(run_id)
     with st.form(f"new_change_{run_id}", clear_on_submit=True):
-        st.markdown("**➕ Yeni talep**")
-        kind = st.radio("Tür", ["feature", "bug", "change"], format_func=CHANGE_KINDS.get, horizontal=True)
-        title = st.text_input("Başlık", placeholder="Ör: Ürünlere barkod alanı eklensin / Stok eksiye düşebiliyor")
-        description = st.text_area("Açıklama", height=90, placeholder=(
-            "Ne isteniyor ve neden? Hata ise: adımlar, beklenen ve gerçekleşen davranış."))
-        if st.form_submit_button("Talep oluştur"):
+        st.markdown(t("**➕ New request**"))
+        kind = st.radio(t("Type"), ["feature", "bug", "change"], format_func=lambda name: t(CHANGE_KINDS[name]), horizontal=True)
+        title = st.text_input(t("Title"), placeholder=t("E.g. Add a barcode field to products / Stock can go negative"))
+        description = st.text_area(t("Description"), height=90, placeholder=t(
+            "What is wanted and why? For a bug: steps, expected and actual behavior."))
+        if st.form_submit_button(t("Create request")):
             try:
-                st.toast(f"{db.create_change(run_id, kind, title, description)} oluşturuldu.")
+                st.toast(t("{id} created.", id=db.create_change(run_id, kind, title, description)))
             except ValueError as exc:
-                st.error(str(exc))
+                st.error(translate_stored(str(exc)))
     changes = [item for item in db.changes(run_id) if item["kind"] != "edit"]
     if not changes:
-        st.caption("Henüz talep yok. Talep oluşturunca Etki Analizi Ajanı hangi gereksinim, tasarım, dosya ve testlerin "
-                   "etkileneceğini çıkarır; onaylarsan yalnızca etkilenen aşamalar delta modunda güncellenir.")
+        st.caption(t("No requests yet. When you create one, the Impact Analysis Agent works out which requirements, design, files and tests "
+                     "are affected; if you approve, only the affected stages are updated in delta mode."))
         return
     busy = row["status"] == "running" or db.active_change(run_id) is not None
     ready, api_key = api_key_field(f"changes_{run_id}")
     for change in reversed(changes):
         open_now = change["status"] in {"draft", "analyzed"}
-        with st.expander(f"{CHANGE_STATUS.get(change['status'], change['status'])} · **{change['id']}** · "
-                         f"{CHANGE_KINDS[change['kind']]} · {change['title']}", expanded=open_now):
-            st.write(change["description"] or "_Açıklama yok_")
+        with st.expander(f"{t(CHANGE_STATUS.get(change['status'], change['status']))} · **{change['id']}** · "
+                         f"{t(CHANGE_KINDS[change['kind']])} · {change['title']}", expanded=open_now):
+            st.write(change["description"] or "_" + t("No description") + "_")
             if change.get("clarifications"):
-                st.markdown("**Netleştirmeler**\n\n" + change["clarifications"])
+                st.markdown("**" + t("Clarifications") + "**\n\n" + change["clarifications"])
             if change["impact"]:
                 with st.container(height=240, border=True):
                     st.markdown(change["impact"])
             if change["status"] == "draft":
-                if st.button("🔍 Etki analizi yap", key=f"impact_{change['id']}", disabled=not ready):
+                if st.button(t("🔍 Run impact analysis"), key=f"impact_{change['id']}", disabled=not ready):
                     try:
-                        with st.spinner("Etki Analizi Ajanı çalışıyor…"):
+                        with st.spinner(t("The Impact Analysis Agent is working…")):
                             report = make_engine(row, api_key).impact(row["idea"], impact_context(row), (
-                                f"{change['id']} · {CHANGE_KINDS[change['kind']]}: {change['title']}\n{change['description']}"))
-                        found = START_STAGE.search(report)
-                        start = found.group(1).lower() if found else ("development" if change["kind"] == "bug" else "analysis")
+                                f"{change['id']} · {CHANGE_KINDS[change['kind']]}: {change['title']}\n{change['description']}"),
+                                language=document_language(row))
+                        start = parse_start_stage(report) or ("development" if change["kind"] == "bug" else "analysis")
                         db.update_change(run_id, change["id"], impact=report, start_stage=start, status="analyzed",
                                          skip_stages=",".join(suggested_skips(report)) or None)
                         st.rerun(scope="fragment")
                     except (RuntimeError, ValueError) as exc:
-                        st.error(str(exc))
+                        st.error(translate_stored(str(exc)))
             elif change["status"] == "analyzed":
                 questions_asked = open_questions(change["impact"] or "")
                 answers = {}
                 if questions_asked:
-                    st.markdown("**❓ Açık sorular** — uygulamaya geçmeden netleştir; yanıtların bütün aşamalara kesin karar olarak gider.")
+                    st.markdown("**" + t("❓ Open questions") + "** — " + t("clarify them before applying; your answers go to all stages as firm decisions."))
                     for number, question in enumerate(questions_asked, 1):
                         answers[question] = st.text_input(f"{number}. {question}", key=f"clarify_{change['id']}_{number}")
                 unanswered = [question for question, answer in answers.items() if not answer.strip()]
                 options = ["analysis", "design", "development"]
-                start = st.selectbox("Başlangıç aşaması", options, index=options.index(change["start_stage"] or "analysis"),
-                                     format_func=STAGE_NAMES.get, key=f"start_{change['id']}",
-                                     help="Bu aşama ve sonrası delta modunda güncellenir; öncekiler olduğu gibi kalır.")
+                start = st.selectbox(t("Starting stage"), options, index=options.index(change["start_stage"] or "analysis"),
+                                     format_func=stage_label, key=f"start_{change['id']}",
+                                     help=t("This stage and the ones after it are updated in delta mode; earlier ones stay as they are."))
                 skippable = [key for key in SKIPPABLE_STAGES if STAGE_KEYS.index(key) > STAGE_KEYS.index(start)]
                 skipped = st.multiselect(
-                    "Atlanacak aşamalar", skippable, format_func=STAGE_NAMES.get, key=f"skip_{change['id']}",
+                    t("Stages to skip"), skippable, format_func=stage_label, key=f"skip_{change['id']}",
                     default=[key for key in (change.get("skip_stages") or "").split(",") if key in skippable],
-                    help="Etki analizi bu aşamaların değişiklikten etkilenmediğini söylüyor; önceki belgeleri korunur. "
-                         "Kodlama ve test her zaman çalışır.")
+                    help=t("The impact analysis says these stages are not affected by the change; their previous documents are kept. "
+                           "Development and testing always run."))
                 apply, reject = st.columns(2)
-                if apply.button("▶ Onayla ve uygula", key=f"apply_{change['id']}", type="primary",
+                if apply.button(t("▶ Approve and apply"), key=f"apply_{change['id']}", type="primary",
                                 disabled=busy or not ready or bool(unanswered),
-                                help=("Önce açık soruları yanıtla." if unanswered else
-                                      "Çalışan bir iş ya da uygulanan başka bir talep varken başlatılamaz.")):
-                    clarifications = "\n".join(f"- Soru: {question}\n  Yanıt: {answer.strip()}" for question, answer in answers.items())
+                                help=(t("Answer the open questions first.") if unanswered else
+                                      t("Cannot start while a job is running or another request is being applied."))):
+                    clarifications = "\n".join(f"- Question: {question}\n  Answer: {answer.strip()}" for question, answer in answers.items())
                     db.update_change(run_id, change["id"], status="in_progress", start_stage=start,
                                      clarifications=clarifications or None, skip_stages=",".join(skipped) or None)
                     regenerate(db, run_id, start, api_key)
                     st.rerun()
-                if reject.button("✖ Reddet", key=f"reject_{change['id']}"):
+                if reject.button(t("✖ Reject"), key=f"reject_{change['id']}"):
                     db.update_change(run_id, change["id"], status="rejected")
                     st.rerun(scope="fragment")
 
 
-@st.dialog("🕓 Sürüm geçmişi", width="large")
+def iteration_label(db: History, run_id: str, item: dict) -> str:
+    """Version label built at display time so it follows the UI language."""
+    if item["kind"] == "initial":
+        return t("v{number} · Initial version", number=item["number"])
+    if item["kind"] == "rerun" or not item["change_id"]:
+        return t("v{number} · Regeneration", number=item["number"])
+    change = db.change(run_id, item["change_id"]) or {}
+    return f"v{item['number']} · {item['change_id']} · {t(CHANGE_KINDS.get(item['kind'], item['kind']))}: {change.get('title', '')}"
+
+
+@st.dialog(t("🕓 Version history"), width="large")
 def iterations_dialog(run_id: str) -> None:
-    """Her biten iterasyon (ilk sürüm, CR, bugfix): o andaki diyagram, metrikler, belgeler ve önceki sürümle fark."""
+    """Every finished iteration (first version, CR, bugfix): the diagram, metrics, documents and diff against the previous one."""
+    use_language()
     db = history()
     row = db.get(run_id)
     items = db.iterations(run_id)
     if not items:
-        st.caption("Henüz biten bir iterasyon yok. İlk üretim ya da bir değişiklik talebi bitince burada sürüm olarak görünür.")
+        st.caption(t("No finished iteration yet. When the first generation or a change request finishes, it appears here as a version."))
         return
     by_number = {item["number"]: item for item in items}
-    number = st.selectbox("Sürüm", list(reversed(by_number)), key=f"iteration_{run_id}",
-                          format_func=lambda n: f"{ITERATION_ICONS.get(by_number[n]['status'], '⚪')} {by_number[n]['label']}"
+    number = st.selectbox(t("Version"), list(reversed(by_number)), key=f"iteration_{run_id}",
+                          format_func=lambda n: f"{ITERATION_ICONS.get(by_number[n]['status'], '⚪')} {iteration_label(db, run_id, by_number[n])}"
                                                 f" · {by_number[n]['created_at'][:16].replace('T', ' ')}")
     item = by_number[number]
     until = [event for event in row["events"] if event["id"] <= item["last_event_id"]]
@@ -837,35 +877,35 @@ def iterations_dialog(run_id: str) -> None:
                             {key: format_duration(value["seconds"]) for key, value in metrics.items()},
                             {key: value["runs"] for key, value in stage_metrics(until).items()}))
     cells = st.columns(4)
-    cells[0].metric("Sonuç", "Tamamlandı" if item["status"] == "completed" else "Başarısız")
-    cells[1].metric("Test denemesi", item["attempts"])
-    cells[2].metric("Bu sürümde ajan süresi", format_duration(sum(value["seconds"] for value in metrics.values())))
-    cells[3].metric("Bu sürümde çalışan aşama", sum(value["runs"] > 0 for value in metrics.values()))
+    cells[0].metric(t("Result"), t("Completed") if item["status"] == "completed" else t("Failed"))
+    cells[1].metric(t("Test attempts"), item["attempts"])
+    cells[2].metric(t("Agent time in this version"), format_duration(sum(value["seconds"] for value in metrics.values())))
+    cells[3].metric(t("Stages run in this version"), sum(value["runs"] > 0 for value in metrics.values()))
     if item["change_id"]:
         change = db.change(run_id, item["change_id"]) or {}
-        with st.expander(f"Bu sürümü oluşturan talep: {item['change_id']}", expanded=True):
+        with st.expander(t("Request that produced this version: {id}", id=item["change_id"]), expanded=True):
             st.write(change.get("description") or "")
             if change.get("clarifications"):
-                st.markdown("**Netleştirmeler**\n\n" + change["clarifications"])
+                st.markdown("**" + t("Clarifications") + "**\n\n" + change["clarifications"])
     snapshot = Path(item["snapshot_dir"])
     docs = sorted((snapshot / "docs").glob("*")) if (snapshot / "docs").is_dir() else []
     if docs:
         pick, compare = st.columns([3, 1.4], vertical_alignment="bottom")
-        name = pick.selectbox("Bu sürümün belgeleri", [doc.name for doc in docs], key=f"iteration_doc_{run_id}_{number}")
+        name = pick.selectbox(t("Documents of this version"), [doc.name for doc in docs], key=f"iteration_doc_{run_id}_{number}")
         previous = by_number.get(number - 1)
-        show_diff = compare.toggle("Önceki sürümle fark", key=f"iteration_diff_{run_id}_{number}", disabled=previous is None)
+        show_diff = compare.toggle(t("Diff against previous version"), key=f"iteration_diff_{run_id}_{number}", disabled=previous is None)
         content = read_text(snapshot / "docs" / name) or ""
         with st.container(height=320, border=True):
             if show_diff and previous:
                 before = read_text(Path(previous["snapshot_dir"]) / "docs" / name) or ""
-                st.code(unified_diff(before, content, name) or "(bu belge değişmedi)", language="diff")
+                st.code(unified_diff(before, content, name) or t("(this document did not change)"), language="diff")
             elif name.endswith(".yaml"):
                 st.code(content, language="yaml")
             else:
                 render_markdown(content)
     if snapshot.is_dir():
         files = [path.relative_to(snapshot) for path in sorted(snapshot.rglob("*")) if path.is_file()]
-        st.download_button(f"⬇️ {item['label']} — belgeler + kod (ZIP)", project_zip(snapshot, files),
+        st.download_button(t("⬇️ {label} — documents + code (ZIP)", label=iteration_label(db, run_id, item)), project_zip(snapshot, files),
                            file_name=f"{run_id}-v{number}.zip", mime="application/zip", key=f"iteration_zip_{run_id}_{number}",
                            on_click="ignore")
 
@@ -875,13 +915,13 @@ def header(db: History, row: dict) -> None:
     title, status = st.columns([8, 1.5], vertical_alignment="center")
     with title:
         st.markdown(f'<div class="project-title" role="heading" aria-level="1">{escape(row["idea"])}</div>', unsafe_allow_html=True)
-        # Tam yol başlığı birkaç satıra yayıyor; yalnızca klasör adı (tam yol README görünümünde ve Yönet menüsünde).
+        # The full path spreads the header over several lines; only the folder name (the full path is in the README view and Manage menu).
         iterations = db.iterations(run_id)
-        version = iterations[-1]["label"] if iterations else "henüz sürüm yok"
-        st.caption(f"🏷️ **{version}** · `{run_id}` · model `{row['model'] or '—'}` · 📁 `{Path(row['project_dir']).name}`")
+        version = iteration_label(db, run_id, iterations[-1]) if iterations else t("no version yet")
+        st.caption(f"🏷️ **{version}** · `{run_id}` · {t('model')} `{row['model'] or '—'}` · 📁 `{Path(row['project_dir']).name}`")
     with status:
         icon, label, color = STATUS_LABELS.get(row["status"], ("⚪", row["status"], "gray"))
-        st.badge(label, icon=icon, color=color)
+        st.badge(t(label), icon=icon, color=color)
     with st.container(horizontal=True):
         primary = st.container(width="content")
         changes = st.container(width="content")
@@ -890,25 +930,25 @@ def header(db: History, row: dict) -> None:
         folder = st.container(width="content")
         downloads = st.container(width="content")
         manage = st.container(width="content")
-        if changes.button("📝 Değişiklik", key=f"changes_{run_id}", width="stretch", help="Yeni özellik, hata ya da değişiklik talebi"):
+        if changes.button(t("📝 Changes"), key=f"changes_{run_id}", width="stretch", help=t("New feature, bug or change request")):
             changes_dialog(run_id)
         readme_path = Path(row["project_dir"]) / "README.md"
         if readme.button("📘 README", key=f"readme_{run_id}", width="stretch", disabled=not readme_path.is_file()):
             open_focus(row, readme_path, "README")
-        if versions.button(f"🕓 Sürümler ({len(iterations)})", key=f"iterations_{run_id}", width="stretch",
-                           help="İlk sürüm, her CR ve bugfix: o andaki durum, belgeler, kod ve farklar"):
+        if versions.button(t("🕓 Versions ({count})", count=len(iterations)), key=f"iterations_{run_id}", width="stretch",
+                           help=t("First version, every CR and bugfix: the state, documents, code and diffs at that point")):
             iterations_dialog(run_id)
         project_dir = Path(row["project_dir"])
-        if folder.button("📂 Klasör", key=f"open_folder_{run_id}", width="stretch", disabled=not project_dir.is_dir(),
-                         help=f"Proje klasörünü dosya yöneticisinde aç (Explorer / Finder): {project_dir}"):
+        if folder.button(t("📂 Folder"), key=f"open_folder_{run_id}", width="stretch", disabled=not project_dir.is_dir(),
+                         help=t("Open the project folder in the file manager (Explorer / Finder): {path}", path=project_dir)):
             try:
                 open_folder(project_dir)
             except ValueError as exc:
-                st.error(str(exc))
-        with downloads.popover("İndir", icon=":material/download:", width="stretch"):
-            st.markdown("**Proje çıktıları**")
-            st.caption("Şu ana kadar üretilen dosyalar indirilir. Bağımlılıklar ve yerel .env dosyaları dahil edilmez.")
-            for kind, label in [("all", "Tüm proje + SDLC çıktıları"), ("documents", "Tüm belgeler ve raporlar"), ("code", "Kaynak kodlar")]:
+                st.error(translate_stored(str(exc)))
+        with downloads.popover(t("Download"), icon=":material/download:", width="stretch"):
+            st.markdown("**" + t("Project outputs") + "**")
+            st.caption(t("The files produced so far are downloaded. Dependencies and local .env files are not included."))
+            for kind, label in [("all", t("Whole project + SDLC outputs")), ("documents", t("All documents and reports")), ("code", t("Source code"))]:
                 st.download_button(label, lambda kind=kind: export_zip(Path(row["project_dir"]), Path(row["output_dir"]), kind),
                                    file_name=f"{run_id}-{kind}.zip", mime="application/zip", icon=":material/download:",
                                    key=f"bundle_{run_id}_{kind}", width="stretch", on_click="ignore")
@@ -916,85 +956,92 @@ def header(db: History, row: dict) -> None:
                 st.download_button("README.md", lambda: readme_path.read_bytes(), file_name="README.md", mime="text/markdown",
                                    key=f"readme_download_{run_id}", width="stretch", on_click="ignore")
         if row["status"] == "running":
-            if primary.button("⏸ Durdur", key=f"pause_{run_id}", width="stretch", disabled=bool(row["pause_requested"])):
+            if primary.button(t("⏸ Stop"), key=f"pause_{run_id}", width="stretch", disabled=bool(row["pause_requested"])):
                 db.request_pause(run_id)
                 st.rerun()
         elif row["status"] == "paused":
-            with primary.popover("▶ Devam et", width="stretch"):
+            with primary.popover(t("▶ Resume"), width="stretch"):
                 ready, key = api_key_field(f"resume_{run_id}")
-                if st.button("Kaldığı yerden devam et", key=f"resume_{run_id}", type="primary", disabled=not ready):
+                if st.button(t("Resume where it stopped"), key=f"resume_{run_id}", type="primary", disabled=not ready):
                     resume_run(run_id, key)
                     st.rerun()
         elif row["status"] == "failed":
-            # Başarısız iş: tamamlanmamış ilk aşamadan sıfırlayıp sürdür; biten aşamalar yeniden üretilmez.
+            # Failed job: reset from the first incomplete stage and continue; finished stages are not regenerated.
             failed_at = next((stage for stage in STAGE_KEYS if stage not in completed_from_events(row["events"])), STAGE_KEYS[-1])
-            with primary.popover("↻ Tekrar dene", width="stretch"):
-                st.caption(f"{STAGE_NAMES[failed_at]} aşamasından devam edilir; tamamlanan aşamalar korunur.")
+            with primary.popover(t("↻ Retry"), width="stretch"):
+                st.caption(t("Continues from the {stage} stage; completed stages are kept.", stage=stage_label(failed_at)))
                 ready, key = api_key_field(f"retry_{run_id}")
-                if st.button("Tekrar dene", key=f"retry_{run_id}", type="primary", disabled=not ready):
+                if st.button(t("Retry"), key=f"retry_{run_id}", type="primary", disabled=not ready):
                     regenerate(db, run_id, failed_at, key)
                     st.rerun()
-        with manage.popover("⚙️ Yönet", width="stretch"):
+        with manage.popover(t("⚙️ Manage"), width="stretch"):
             manage_menu(db, row)
     active = db.active_change(run_id)
     if active:
-        st.info(f"🔁 **{active['id']}** uygulanıyor ({CHANGE_KINDS[active['kind']]}): {active['title']}")
+        st.info(t("🔁 **{id}** is being applied ({kind}): {title}", id=active["id"], kind=t(CHANGE_KINDS[active["kind"]]), title=active["title"]))
     if run_id in WORKER_ERRORS:
-        st.error(WORKER_ERRORS[run_id])
+        st.error(translate_stored(WORKER_ERRORS[run_id]))
 
 
 def manage_menu(db: History, row: dict) -> None:
     run_id = row["id"]
     if row["status"] == "running":
-        st.info("Düzenleme, yeniden üretme ve silme için önce çalışmayı durdur.")
+        st.info(t("Stop the run first to edit, regenerate or delete."))
         return
-    edit, regen, remove = st.tabs(["✏️ Fikir", "🔁 Yeniden üret", "🗑️ Sil"])
+    edit, regen, remove = st.tabs([t("✏️ Idea"), t("🔁 Regenerate"), t("🗑️ Delete")])
     decisions_path = Path(row["output_dir"]) / "decisions.yaml"
     decisions = yaml.safe_load(decisions_path.read_text(encoding="utf-8")) if decisions_path.is_file() else {}
     with edit:
-        idea = st.text_area("Proje fikri", row["idea"], key=f"idea_{run_id}", height=90)
-        constraints = st.text_area("Kısıtlar", decisions.get("constraints", ""), key=f"constraints_{run_id}", height=70)
-        if st.button("Kaydet", key=f"save_idea_{run_id}"):
+        idea = st.text_area(t("Project idea"), row["idea"], key=f"idea_{run_id}", height=90)
+        constraints = st.text_area(t("Constraints"), decisions.get("constraints", ""), key=f"constraints_{run_id}", height=70)
+        if st.button(t("Save"), key=f"save_idea_{run_id}"):
             try:
                 if not idea.strip() or len(idea) > 1000:
-                    raise ValueError("Proje fikri 1–1000 karakter olmalı")
+                    raise ValueError(t("The project idea must be 1–1000 characters"))
                 updated = validate_decisions({**decisions, "constraints": constraints})
                 db.update_idea(run_id, idea.strip())
                 previous = yaml.safe_dump(decisions, allow_unicode=True, sort_keys=False)
                 accept_edit(db, row, "workflow", "decisions.yaml", previous,
-                            yaml.safe_dump(updated, allow_unicode=True, sort_keys=False), "Fikir/kısıtlar düzenlendi",
+                            yaml.safe_dump(updated, allow_unicode=True, sort_keys=False), "Idea/constraints edited",
                             stale_from="decisions")
-                st.toast("Kaydedildi. Bütün aşamalar 'güncel değil' işaretlendi; üstteki uyarıdan güncelleyebilirsin.")
+                st.toast(t("Saved. All stages were marked 'out of date'; you can update them from the warning above."))
                 st.rerun()
             except (ValueError, OSError) as exc:
-                st.error(str(exc))
+                st.error(translate_stored(str(exc)))
     with regen:
-        stage = st.selectbox("Başlangıç aşaması", STAGE_KEYS, format_func=lambda key: STAGE_NAMES[key], key=f"regen_stage_{run_id}")
-        st.caption("Seçilen aşama ve sonrası yeniden çalışır; önceki belgeler girdi olarak kullanılır.")
+        stage = st.selectbox(t("Starting stage"), STAGE_KEYS, format_func=stage_label, key=f"regen_stage_{run_id}")
+        st.caption(t("The selected stage and the ones after it run again; earlier documents are used as input."))
         ready, key = api_key_field(f"regen_{run_id}")
-        if st.button("Yeniden üret", key=f"regen_{run_id}", type="primary", disabled=not ready):
+        if st.button(t("Regenerate"), key=f"regen_{run_id}", type="primary", disabled=not ready):
             try:
                 regenerate(db, run_id, stage, key)
                 st.rerun()
             except ValueError as exc:
-                st.error(str(exc))
+                st.error(translate_stored(str(exc)))
     with remove:
-        st.caption(f"Proje: `{row['project_dir']}`  \nRaporlar: `{row['output_dir']}`")
-        confirmed = st.checkbox("Kalıcı olarak silmeyi onaylıyorum", key=f"delete_confirm_{run_id}")
-        if st.button("Projeyi sil", key=f"delete_{run_id}", disabled=not confirmed):
+        st.caption(t("Project: `{project}`  \nReports: `{reports}`", project=row["project_dir"], reports=row["output_dir"]))
+        confirmed = st.checkbox(t("I confirm the permanent deletion"), key=f"delete_confirm_{run_id}")
+        if st.button(t("Delete project"), key=f"delete_{run_id}", disabled=not confirmed):
             try:
                 delete_project(ROOT, run_id)
                 st.session_state.pop("selected_run", None)
-                st.toast("Proje silindi.")
+                st.toast(t("Project deleted."))
                 st.rerun()
             except (OSError, ValueError) as exc:
-                st.error(f"Silinemedi: {exc}")
+                st.error(t("Could not delete: {error}", error=translate_stored(str(exc))))
 
 
 def wait_for_start(run_id: str) -> None:
-    st.info("Çalışma başlatılıyor…")
+    use_language()
+    st.info(t("Starting the run…"))
     if history().get(run_id) or run_id in WORKER_ERRORS:
         st.rerun()
+
+
+def language_selector() -> None:
+    """UI language of this browser session; the project's document language is chosen separately in the new-project form."""
+    st.selectbox(t("Interface language"), list(LANGUAGES), format_func=LANGUAGES.get, key="ui_language")
+    st.query_params["lang"] = st.session_state["ui_language"]
 
 
 def projects_page() -> None:
@@ -1006,22 +1053,22 @@ def projects_page() -> None:
         st.session_state.pop("starting_run")
         st.session_state["selected_run"] = starting
     with st.sidebar:
-        st.markdown("**Projeler**")
+        st.markdown("**" + t("Projects") + "**")
         if items:
             if st.session_state.get("selected_run") not in ids:
                 st.session_state["selected_run"] = ids[0]
             labels = {item["id"]: f"{STATUS_LABELS.get(item['status'], ('⚪',))[0]} {item['idea'][:42]}" for item in items}
-            st.radio("Proje", ids, key="selected_run", format_func=lambda run_id: labels[run_id], label_visibility="collapsed")
+            st.radio(t("Project"), ids, key="selected_run", format_func=lambda run_id: labels[run_id], label_visibility="collapsed")
     if starting and starting not in ids:
-        # İş parçacığı kaydı oluşturana kadar kısa bir bekleme ekranı.
+        # A short waiting screen until the worker thread creates the record.
         if starting in WORKER_ERRORS:
-            st.error(WORKER_ERRORS.pop(starting))
+            st.error(translate_stored(WORKER_ERRORS.pop(starting)))
             st.session_state.pop("starting_run")
             return
         st.fragment(wait_for_start, run_every=1)(starting)
         return
     if not items:
-        st.info("Henüz oluşturulmuş proje yok. **Yeni proje** sayfasından başlayabilirsin.")
+        st.info(t("No project has been created yet. You can start from the **New project** page."))
         return
     row = db.get(st.session_state["selected_run"])
     header(db, row)
@@ -1038,15 +1085,15 @@ def projects_page() -> None:
     with right:
         st.fragment(chat_feed, run_every=every)(row["id"])
         _, placeholder = chat_placeholder(db, row)
-        # Satır içi (container içinde) chat kutusu sayfanın en alta kaymasını engeller.
+        # An inline chat box (inside a container) keeps the page from scrolling to the bottom.
         with st.container():
             st.chat_input(placeholder, key=f"chat_{row['id']}")
 
 
-# ---------------------------------------------------------------- yeni proje
+# ---------------------------------------------------------------- new project
 
 def apply_template(template_id: str | None) -> None:
-    """Seçilen şablonun değerlerini form alanlarına yazar (düğme geri çağrısı: widget'lardan önce çalışır)."""
+    """Writes the selected template's values into the form fields (button callback: runs before the widgets)."""
     template = next((item for item in templates() if item["id"] == template_id), None)
     if template is None:
         return
@@ -1058,7 +1105,7 @@ def apply_template(template_id: str | None) -> None:
         "constraints_input": chosen.get("constraints", ""),
     })
     for name, item in questions().items():
-        if name not in FORM_FIELDS:
+        if name not in FORM_FIELDS and name != "language":
             st.session_state[f"choice_{name}"] = chosen.get(name, item["options"][0])
 
 
@@ -1066,116 +1113,122 @@ def template_picker() -> None:
     catalog = {item["id"]: item for item in templates()}
     pick, apply = st.columns([4, 1], vertical_alignment="bottom")
     selected = pick.selectbox(
-        "📋 Örnek proje şablonu", [None, *catalog], key="template_choice",
-        format_func=lambda key: "— Şablon seçerek formu doldur —" if key is None else catalog[key]["title"],
+        t("📋 Example project template"), [None, *catalog], key="template_choice",
+        format_func=lambda key: t("— Pick a template to fill the form —") if key is None else catalog[key]["title"],
     )
-    apply.button("Uygula", key="apply_template", disabled=selected is None, width="stretch",
+    apply.button(t("Apply"), key="apply_template", disabled=selected is None, width="stretch",
                  on_click=apply_template, args=(selected,))
 
 
-@st.dialog("Proje klasörünü seç")
+@st.dialog(t("Choose the project folder"))
 def choose_folder() -> None:
+    use_language()
     current = Path(st.session_state.get("browse_dir", ROOT.parent)).expanduser().resolve()
     if not current.is_dir():
         current = ROOT.parent
     st.session_state["browse_dir"] = str(current)
-    st.caption(f"Üst klasör: `{current}`")
-    if st.button("⬆️ Üst klasöre git", disabled=current == current.parent):
+    st.caption(t("Parent folder: `{path}`", path=current))
+    if st.button(t("⬆️ Go to parent folder"), disabled=current == current.parent):
         st.session_state["browse_dir"] = str(current.parent)
         st.rerun()
     if os.name == "nt" and current == current.parent:
         drives = [f"{letter}:/" for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if Path(f"{letter}:/").is_dir()]
-        drive = st.selectbox("Sürücü", drives)
-        if st.button("Sürücüye git"):
+        drive = st.selectbox(t("Drive"), drives)
+        if st.button(t("Go to drive")):
             st.session_state["browse_dir"] = drive
             st.rerun()
     try:
         folders = sorted((path for path in current.iterdir() if path.is_dir() and not path.name.startswith(".")), key=lambda path: path.name.casefold())
     except OSError as exc:
-        st.error(f"Klasör okunamadı: {exc}")
+        st.error(t("Could not read the folder: {error}", error=exc))
         folders = []
     if folders:
-        selected = st.selectbox("Alt klasörler", folders, format_func=lambda path: path.name)
-        if st.button("📂 Seçili klasöre gir"):
+        selected = st.selectbox(t("Subfolders"), folders, format_func=lambda path: path.name)
+        if st.button(t("📂 Enter the selected folder")):
             st.session_state["browse_dir"] = str(selected)
             st.rerun()
     else:
-        st.caption("Bu konumda görüntülenebilir alt klasör yok.")
-    name = st.text_input("Oluşturulacak yeni klasörün adı", key="new_folder_name", placeholder="stok-uygulamasi")
-    if st.button("Bu konumu kullan", type="primary"):
+        st.caption(t("There are no visible subfolders here."))
+    name = st.text_input(t("Name of the new folder to create"), key="new_folder_name", placeholder="inventory-app")
+    if st.button(t("Use this location"), type="primary"):
         if not name.strip() or Path(name).name != name or name in {".", ".."} or "/" in name or "\\" in name:
-            st.error("Tek bir yeni klasör adı yaz.")
+            st.error(t("Enter a single new folder name."))
         elif (current / name).exists():
-            st.error("Bu klasör zaten mevcut; yeni bir ad yaz.")
+            st.error(t("This folder already exists; enter a new name."))
         else:
             st.session_state["output_path"] = str(current / name)
             st.rerun()
 
 
 def home_page() -> None:
-    st.title("🧭 AutoSDLC — Yeni proje")
-    st.caption("Bir fikri sekiz ajanla yazılım yaşam döngüsünün tüm aşamalarından geçir. Başlatınca **Projeler** sayfasında canlı izlersin.")
+    st.title(t("🧭 AutoSDLC — New project"))
+    st.caption(t("Take an idea through every stage of the software lifecycle with eight agents. After you start, you follow it live on the **Projects** page."))
     left, right = st.columns([2.2, 1], gap="large")
     with left:
         template_picker()
-        idea = st.text_area("Ne geliştirmek istiyorsun?", key="idea_input", height=100,
-                            placeholder="Örn: Küçük işletme için stok takip uygulaması; ürün ekleme, stok hareketi ve kritik stok uyarısı")
+        idea = st.text_area(t("What do you want to build?"), key="idea_input", height=100,
+                            placeholder=t("E.g. A stock tracking app for a small business; adding products, stock movements and a low-stock alert"))
         catalog = questions()
         type_col, stack_col = st.columns([1, 2], vertical_alignment="bottom")
         project_type = type_col.selectbox(
-            "Proje türü", catalog["project_type"]["options"], help=catalog["project_type"]["question"],
+            t("Project type"), catalog["project_type"]["options"], help=question_text("project_type"),
             key="project_type_input", format_func=lambda value: choice_label("project_type", value),
         )
-        stack = stack_col.text_input("Dil ve teknolojiler", help=catalog["stack"]["question"],
-                                     key="stack_input", placeholder="Örn: Node.js/Express, pnpm, sade HTML/CSS/JS")
+        stack = stack_col.text_input(t("Language and technologies"), help=question_text("stack"),
+                                     key="stack_input", placeholder=t("E.g. Node.js/Express, pnpm, plain HTML/CSS/JS"))
         decisions = {"project_type": project_type, "stack": stack}
         options = [(name, item) for name, item in catalog.items()
                    if name not in FORM_FIELDS and (not item.get("when") or project_type in item["when"])]
         if options:
-            labels = {"database": "Veritabanı", "cache": "Önbellek", "observability": "İzleme", "ui": "Web arayüzü",
-                      "scale": "Ölçek"}
+            # The document language follows the interface language until the user picks one explicitly.
+            if not st.session_state.get("language_chosen"):
+                st.session_state["choice_language"] = st.session_state["ui_language"]
             for column, (name, item) in zip(st.columns(len(options), vertical_alignment="bottom"), options):
                 decisions[name] = column.selectbox(
-                    labels.get(name, item["question"]), item["options"], key=f"choice_{name}", help=item["question"],
+                    t(FORM_LABELS.get(name, item["question"])), item["options"], key=f"choice_{name}", help=question_text(name),
                     format_func=lambda value, key=name: choice_label(key, value),
+                    on_change=(lambda: st.session_state.update(language_chosen=True)) if name == "language" else None,
                 )
-        decisions["constraints"] = st.text_area(catalog["constraints"]["question"], key="constraints_input", height=80,
-                                                placeholder="Örn: pnpm kullan, frontend sade HTML olsun, arayüz metinleri Türkçe olsun.")
+        decisions["constraints"] = st.text_area(question_text("constraints"), key="constraints_input", height=80,
+                                                placeholder=t("E.g. Use pnpm, keep the frontend plain HTML, write the UI texts in Turkish."))
     with right:
         models = model_options()
-        model = st.selectbox("OpenCode Go modeli", models, index=models.index(default_model(models)))
+        model = st.selectbox(t("OpenCode Go model"), models, index=models.index(default_model(models)))
         ready, api_key = api_key_field("new")
         path_col, browse_col = st.columns([3, 1], vertical_alignment="bottom")
-        output_path = path_col.text_input("Proje klasörü (isteğe bağlı)", key="output_path", placeholder="projects/<ad>-<kimlik>")
-        if browse_col.button("Gözat", width="stretch"):
+        output_path = path_col.text_input(t("Project folder (optional)"), key="output_path", placeholder="projects/<name>-<id>")
+        if browse_col.button(t("Browse"), width="stretch"):
             choose_folder()
-        if st.button("🚀 Projeyi oluştur", type="primary", width="stretch"):
+        if st.button(t("🚀 Create the project"), type="primary", width="stretch"):
             try:
                 validated = validate_decisions(decisions)
                 if not idea.strip() or len(idea) > 1000:
-                    raise ValueError("Proje fikrini 1–1000 karakter arasında yaz.")
+                    raise ValueError(t("Write the project idea in 1–1000 characters."))
                 if not ready:
-                    raise ValueError("OpenCode Go API anahtarı gerekli.")
+                    raise ValueError(t("An OpenCode Go API key is required."))
                 target = Path(output_path).expanduser().resolve() if output_path.strip() else None
                 if target and target.exists():
-                    raise ValueError(f"Proje klasörü zaten mevcut: {target}")
+                    raise ValueError(t("Project folder already exists: {path}", path=target))
                 st.session_state["starting_run"] = start_run(idea.strip(), validated, target, model, api_key)
                 st.switch_page(PROJECTS_PAGE)
             except (ValueError, OSError) as exc:
-                st.error(str(exc))
-        st.caption("Bir ajan karar isterse soru Projeler sayfasındaki chat'te görünür; yanıtını oradan yazarsın.")
-    st.markdown("##### Yaşam döngüsü nasıl işler?")
+                st.error(translate_stored(str(exc)))
+        st.caption(t("If an agent needs a decision, the question appears in the chat on the Projects page; you answer there."))
+    st.markdown("##### " + t("How does the lifecycle work?"))
     show_diagram(render_svg())
-    with st.expander("Aşamalar ve ajanlar"):
+    with st.expander(t("Stages and agents")):
         columns = st.columns(4)
         for index, stage in enumerate(STAGES):
             with columns[index % 4]:
-                st.html(f'<div class="sdlc-card"><b>{index + 1}. {stage.label}</b> <small>· {stage.agent}</small>'
-                        f"<p style='margin:4px 0'>{stage.description}</p><small>📄 {stage.artifact}</small></div>")
-        st.caption("Turuncu oklar geri besleme döngüleridir: İnceleme REVİZYON derse Tasarım Ajanı belgeyi yeniden yazar; "
-                   "testler başarısızsa Geliştirme Ajanı kodu onarır. Testler Test Ajanı'na aittir, geliştirici onları değiştiremez.")
+                st.html(f'<div class="sdlc-card"><b>{index + 1}. {escape(stage_label(stage.key))}</b> <small>· {escape(t(stage.agent))}</small>'
+                        f"<p style='margin:4px 0'>{escape(stage_description(stage.key))}</p><small>📄 {escape(t(stage.artifact))}</small></div>")
+        st.caption(t("The orange arrows are feedback loops: if the Review says REVISE, the Design Agent rewrites the document; "
+                     "if the tests fail, the Development Agent repairs the code. The tests belong to the Test Agent; the developer cannot change them."))
 
 
-HOME_PAGE = st.Page(home_page, title="Yeni proje", icon="🏠", default=True)
-PROJECTS_PAGE = st.Page(projects_page, title="Projeler", icon="📁")
-st.navigation([HOME_PAGE, PROJECTS_PAGE]).run()
+HOME_PAGE = st.Page(home_page, title=t("New project"), icon="🏠", default=True)
+PROJECTS_PAGE = st.Page(projects_page, title=t("Projects"), icon="📁")
+navigation = st.navigation([HOME_PAGE, PROJECTS_PAGE])
+with st.sidebar:
+    language_selector()
+navigation.run()

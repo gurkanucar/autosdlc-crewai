@@ -3,7 +3,7 @@ ifeq ($(OS),Windows_NT)
 BASE_PYTHON ?= python
 VENV_PYTHON := .venv/Scripts/python.exe
 else
-# macOS/Linux'ta çoğu kurulumda yalnızca python3 bulunur.
+# Most macOS/Linux installs only have python3.
 BASE_PYTHON ?= python3
 VENV_PYTHON := .venv/bin/python
 endif

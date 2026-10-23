@@ -21,11 +21,12 @@ from typing import Callable, Protocol
 import yaml
 
 from .crewai_engine import ClarificationNeeded, CrewAIEngine
+from .i18n import normalize, t
 from .deployment import write_deployment_files
 from .files import write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
-from .sections import NO_CHANGE, apply_patch
+from .sections import NO_CHANGE, NO_CHANGE_TOKENS, apply_patch
 from .storage import History
 from .traceability import build_matrix
 
@@ -36,19 +37,25 @@ STAGE_FILES = {
     "review": "design_review.md", "deployment": "deployment.md", "maintenance": "maintenance_report.md",
 }
 MAX_REVIEW_ROUNDS = 2
-VERDICT = re.compile(r"KARAR:\s*\**\s*(ONAY|REV[İI]ZYON)", re.IGNORECASE)
-# Bulgu tablosundaki "| 1 | Kritik | …" satırı; küçük projede yalnızca bu, tasarım revizyonu gerektirir.
-CRITICAL_FINDING = re.compile(r"^\s*\|[^|\n]*\|\s*\**\s*Kritik\b", re.IGNORECASE | re.MULTILINE)
-# Küçük projede belge uzunluğu üst sınırı (karakter); ajan bunu aşmamaya yönlendirilir.
+# Protocol tokens are language neutral (English); the Turkish ones written by older runs are still accepted.
+VERDICT = re.compile(r"(?:VERDICT|KARAR):\s*\**\s*(APPROVE|REVISE|ONAY|REV[İI]ZYON)", re.IGNORECASE)
+# A "| 1 | Critical | …" row of the findings table; in a small project only this requires a design revision.
+CRITICAL_FINDING = re.compile(r"^\s*\|[^|\n]*\|\s*\**\s*(?:Critical|Kritik)\b", re.IGNORECASE | re.MULTILINE)
+# Maximum document length (characters) in a small project; the agent is told not to exceed it.
 SMALL_DOC_LIMIT = 3500
-# Bir değişiklik talebinde atlanabilecek aşamalar; kodlama ve test her zaman çalışır.
+# Stages a change request may skip; development and testing always run.
 SKIPPABLE_STAGES = ("analysis", "design", "review", "deployment", "maintenance")
-TEST_HEADER = re.compile(r"\A> Doğrulanan test sonucu:[^\n]*\n+")
+# First line of deployment/maintenance documents; recognised in any language through the marker comment.
+TEST_MARKER = "<!-- test-result -->"
+TEST_HEADER = re.compile(r"\A> (?:[^\n]*" + re.escape(TEST_MARKER) + r"|Doğrulanan test sonucu:[^\n]*)\n+")
+# Findings the reviewer must write with these exact English severity words in every language.
+START_STAGE = re.compile(r"(?:START|BAŞLANGIÇ):\s*\**\s*(analysis|design|development)", re.IGNORECASE)
+SKIP_LINE = re.compile(r"(?:SKIP|ATLA):\s*\**\s*([a-z, ]*)", re.IGNORECASE)
 TEST_DIRS = ("tests/", "test/")
 PYTHON_TOOLS = {"python", "python3", "pip", "pip3"}
 DOC_BUDGET = 9000
-# Her aşamanın okuduğu önceki belgeler, önem sırasına göre. Motor bağlamı baştan
-# kırptığı için en önemli belge önce gelir.
+# The earlier documents each stage reads, in order of importance. The engine truncates the context from the
+# end, so the most important document comes first.
 STAGE_INPUTS = {
     "planning": (),
     "analysis": ("planning",),
@@ -72,7 +79,7 @@ class RunResult:
 
 
 class RunPaused(Exception):
-    """İş, sonraki SDLC aşamasına geçmeden duraklatıldı."""
+    """The job was paused before moving on to the next SDLC stage."""
 
 
 def _port_open(port: int) -> bool:
@@ -91,7 +98,7 @@ def _tail(path: Path, limit: int = 4000) -> str:
 
 
 def _stop_process(process: subprocess.Popen) -> None:
-    """Sunucuyu alt süreçleriyle birlikte kapatır; aksi hâlde port açık kalabilir."""
+    """Stops the server together with its child processes; otherwise the port may stay open."""
     if process.poll() is None:
         try:
             if os.name == "nt":
@@ -107,23 +114,23 @@ def _stop_process(process: subprocess.Popen) -> None:
         process.wait()
 
 
-# Etki analizinin 'Açık sorular' bölümündeki satırlar: kullanıcı yanıtlamadan talep uygulanmaz.
-OPEN_QUESTION = re.compile(r"^\s*(?:[-*]|\d+[.)])?\s*\**\s*SORU\s*\**\s*:\s*\**\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+# Lines of the impact analysis's open-questions section: the request is not applied until the user answers them.
+OPEN_QUESTION = re.compile(r"^\s*(?:[-*]|\d+[.)])?\s*\**\s*(?:QUESTION|SORU)\s*\**\s*:\s*\**\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
 
 
 def open_questions(impact: str) -> list[str]:
-    """Etki analizindeki 'SORU: …' satırları; 'yok' yanıtları sayılmaz."""
+    """The 'QUESTION: …' lines of the impact analysis; 'none' answers do not count."""
     found = [match.group(1).strip() for match in OPEN_QUESTION.finditer(impact)]
-    return [question for question in found if question.strip(" .").casefold() not in {"yok", "none", "-"}][:5]
+    return [question for question in found if question.strip(" .").casefold() not in {"yok", "none", "no", "n/a", "-"}][:5]
 
 
 def test_placement_problem(tests: dict[str, str]) -> str | None:
-    """Test Ajanı yalnızca tests/ veya test/ altına yazabilir; ihlal varsa gerekçeyi döndürür."""
+    """The Test Agent may only write under tests/ or test/; returns the reason if that is violated."""
     outside = sorted(name for name in tests if not name.startswith(TEST_DIRS))
     if not tests or len(outside) == len(tests):
-        return "Test dosyaları tests/ veya test/ altında olmalı" + (f" (gelen: {', '.join(outside)})" if outside else "")
+        return "Test files must be under tests/ or test/" + (f" (received: {', '.join(outside)})" if outside else "")
     if outside:
-        return f"Test Ajanı yalnızca tests/ veya test/ altına yazabilir (dışarıda: {', '.join(outside)})"
+        return f"The Test Agent may only write under tests/ or test/ (outside: {', '.join(outside)})"
     return None
 
 
@@ -131,11 +138,11 @@ PATH_RUNNERS = {"pytest", "node", "jest", "mocha", "vitest"}
 
 
 def uncovered_tests(manifest: dict, test_names: list[str]) -> list[str]:
-    """project.yaml'daki test komutlarının çalıştırmadığı test dosyaları.
+    """Test files that the test commands in project.yaml do not run.
 
-    Komutlar bir test dosyası/klasörü adlandırmıyorsa (ör. "npm test") kapsam bilinemez ve boş liste döner.
+    If the commands do not name a test file/folder (e.g. "npm test") the coverage is unknowable and an empty list is returned.
     """
-    # Yalnızca dosya yolu alan çalıştırıcılar incelenir; "npm test", "go test" gibi komutlardaki "test" bir alt komuttur.
+    # Only runners that take a file path are examined; the "test" in "npm test" or "go test" is a subcommand.
     commands = [manifest.get(key) or [] for key in ("unit_test", "api_test", "ui_test")]
     targets = [arg.rstrip("/") for command in commands
                if any(Path(token).name in PATH_RUNNERS for token in command[:3])
@@ -148,7 +155,7 @@ def uncovered_tests(manifest: dict, test_names: list[str]) -> list[str]:
 
 
 def backup_versions(output_dir: Path, filename: str) -> None:
-    """Belgenin mevcut hâlini versions/ altına zaman damgasıyla kopyalar."""
+    """Copies the document's current version under versions/ with a timestamp."""
     source = output_dir / filename
     if source.is_file():
         versions = output_dir / "versions"
@@ -166,18 +173,31 @@ def review_verdict(report: str) -> str | None:
     match = VERDICT.search(report)
     if match is None:
         return None
-    return "ONAY" if match.group(1).upper() == "ONAY" else "REVİZYON"
+    return "APPROVE" if match.group(1).upper() in {"APPROVE", "ONAY"} else "REVISE"
+
+
+def parse_start_stage(report: str) -> str | None:
+    """The stage named in the impact analysis's 'START: …' line."""
+    found = START_STAGE.search(report)
+    return found.group(1).lower() if found else None
+
+
+def suggested_skips(report: str) -> list[str]:
+    """The skippable stages named in the impact analysis's 'SKIP: deployment, maintenance' line."""
+    found = SKIP_LINE.search(report)
+    names = [name.strip().lower() for name in found.group(1).split(",")] if found else []
+    return [name for name in SKIPPABLE_STAGES if name in names]
 
 
 def skip_stages(change: dict | None) -> set[str]:
-    """Değişiklik talebinde kullanıcının onayladığı, etkilenmeyen (atlanacak) aşamalar."""
+    """The unaffected stages (to be skipped) that the user approved for a change request."""
     if not change or not change.get("skip_stages"):
         return set()
     return {name.strip() for name in change["skip_stages"].split(",")} & set(SKIPPABLE_STAGES)
 
 
 def completed_from_events(events: list[dict]) -> set[str]:
-    """Olayları sırayla oynatır; 'reset' olayı o aşama ve sonrasını yeniden üretilecek yapar."""
+    """Replays the events in order; a 'reset' event makes that stage and the ones after it need regeneration."""
     completed: set[str] = set()
     for event in events:
         if event["stage"] == "workflow" and event["status"] == "reset" and event["detail"] in SDLC_STAGES:
@@ -190,19 +210,20 @@ def completed_from_events(events: list[dict]) -> set[str]:
 def default_project_dir(workspace: Path, idea: str, run_id: str) -> Path:
     normalized = unicodedata.normalize("NFKD", idea.lower().replace("ı", "i"))
     ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")[:48].rstrip("-") or "proje"
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")[:48].rstrip("-") or "project"
     return workspace / "projects" / f"{slug}-{run_id}"
 
 
-# Sürüm kopyasına alınmayan, yeniden oluşturulabilir ya da büyük klasörler.
+# Folders left out of a version snapshot because they can be recreated or are large.
 SNAPSHOT_SKIP = (".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__", ".pytest_cache",
                  "test-results", "playwright-report", "dist", "build", "target")
-CHANGE_KINDS = {"feature": "Yeni özellik", "bug": "Hata", "change": "Değişiklik", "edit": "Belge düzenlemesi"}
+# English source labels; translate with t() when displaying.
+CHANGE_KINDS = {"feature": "New feature", "bug": "Bug", "change": "Change", "edit": "Document edit"}
 
 
 class StageEngine(Protocol):
     def document(self, stage: str, idea: str, context: str) -> str: ...
-    # change verilirse (değişiklik talebi) motor mevcut kodu/testleri koruyup yalnızca değişenleri döndürür.
+    # With change (a change request) the engine keeps the existing code/tests and returns only what changed.
     def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]: ...
     def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None) -> dict[str, str]: ...
 
@@ -228,16 +249,16 @@ class RunSession:
         existing = self.history.get(self.run_id) if resume else None
         if resume:
             if existing is None or existing["status"] != "paused":
-                raise ValueError("Yalnızca duraklatılmış bir çalışma sürdürülebilir")
+                raise ValueError("Only a paused run can be resumed")
             self.output_dir = Path(existing["output_dir"])
             self.project_dir = Path(existing["project_dir"])
             if not self.output_dir.is_dir() or not self.project_dir.is_dir():
-                raise ValueError("Devam etmek için proje ve rapor klasörleri bulunmalı")
+                raise ValueError("The project and report folders must exist to resume")
         else:
             self.output_dir = self.workspace / "runs" / self.run_id
             self.project_dir = Path(output).expanduser().resolve() if output is not None else default_project_dir(self.workspace, self.idea, self.run_id)
             if self.project_dir.exists():
-                raise ValueError(f"Proje klasörü zaten mevcut: {self.project_dir}")
+                raise ValueError(f"Project folder already exists: {self.project_dir}")
             self.output_dir.mkdir(parents=True)
             self.project_dir.mkdir(parents=True)
             (self.project_dir / "docs").mkdir()
@@ -250,7 +271,10 @@ class RunSession:
             (self.output_dir / "decisions.yaml").write_text(yaml.safe_dump(decisions, sort_keys=False), encoding="utf-8")
             (self.project_dir / "docs" / "decisions.yaml").write_text(yaml.safe_dump(decisions, sort_keys=False), encoding="utf-8")
         self.max_repairs = max_repairs
-        # Küçük projede belgeler kısa tutulur ve inceleme yalnızca kritik bulguda tasarımı geri gönderir.
+        # Language of every document the agents write (and of the report files this module writes).
+        self.language = normalize(decisions.get("language"))
+        engine.language = self.language
+        # In a small project documents are kept short and the review only sends the design back on a critical finding.
         self.small = decisions.get("scale") == "small"
         self.docs: dict[str, str] = {}
         self.clarifications: list[dict[str, str]] = []
@@ -258,7 +282,7 @@ class RunSession:
         self.test_files: dict[str, str] = {}
         self.traceability = ""
         self.manifest: dict = {}
-        # Değişiklik talebi uygulanırken: önceki belgeler temel alınır ve yalnızca etkilenen kısımlar güncellenir.
+        # While a change request is applied: earlier documents are the base and only affected parts are updated.
         self.change: dict | None = None
         self.previous_docs: dict[str, str] = {}
         self.setup_done = False
@@ -273,7 +297,11 @@ class RunSession:
         if resume:
             self._load_checkpoint(existing)
             if not self.history.resume(self.run_id):
-                raise ValueError("Çalışma zaten sürdürülüyor")
+                raise ValueError("The run is already being resumed")
+
+    def _t(self, message: str, **values: object) -> str:
+        """Text written into project documents, in the project's document language."""
+        return t(message, language=self.language, **values)
 
     def _load_checkpoint(self, row: dict) -> None:
         self.completed_stages = completed_from_events(row["events"])
@@ -281,7 +309,7 @@ class RunSession:
             path = self.output_dir / name
             if path.is_file():
                 self.previous_docs[stage] = path.read_text(encoding="utf-8")
-                # Yeniden üretilecek aşamaların eski belgeleri bağlama karışmasın (delta modunda ayrıca verilir).
+                # Old documents of stages to be regenerated must not leak into the context (delta mode provides them separately).
                 if stage in self.completed_stages:
                     self.docs[stage] = self.previous_docs[stage]
         self.change = self.history.active_change(self.run_id)
@@ -308,7 +336,7 @@ class RunSession:
             self.last_test_output = attempt.read_text(encoding="utf-8")
 
     def _live_output(self, stage: str, text: str) -> None:
-        """Ajanın akan çıktısını arayüzün okuyacağı dosyaya yazar (en fazla saniyede ~3 kez)."""
+        """Writes the agent's streaming output to the file the UI reads (at most ~3 times a second)."""
         now = time.monotonic()
         if now - self._live_written < 0.3:
             return
@@ -318,7 +346,7 @@ class RunSession:
             live_dir.mkdir(exist_ok=True)
             (live_dir / f"{stage}.md").write_text(text, encoding="utf-8")
         except OSError:
-            pass  # Canlı gösterim yalnızca kolaylık; arayüz dosyayı okurken yazma çakışabilir.
+            pass  # The live view is only a convenience; a write can collide while the UI reads the file.
 
     def _check_pause(self) -> None:
         if self.history.pause_requested(self.run_id):
@@ -327,7 +355,7 @@ class RunSession:
     def execute(self, stage: str, operation: Callable[[], str]) -> str:
         self._check_pause()
         if stage in self.completed_stages:
-            return "Aşama daha önce tamamlandı"
+            return "Stage already completed"
         if stage in skip_stages(self.change) and stage in self.previous_docs:
             return self._skip(stage)
         result = operation()
@@ -335,7 +363,7 @@ class RunSession:
         return result
 
     def _skip(self, stage: str) -> str:
-        """Değişiklikten etkilenmeyen aşama: önceki belge olduğu gibi kalır, yalnızca test sonucu satırı tazelenir."""
+        """Stage not affected by the change: the previous document stays as it is, only the test result line is refreshed."""
         content = self.previous_docs[stage]
         if stage == "deployment":
             write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
@@ -343,17 +371,16 @@ class RunSession:
             content = self._with_test_header(content)
             self._write_doc(STAGE_FILES[stage], content)
         self.docs[stage] = content
-        self._event(stage, "skipped", f"{self.change['id']} bu aşamayı etkilemiyor")
-        return "Aşama atlandı"
+        self._event(stage, "skipped", f"{self.change['id']} does not affect this stage")
+        return "Stage skipped"
 
     def _with_test_header(self, content: str) -> str:
-        return (
-            f"> Doğrulanan test sonucu: **{'BAŞARILI' if self.test_passed else 'BAŞARISIZ'}** "
-            f"({self.attempts} deneme).\n\n{TEST_HEADER.sub('', content, count=1)}"
-        )
+        verdict = self._t("PASSED") if self.test_passed else self._t("FAILED")
+        header = self._t("Verified test result: **{verdict}** ({attempts} attempts).", verdict=verdict, attempts=self.attempts)
+        return f"> {header} {TEST_MARKER}\n\n{TEST_HEADER.sub('', content, count=1)}"
 
     def pause(self) -> RunResult:
-        self._event("workflow", "paused", "Kullanıcı isteğiyle duraklatıldı")
+        self._event("workflow", "paused", "Paused at the user's request")
         self.history.pause(self.run_id, self.attempts)
         return RunResult(self.run_id, "paused", self.output_dir, self.project_dir, self.attempts)
 
@@ -363,10 +390,10 @@ class RunSession:
             self.on_event(stage, status, detail)
 
     def _generate(self, stage: str, instruction: str = "", base: str | None = None) -> str:
-        """Belgeyi üretir; kalite kapısından geçemezse gerekçesiyle bir kez daha yazdırır.
+        """Produces the document; if it fails the quality gate the agent rewrites it once with the reason.
 
-        base verilirse (değişiklik talebi ya da inceleme revizyonu) ajan belgenin tamamını değil yalnızca
-        değişen/yeni bölümleri döndürür; bunlar mevcut belgeye yerleştirilir. Böylece çıktı kısa kalır.
+        With base (a change request or a review revision) the agent returns only the changed/new sections instead
+        of the whole document, and they are placed into the existing document, which keeps the output short.
         """
         if base is None and self.change and stage != "review":
             base = self.previous_docs.get(stage)
@@ -377,8 +404,8 @@ class RunSession:
                 prompt += self._patch_instruction(base)
             elif self.small:
                 prompt += (
-                    f"KÜÇÜK PROJE: belge en fazla ~{SMALL_DOC_LIMIT} karakter olsun. Yalnızca bu proje için gerekli "
-                    "bölümleri yaz; genel geçer açıklama, tekrar ve uzun tablolar ekleme.\n\n"
+                    f"SMALL PROJECT: keep the document to about {SMALL_DOC_LIMIT} characters at most. Write only the "
+                    "sections this project needs; no generic explanations, repetition or long tables.\n\n"
                 )
             output = self._with_questions(
                 stage, lambda: self.engine.document(stage, self.idea, prompt + self._context(stage))
@@ -387,31 +414,31 @@ class RunSession:
             if base:
                 content, replaced, added = apply_patch(base, output)
                 if replaced or added:
-                    self._event(stage, "delta", f"{replaced} bölüm güncellendi, {added} bölüm eklendi")
-                elif NO_CHANGE.casefold() in output.casefold():
-                    self._event(stage, "delta", "değişiklik gerekmedi")
+                    self._event(stage, "delta", f"{replaced} sections updated, {added} sections added")
+                elif any(token.casefold() in output.casefold() for token in NO_CHANGE_TOKENS):
+                    self._event(stage, "delta", "no change needed")
                 else:
-                    # Ajan başlıksız düz metin döndürdüyse yama uygulanamaz; belge olduğu gibi alınır.
+                    # If the agent returned plain text without headings the patch cannot be applied; take it as the document.
                     content = output
             problem = self._quality_gate(stage, content)
             if problem is None:
                 return content
             self._event(stage, "gate_failed", problem)
             gate_feedback = (
-                f"ÖNCEKİ TASLAK KALİTE KAPISINDAN GEÇEMEDİ: {problem}\n"
-                + ("Eksikleri gideren bölümleri döndür.\n\n" if base else "Eksikleri gidererek belgenin tamamını yeniden yaz.\n\n")
+                f"THE PREVIOUS DRAFT FAILED THE QUALITY GATE: {problem}\n"
+                + ("Return the sections that fix the gaps.\n\n" if base else "Fix the gaps and rewrite the whole document.\n\n")
             )
         raise ValueError(problem)
 
     def _patch_instruction(self, base: str) -> str:
         return (
-            "YANIT BİÇİMİ — YALNIZCA DEĞİŞEN BÖLÜMLER: Belgenin tamamını DÖNDÜRME. Yalnızca değişmesi gereken ya da "
-            "yeni eklenecek bölümleri yaz. Değişen her bölüm, MEVCUT BELGEDEKİ başlığın AYNISIYLA (aynı # seviyesi ve "
-            "aynı metin) başlasın ve o bölümün yeni tam içeriğini alt başlıklarıyla birlikte içersin; bölüm belgede "
-            "bütünüyle bununla değiştirilir. Yeni bölüm için yeni bir başlık kullan ve hemen üstüne, ardına "
-            "ekleneceği mevcut başlığı gösteren '<!-- SONRA: <mevcut başlık metni> -->' satırını koy. "
-            f"Hiçbir bölümün değişmesi gerekmiyorsa yalnızca '{NO_CHANGE}' yaz.\n"
-            f"MEVCUT BELGE:\n{base[:14000]}\n\n"
+            "RESPONSE FORMAT — CHANGED SECTIONS ONLY: Do NOT return the whole document. Write only the sections that "
+            "must change or be added. Every changed section must start with EXACTLY the heading of the EXISTING DOCUMENT "
+            "(same # level and same text) and contain the section's complete new content with its subsections; the section "
+            "is replaced by it as a whole. For a new section use a new heading and put the line "
+            "'<!-- AFTER: <existing heading text> -->' right above it, naming the existing heading it is inserted after. "
+            f"If no section needs to change, write only '{NO_CHANGE}'.\n"
+            f"EXISTING DOCUMENT:\n{base[:14000]}\n\n"
         )
 
     def _document(self, stage: str, filename: str) -> str:
@@ -425,19 +452,19 @@ class RunSession:
         return content
 
     def _quality_gate(self, stage: str, content: str) -> str | None:
-        """Belgenin sonraki aşamaya geçmesi için gereken asgari koşullar; geçemezse ajan bir kez daha yazar."""
+        """The minimum conditions for a document to pass to the next stage; if it fails the agent writes it once more."""
         if not content.strip():
-            return f"{stage} ajanı boş belge döndürdü"
+            return f"The {stage} agent returned an empty document"
         if stage == "analysis" and "FR-" not in content:
-            return "Analiz belgesinde FR-01 gibi numaralı işlevsel gereksinimler bulunmalı"
+            return "The analysis document must contain numbered functional requirements such as FR-01"
         if stage == "analysis" and "NFR-" not in content:
-            return "Analiz belgesinde NFR-01 gibi numaralı işlevsel olmayan gereksinimler bulunmalı"
+            return "The analysis document must contain numbered non-functional requirements such as NFR-01"
         if stage == "design" and content.count("```mermaid") < 2:
-            return "Mimari belgede Mermaid bileşen ve sıralama diyagramları bulunmalı"
+            return "The architecture document must contain Mermaid component and sequence diagrams"
         if stage == "design" and self.decisions["database"] != "none" and "erDiagram" not in content:
-            return "Seçilen veritabanı için mimari belgede ER diyagramı bulunmalı"
+            return "The architecture document must contain an ER diagram for the selected database"
         if stage == "review" and review_verdict(content) is None:
-            return "İnceleme raporu 'KARAR: ONAY' veya 'KARAR: REVİZYON' satırını içermeli"
+            return "The review report must contain a 'VERDICT: APPROVE' or 'VERDICT: REVISE' line"
         return None
 
     def _change_text(self) -> str:
@@ -447,32 +474,32 @@ class RunSession:
             f"{change.get('description', '')}"
         )
         if change.get("clarifications"):
-            # Kullanıcının açık sorulara verdiği yanıtlar varsayımların önüne geçer.
-            text += f"\n\nKullanıcının netleştirmeleri (kesin kararlardır):\n{change['clarifications'][:3000]}"
+            # The user's answers to open questions take precedence over assumptions.
+            text += f"\n\nThe user's clarifications (firm decisions):\n{change['clarifications'][:3000]}"
         if change.get("impact"):
-            text += f"\n\nEtki analizi:\n{change['impact'][:4000]}"
+            text += f"\n\nImpact analysis:\n{change['impact'][:4000]}"
         return text
 
     def _change_instruction(self, stage: str) -> str:
-        """Delta modu: ajan mevcut belgeyi temel alır, yalnızca değişiklikten etkilenen yerleri günceller."""
+        """Delta mode: the agent takes the existing document as the base and updates only what the change affects."""
         if not self.change:
             return ""
         if stage == "review":
             return (
-                f"BU İNCELEME BİR DEĞİŞİKLİK İTERASYONU İÇİNDİR ({self.change['id']}). Özellikle değişikliğin "
-                f"tasarıma doğru ve eksiksiz yansıyıp yansımadığını denetle.\n{self._change_text()}\n\n"
+                f"THIS REVIEW IS FOR A CHANGE ITERATION ({self.change['id']}). Check especially whether the change "
+                f"is reflected in the design correctly and completely.\n{self._change_text()}\n\n"
             )
         if not self.previous_docs.get(stage):
-            return f"UYGULANAN DEĞİŞİKLİK TALEBİ:\n{self._change_text()}\n\n"
+            return f"CHANGE REQUEST BEING APPLIED:\n{self._change_text()}\n\n"
         return (
-            f"DEĞİŞİKLİK MODU — {self._change_text()}\n\n"
-            "Aşağıdaki MEVCUT BELGEYİ temel al. Yalnızca bu değişiklikten etkilenen bölümleri güncelle ya da "
-            "yeni bölüm/gereksinim ekle; etkilenmeyen bölümlere dokunma. "
-            f"Değişen veya eklenen her yerin sonuna [{self.change['id']}] etiketi koy.\n\n"
+            f"CHANGE MODE — {self._change_text()}\n\n"
+            "Take the EXISTING DOCUMENT below as the base. Update only the sections this change affects or add "
+            "new sections/requirements; do not touch unaffected sections. "
+            f"Put the tag [{self.change['id']}] at the end of every changed or added place.\n\n"
         )
 
     def _write_doc(self, filename: str, content: str) -> None:
-        # Üzerine yazmadan önce eski hâli sakla (delta güncellemeleri ve bölüm düzenlemeleri geri alınabilsin).
+        # Keep the old version before overwriting (so delta updates and section edits can be undone).
         target = self.output_dir / filename
         if target.is_file() and target.read_text(encoding="utf-8") != content:
             backup_versions(self.output_dir, filename)
@@ -485,34 +512,34 @@ class RunSession:
                 return operation()
             except ClarificationNeeded as exc:
                 if self.on_question is None:
-                    raise ValueError(f"{stage} ajanı şu kararı istedi: {exc.question}") from exc
+                    raise ValueError(f"The {stage} agent asked for a decision: {exc.question}") from exc
                 self._event(stage, "question", exc.question)
                 answer = self.on_question(self.run_id, stage, exc.question).strip()
                 if not answer:
-                    raise ValueError("Boş kullanıcı yanıtıyla devam edilemez")
+                    raise ValueError("Cannot continue with an empty user answer")
                 self.clarifications.append({"stage": stage, "question": exc.question, "answer": answer})
                 self._write_doc("clarifications.yaml", yaml.safe_dump(self.clarifications, allow_unicode=True, sort_keys=False))
-                self._event(stage, "answered", "Kullanıcı yanıtladı")
-        raise ValueError(f"{stage} ajanı açıklama sonrasında da ilerleyemedi")
+                self._event(stage, "answered", "The user answered")
+        raise ValueError(f"The {stage} agent could not proceed even after the clarification")
 
     def _context(self, stage: str) -> str:
-        """Kısa ve kritik bilgiler önce, uzun belgeler sonra; her belge bütçeyle kırpılır."""
-        parts = ["Mimari kararlar ve kullanıcı kısıtları:\n" + yaml.safe_dump(self.decisions, allow_unicode=True, sort_keys=False)]
+        """Short critical information first, long documents after; every document is truncated to a budget."""
+        parts = ["Architecture decisions and user constraints:\n" + yaml.safe_dump(self.decisions, allow_unicode=True, sort_keys=False)]
         if self.change:
-            parts.append("UYGULANAN DEĞİŞİKLİK TALEBİ (bu iterasyonun amacı):\n" + self._change_text())
+            parts.append("CHANGE REQUEST BEING APPLIED (the goal of this iteration):\n" + self._change_text())
         if self.clarifications:
-            parts.append("Kullanıcının aşama sorularına verdiği yanıtlar (kesin kararlardır):\n" + "\n".join(
-                f"- [{item['stage']}] Soru: {item['question']}\n  Yanıt: {item['answer']}" for item in self.clarifications
+            parts.append("The user's answers to stage questions (firm decisions):\n" + "\n".join(
+                f"- [{item['stage']}] Question: {item['question']}\n  Answer: {item['answer']}" for item in self.clarifications
             ))
         notes = self.history.notes(self.run_id)
         if notes:
-            parts.append("Kullanıcının chat üzerinden verdiği yönlendirmeler (dikkate al):\n" + "\n".join(
+            parts.append("Guidance the user gave through the chat (take it into account):\n" + "\n".join(
                 f"- {note['content']}" for note in notes
             ))
         if stage in {"deployment", "maintenance"}:
             parts.append(
-                f"Gerçek test sonucu: {'BAŞARILI' if self.test_passed else 'BAŞARISIZ'} ({self.attempts} deneme).\n"
-                f"Son test çıktısının sonu:\n{self.last_test_output[-3000:]}"
+                f"Actual test result: {'PASSED' if self.test_passed else 'FAILED'} ({self.attempts} attempts).\n"
+                f"End of the last test output:\n{self.last_test_output[-3000:]}"
             )
             if self.traceability:
                 parts.append(self.traceability[:3000])
@@ -520,8 +547,8 @@ class RunSession:
             if name in self.docs:
                 doc = self.docs[name]
                 if len(doc) > DOC_BUDGET:
-                    doc = doc[:DOC_BUDGET] + "\n\n…(belge kısaltıldı)"
-                parts.append(f"--- {name} belgesi ---\n{doc}")
+                    doc = doc[:DOC_BUDGET] + "\n\n…(document truncated)"
+                parts.append(f"--- {name} document ---\n{doc}")
         return "\n\n".join(parts)
 
     def planning(self) -> str:
@@ -534,30 +561,31 @@ class RunSession:
         return self._document("design", "architecture.md")
 
     def review(self) -> str:
-        """Mimari inceleme: REVİZYON kararında Tasarım Ajanı bulgulara göre düzeltir, inceleme tekrarlanır."""
+        """Architecture review: on a REVISE verdict the Design Agent fixes the findings and the review is repeated."""
         self._event("review", "started")
         rounds = []
         for number in range(1, MAX_REVIEW_ROUNDS + 1):
             report = self._generate("review")
             verdict = review_verdict(report)
-            rounds.append(f"## İnceleme turu {number} — {verdict}\n\n{report}")
-            self._event("review", "approved" if verdict == "ONAY" else "changes_requested", f"tur {number}")
-            if verdict == "ONAY" or number == MAX_REVIEW_ROUNDS:
+            rounds.append(f"## {self._t('Review round {number}', number=number)} — {verdict}\n\n{report}")
+            self._event("review", "approved" if verdict == "APPROVE" else "changes_requested", f"round {number}")
+            if verdict == "APPROVE" or number == MAX_REVIEW_ROUNDS:
                 break
             if self.small and not CRITICAL_FINDING.search(report):
-                self._event("review", "revision_skipped", "küçük proje: kritik bulgu yok, bulgular bakım listesine kalır")
+                self._event("review", "revision_skipped", "small project: no critical finding, the findings are left for the maintenance list")
                 break
-            self._event("design", "revision_started", f"inceleme turu {number}")
+            self._event("design", "revision_started", f"review round {number}")
             self.docs["design"] = self._generate("design", (
-                "MİMARİ İNCELEME BULGULARI — mevcut tasarımı yalnızca bu bulguların gerektirdiği yerlerde "
-                f"revize et:\n{report[:6000]}\n\n"
+                "ARCHITECTURE REVIEW FINDINGS — revise the existing design only where these findings require it:\n"
+                f"{report[:6000]}\n\n"
             ), base=self.docs["design"])
             self._write_doc("architecture.md", self.docs["design"])
             self._event("design", "revision_completed", "architecture.md")
-        summary = "ONAYLANDI" if verdict == "ONAY" else "AÇIK BULGULARLA DEVAM EDİLDİ"
+        summary = "APPROVED" if verdict == "APPROVE" else "CONTINUED WITH OPEN FINDINGS"
         content = (
-            f"# Mimari inceleme raporu\n\nSonuç: **{summary}** ({len(rounds)} tur).\n\n"
-            + "\n\n".join(rounds)
+            f"# {self._t('Architecture review report')}\n\n"
+            + self._t("Result: **{summary}** ({rounds} rounds).", summary=self._t(summary), rounds=len(rounds))
+            + "\n\n" + "\n\n".join(rounds)
         )
         self.docs["review"] = content
         self._write_doc("design_review.md", content)
@@ -574,10 +602,10 @@ class RunSession:
         self._load_manifest()
         write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
         self._event("development", "completed", ", ".join(self.code_files))
-        return "uygulama hazır"
+        return "application ready"
 
     def _develop_change(self) -> str:
-        """Değişiklik talebi: mevcut kod korunur; hata ise önce hatayı yeniden üreten test yazılır (TDD)."""
+        """Change request: existing code is kept; for a bug a test that reproduces it is written first (TDD)."""
         description = self._change_text()
         feedback = None
         if self.change["kind"] == "bug":
@@ -596,10 +624,10 @@ class RunSession:
             if missing:
                 self._event("testing", "tests_not_covered", ", ".join(missing))
                 output += (
-                    f"\nUYARI: Yeni test dosyaları project.yaml test komutlarınca çalıştırılmıyor: {', '.join(missing)}. "
-                    "project.yaml'daki test komutlarını tek dosya yerine test klasörünü çalıştıracak şekilde güncelle."
+                    f"\nWARNING: The new test files are not run by the project.yaml test commands: {', '.join(missing)}. "
+                    "Update the test commands in project.yaml to run the tests folder instead of a single file."
                 )
-            self._event("testing", "bug_reproduced" if code else "bug_not_reproduced", ", ".join(tests) or "test yok")
+            self._event("testing", "bug_reproduced" if code else "bug_not_reproduced", ", ".join(tests) or "no tests")
             feedback = output
         replacements = self._with_questions("development", lambda: self.engine.code(
             self.idea, self._context("development"), feedback=feedback, change=description
@@ -614,8 +642,8 @@ class RunSession:
             self._save_code_files()
             self._load_manifest()
             write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
-        self._event("development", "completed", ", ".join(replacements) or "değişen dosya yok")
-        return "değişiklik uygulandı"
+        self._event("development", "completed", ", ".join(replacements) or "no changed files")
+        return "change applied"
 
     def _test_files_on_disk(self) -> dict[str, str]:
         files = {}
@@ -638,7 +666,7 @@ class RunSession:
         return env
 
     def _load_manifest(self) -> None:
-        """project.yaml/Dockerfile doğrulanır; hata varsa Geliştirme Ajanı'na gerekçesiyle bir kez düzelttirilir."""
+        """Validates project.yaml/Dockerfile; on an error the Development Agent fixes it once with the reason."""
         try:
             self.manifest = read_project_manifest(self.project_dir, self.decisions)
             return
@@ -647,7 +675,7 @@ class RunSession:
         self._event("development", "gate_failed", problem)
         fixes = self._with_questions("development", lambda: self.engine.code(
             self.idea, self._context("development"),
-            feedback=f"PROJE YAPILANDIRMASI DOĞRULANAMADI: {problem}\nproject.yaml ve gerekiyorsa Dockerfile'ı düzelterek döndür.",
+            feedback=f"THE PROJECT CONFIGURATION COULD NOT BE VALIDATED: {problem}\nReturn project.yaml (and the Dockerfile if needed) fixed.",
         ))
         fixes = {name: content for name, content in fixes.items() if not name.startswith(TEST_DIRS)}
         if fixes:
@@ -665,16 +693,16 @@ class RunSession:
         self._event("testing", "started")
         existing = self._test_files_on_disk() if self.change else {}
         if existing:
-            # Değişiklik talebi: mevcut testler korunur, yalnızca yeni/güncellenen testler yazılır; sonra hepsi koşar (regresyon).
+            # Change request: existing tests are kept, only new/updated tests are written, then all of them run (regression).
             new_tests = self._with_questions("testing", lambda: self.engine.tests(
                 self.idea, self._context("testing"), {**self.code_files, **existing}, change=self._change_text()
             ))
             if any(not name.startswith(TEST_DIRS) for name in new_tests):
-                raise ValueError("Test ajanı yalnızca test dosyası yazabilir")
+                raise ValueError("The test agent may only write test files")
             if new_tests:
                 write_generated_files(self.project_dir, new_tests)
             tests = {**existing, **new_tests}
-            self._event("testing", "regression", f"{len(new_tests)} yeni/güncellenen, toplam {len(tests)} test dosyası")
+            self._event("testing", "regression", f"{len(new_tests)} new/updated, {len(tests)} test files in total")
         else:
             gate_feedback = ""
             for _ in range(2):
@@ -684,11 +712,11 @@ class RunSession:
                 problem = test_placement_problem(tests)
                 if problem is None:
                     break
-                # Diğer kalite kapıları gibi: gerekçe Test Ajanı'na verilir, bir kez düzeltmesi istenir.
+                # Like the other quality gates: the reason is given to the Test Agent, which is asked to fix it once.
                 self._event("testing", "gate_failed", problem)
                 gate_feedback = (
-                    f"ÖNCEKİ TEST ÇIKTIN REDDEDİLDİ: {problem}. Bütün test dosyalarını tests/ klasörü altında "
-                    "yaz (ör. tests/test_x.py); kökteki test dosyalarını da tests/ altında yeniden yaz.\n\n"
+                    f"YOUR PREVIOUS TEST OUTPUT WAS REJECTED: {problem}. Write all test files under the tests/ folder "
+                    "(e.g. tests/test_x.py); rewrite test files at the root under tests/ as well.\n\n"
                 )
             else:
                 raise ValueError(problem)
@@ -698,11 +726,11 @@ class RunSession:
             self.engine.current_files.update(tests)
         missing = uncovered_tests(self.manifest, list(tests))
         if missing:
-            # Çalışmayan test, geçmiş gibi görünmesin: raporda ve olaylarda açıkça belirtilir.
+            # A test that does not run must not look like a pass: it is stated clearly in the report and the events.
             self._event("testing", "tests_not_covered", ", ".join(missing))
-        self.traceability, coverage = build_matrix(self.docs.get("analysis", ""), tests)
+        self.traceability, coverage = build_matrix(self.docs.get("analysis", ""), tests, self.language)
         self._write_doc("traceability.md", self.traceability)
-        self._event("testing", "traceability", f"FR kapsamı %{coverage['FR'] * 100:.0f}")
+        self._event("testing", "traceability", f"FR coverage {coverage['FR'] * 100:.0f}%")
         attempt_dir = self.output_dir / "test_attempts"
         attempt_dir.mkdir(exist_ok=True)
         reports = []
@@ -713,7 +741,7 @@ class RunSession:
             self.last_test_output = output
             (attempt_dir / f"attempt-{number}.txt").write_text(output, encoding="utf-8")
             reports.append(
-                f"## Deneme {number}\nÇıkış kodu: {code}\n\n```text\n{output}\n```\n"
+                f"## {self._t('Attempt {number}', number=number)}\n{self._t('Exit code: {code}', code=code)}\n\n```text\n{output}\n```\n"
             )
             self._event("testing", "passed" if passed else "failed", f"attempt {number}")
             if passed:
@@ -724,7 +752,7 @@ class RunSession:
                 replacements = self._with_questions("development", lambda: self.engine.code(
                     self.idea, self._context("development"), feedback=output
                 ))
-                # Testler Test Ajanı'na aittir; geliştirici testi değiştirerek geçiremez.
+                # The tests belong to the Test Agent; the developer cannot make them pass by changing them.
                 rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
                 replacements = {name: content for name, content in replacements.items() if name not in rejected}
                 if hasattr(self.engine, "current_files"):
@@ -739,17 +767,17 @@ class RunSession:
                 self._load_manifest()
                 self.setup_done = False
                 self._event("development", "repair_completed", ", ".join(replacements))
-        summary = "BAŞARILI" if self.test_passed else "BAŞARISIZ"
-        report = f"# Test raporu\n\nSonuç: **{summary}** ({self.attempts} deneme).\n\n"
+        summary = "PASSED" if self.test_passed else "FAILED"
+        report = f"# {self._t('Test report')}\n\n" + self._t(
+            "Result: **{summary}** ({attempts} attempts).", summary=self._t(summary), attempts=self.attempts) + "\n\n"
         if missing:
-            report += f"> ⚠️ Şu test dosyaları project.yaml komutlarınca çalıştırılmadı: {', '.join(missing)}\n\n"
-        report += (
-            f"İzlenebilirlik: FR kapsamı %{coverage['FR'] * 100:.0f}, "
-            f"NFR kapsamı %{coverage['NFR'] * 100:.0f} ([matris](traceability.md)).\n\n"
-        )
+            report += self._t("> ⚠️ These test files were not run by the project.yaml commands: {files}", files=", ".join(missing)) + "\n\n"
+        report += self._t(
+            "Traceability: FR coverage {fr}%, NFR coverage {nfr}% ([matrix](traceability.md)).",
+            fr=f"{coverage['FR'] * 100:.0f}", nfr=f"{coverage['NFR'] * 100:.0f}") + "\n\n"
         report += "\n".join(reports)
         self._write_doc("test_report.md", report)
-        return summary
+        return self._t(summary)
 
     def _run_checks(self, env: dict[str, str]) -> tuple[str, int]:
         """Execute stack-specific commands from the validated project manifest."""
@@ -763,20 +791,20 @@ class RunSession:
                 if not (venv_dir / "pyvenv.cfg").is_file():
                     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], cwd=self.project_dir, capture_output=True, text=True, timeout=120, check=True)
             except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                return f"Projeye özel Python ortamı oluşturulamadı: {exc}", -1
+                return f"Could not create the project-specific Python environment: {exc}", -1
             self.python_executable = str(venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
         commands = [(label, self.manifest[key]) for label, key in
-                    (("Kurulum", "setup"), ("Birim", "unit_test"), ("API", "api_test"), ("Arayüz", "ui_test"))
+                    (("Setup", "setup"), ("Unit", "unit_test"), ("API", "api_test"), ("UI", "ui_test"))
                     if self.manifest.get(key) and (key != "setup" or not self.setup_done)]
         logs = []
         server_log = temp_dir / "server.log"
         for label, command in commands:
             server = None
             try:
-                if label in {"API", "Arayüz"} and self.manifest.get("start"):
+                if label in {"API", "UI"} and self.manifest.get("start"):
                     port = self.manifest["port"]
                     if _port_open(port):
-                        return "\n".join(logs + [f"Port {port} başka bir süreç tarafından kullanılıyor; eski sunucuya karşı test yapılmadı"]), -1
+                        return "\n".join(logs + [f"Port {port} is in use by another process; no test was run against the old server"]), -1
                     env["BASE_URL"] = f"http://127.0.0.1:{port}"
                     with server_log.open("w", encoding="utf-8") as log_file:
                         server = subprocess.Popen(
@@ -786,20 +814,20 @@ class RunSession:
                     deadline = time.monotonic() + 60
                     while not _port_open(port):
                         if server.poll() is not None:
-                            return "\n".join(logs + ["Uygulama sunucusu testlerden önce kapandı", _tail(server_log)]), -1
+                            return "\n".join(logs + ["The application server exited before the tests", _tail(server_log)]), -1
                         if time.monotonic() > deadline:
-                            return "\n".join(logs + ["Uygulama sunucusu 60 saniyede başlamadı", _tail(server_log)]), -1
+                            return "\n".join(logs + ["The application server did not start within 60 seconds", _tail(server_log)]), -1
                         time.sleep(0.2)
                 process = subprocess.run(self._command(command, env), cwd=self.project_dir, env=env, capture_output=True, text=True, timeout=300, check=False)
-                logs.append(f"### {label} testleri (çıkış {process.returncode})\n{process.stdout}\n{process.stderr}"[-20_000:])
+                logs.append(f"### {label} tests (exit {process.returncode})\n{process.stdout}\n{process.stderr}"[-20_000:])
                 if process.returncode:
                     if server is not None:
-                        logs.append("### Uygulama sunucusu günlüğü\n" + _tail(server_log))
+                        logs.append("### Application server log\n" + _tail(server_log))
                     return "\n".join(logs), process.returncode
-                if label == "Kurulum":
+                if label == "Setup":
                     self.setup_done = True
             except (subprocess.TimeoutExpired, OSError) as exc:
-                return "\n".join(logs + [f"{label} komutu başarısız: {exc}"]), -1
+                return "\n".join(logs + [f"The {label} command failed: {exc}"]), -1
             finally:
                 if server is not None:
                     _stop_process(server)
@@ -811,7 +839,7 @@ class RunSession:
             return [self.python_executable, *args]
         if executable in {"pip", "pip3"}:
             return [self.python_executable, "-m", "pip", *args]
-        # Windows'ta npm/pnpm .cmd uzantılıdır; kabuksuz çalıştırmak için tam yol çözülür (macOS/Linux'ta da zararsız).
+        # On Windows npm/pnpm are .cmd files; the full path is resolved to run without a shell (harmless on macOS/Linux too).
         return [shutil.which(executable, path=env.get("PATH")) or executable, *args]
 
     def deployment(self) -> str:
@@ -832,9 +860,9 @@ class RunSession:
         return RunResult(self.run_id, status, self.output_dir, self.project_dir, self.attempts, error)
 
     def _record_iteration(self, status: str) -> None:
-        """Biten iterasyonu sürüm olarak kaydeder: belgelerin ve kodun anlık kopyası + olay aralığı.
+        """Records the finished iteration as a version: a snapshot of the documents and code plus the event range.
 
-        Böylece bir CR ya da bugfix sonrası, önceki sürümün durumu, belgeleri ve kodu kaybolmaz.
+        So after a CR or a bugfix the previous version's state, documents and code are not lost.
         """
         number = self.history.next_iteration_number(self.run_id)
         target = self.output_dir / "iterations" / f"v{number}"
@@ -854,7 +882,7 @@ class RunSession:
             label = f"v{number} · {self.change['id']} · {CHANGE_KINDS.get(kind, kind)}: {self.change['title']}"
         else:
             kind = "initial" if number == 1 else "rerun"
-            label = f"v{number} · İlk sürüm" if number == 1 else f"v{number} · Yeniden üretim"
+            label = f"v{number} · Initial version" if number == 1 else f"v{number} · Regeneration"
         self._event("workflow", "iteration_recorded", label)
         self.history.add_iteration(self.run_id, label, kind, self.change and self.change["id"], status, self.attempts, target)
 
@@ -863,35 +891,37 @@ class RunSession:
         done = status == "completed"
         self.history.update_change(self.run_id, change["id"], status="done" if done else "failed")
         entry = (
-            f"## {change['id']} · {CHANGE_KINDS.get(change['kind'], change['kind'])} · {change['title']}\n\n"
-            f"- Tarih: {time.strftime('%Y-%m-%d %H:%M')}\n"
-            f"- Sonuç: {'Tamamlandı, testler geçti' if done else 'Başarısız' + (f' ({error[:200]})' if error else ' (testler geçmedi)')}\n"
-            f"- Başlangıç aşaması: {change.get('start_stage') or '—'}\n"
-            f"- Test denemesi: {self.attempts}\n\n{change['description']}\n"
+            f"## {change['id']} · {self._t(CHANGE_KINDS.get(change['kind'], change['kind']))} · {change['title']}\n\n"
+            f"- {self._t('Date')}: {time.strftime('%Y-%m-%d %H:%M')}\n"
+            f"- {self._t('Result')}: "
+            + (self._t("Completed, tests passed") if done else self._t("Failed") + (f" ({error[:200]})" if error else " (" + self._t("tests did not pass") + ")"))
+            + f"\n- {self._t('Starting stage')}: {change.get('start_stage') or '—'}\n"
+            f"- {self._t('Test attempts')}: {self.attempts}\n\n{change['description']}\n"
         )
         path = self.output_dir / "CHANGELOG.md"
-        previous = path.read_text(encoding="utf-8") if path.is_file() else "# Değişiklik günlüğü\n"
+        previous = path.read_text(encoding="utf-8") if path.is_file() else f"# {self._t('Changelog')}\n"
         self._write_doc("CHANGELOG.md", previous.rstrip() + "\n\n" + entry)
         self._event("workflow", "change_completed" if done else "change_failed", f"{change['id']} · {change['title']}")
 
     def _write_project_readme(self, status: str) -> None:
         links = [
-            ("Mimari kararlar", "decisions.yaml"), ("Proje planı", "planning.md"),
-            ("Aşama soruları ve yanıtları", "clarifications.yaml"),
-            ("Gereksinimler ve izlenebilirlik", "requirements.md"), ("Mimari ve diyagramlar", "architecture.md"),
-            ("Mimari inceleme raporu", "design_review.md"), ("Değişiklik günlüğü", "CHANGELOG.md"),
-            ("İzlenebilirlik matrisi", "traceability.md"),
-            ("Test raporu", "test_report.md"), ("Dağıtım kılavuzu", "deployment.md"),
-            ("Bakım planı", "maintenance_report.md"),
+            ("Architecture decisions", "decisions.yaml"), ("Project plan", "planning.md"),
+            ("Stage questions and answers", "clarifications.yaml"),
+            ("Requirements", "requirements.md"), ("Architecture and diagrams", "architecture.md"),
+            ("Architecture review report", "design_review.md"), ("Changelog", "CHANGELOG.md"),
+            ("Traceability matrix", "traceability.md"),
+            ("Test report", "test_report.md"), ("Deployment guide", "deployment.md"),
+            ("Maintenance plan", "maintenance_report.md"),
         ]
-        docs = "\n".join(f"- [{label}](docs/{name})" for label, name in links if (self.project_dir / "docs" / name).exists())
+        docs = "\n".join(f"- [{self._t(label)}](docs/{name})" for label, name in links if (self.project_dir / "docs" / name).exists())
         content = (
-            f"# Üretilen proje\n\n{self.idea}\n\n"
-            f"SDLC durumu: **{'tamamlandı' if status == 'completed' else 'başarısız'}**. Test denemesi: {self.attempts}.\n\n"
-            f"## Belgeler\n\n{docs}\n\n"
-            "## Docker Compose ile çalıştırma\n\n"
-            "`.env.example` dosyasını `.env` olarak kopyalayıp gerekli değerleri doldur, ardından `docker compose up --build` çalıştır.\n"
-            "Kontroller ve geri alma için [dağıtım kılavuzuna](docs/deployment.md) bak.\n"
+            f"# {self._t('Generated project')}\n\n{self.idea}\n\n"
+            + self._t("SDLC status: **{status}**. Test attempts: {attempts}.",
+                      status=self._t("completed") if status == "completed" else self._t("failed"), attempts=self.attempts)
+            + f"\n\n## {self._t('Documents')}\n\n{docs}\n\n"
+            + f"## {self._t('Running with Docker Compose')}\n\n"
+            + self._t("Copy `.env.example` to `.env` and fill in the required values, then run `docker compose up --build`.") + "\n"
+            + self._t("See the [deployment guide](docs/deployment.md) for checks and rollback.") + "\n"
         )
         (self.project_dir / "README.md").write_text(content, encoding="utf-8")
 
@@ -954,20 +984,20 @@ def run_project(
     if resume_run_id:
         row = History(workspace / "runs" / "history.sqlite3").get(resume_run_id)
         if row is None or row["status"] != "paused":
-            raise ValueError("Sürdürülecek duraklatılmış çalışma bulunamadı")
+            raise ValueError("No paused run to resume was found")
         idea = row["idea"]
         decisions = yaml.safe_load((Path(row["output_dir"]) / "decisions.yaml").read_text(encoding="utf-8"))
         output = Path(row["project_dir"])
         model = model or row["model"]
         run_id = resume_run_id
     if not idea.strip() or len(idea) > 1000:
-        raise ValueError("Proje fikri 1–1000 karakter olmalı")
+        raise ValueError("The project idea must be 1–1000 characters")
     if not 0 <= max_repairs <= 3:
-        raise ValueError("max_repairs değeri 0–3 arasında olmalı")
+        raise ValueError("max_repairs must be between 0 and 3")
     decisions = validate_decisions(decisions)
     engine = engine or CrewAIEngine(api_key=api_key, model=model)
     session = RunSession(idea, workspace, engine, max_repairs, decisions, Path(output) if output is not None else None, on_event, on_question, run_id, bool(resume_run_id))
-    # Kalp atışı: süreç ölürse arayüz çalışmayı "kesintiye uğradı" olarak duraklatabilir.
+    # Heartbeat: if the process dies the UI can pause the run as "interrupted".
     stop = threading.Event()
 
     def beat() -> None:

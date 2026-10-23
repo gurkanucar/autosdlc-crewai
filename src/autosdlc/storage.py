@@ -85,7 +85,7 @@ class History:
                 db.execute("ALTER TABLE changes ADD COLUMN clarifications TEXT")
             if "skip_stages" not in change_columns:
                 db.execute("ALTER TABLE changes ADD COLUMN skip_stages TEXT")
-            # Sürüm geçmişi: her biten iterasyon (ilk üretim, CR, bugfix) bir kayıt ve anlık kopya bırakır.
+            # Version history: every finished iteration (first generation, CR, bugfix) leaves a record and a snapshot.
             db.execute(
                 """CREATE TABLE IF NOT EXISTS iterations (
                     run_id TEXT NOT NULL REFERENCES runs(id),
@@ -165,7 +165,7 @@ class History:
             db.execute("UPDATE runs SET heartbeat_at=? WHERE id=? AND status='running'", (now(), run_id))
 
     def recover_stale(self, max_age_seconds: int = 45) -> list[str]:
-        """Süreci ölmüş (arayüz yeniden başlatıldı, bilgisayar kapandı) çalışmaları duraklatılmış yapar."""
+        """Marks runs whose process died (UI restarted, computer shut down) as paused."""
         limit = (datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)).isoformat(timespec="seconds")
         with self._connect() as db:
             stale = [row[0] for row in db.execute(
@@ -175,12 +175,12 @@ class History:
                 db.execute("UPDATE runs SET status='paused', pause_requested=0 WHERE id=?", (run_id,))
                 db.execute(
                     "INSERT INTO events (run_id, stage, status, detail, created_at) VALUES (?, 'workflow', 'interrupted', ?, ?)",
-                    (run_id, "Çalışan süreç sona erdi; kaldığı yerden devam ettirilebilir", now()),
+                    (run_id, "The running process ended; it can be resumed where it stopped", now()),
                 )
             return stale
 
     def reset_from(self, run_id: str, stage: str) -> bool:
-        """Bitmiş/duraklatılmış çalışmayı, verilen aşama ve sonrası yeniden üretilecek biçimde duraklatır."""
+        """Pauses a finished/paused run so that the given stage and the ones after it are regenerated."""
         with self._connect() as db:
             result = db.execute(
                 "UPDATE runs SET status='paused', pause_requested=0, error=NULL, completed_at=NULL "
@@ -208,13 +208,13 @@ class History:
             db.execute("DELETE FROM events WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM runs WHERE id=?", (run_id,))
 
-    # Değişiklik talepleri: feature (yeni özellik), bug (hata), change (değişiklik), edit (bölüm düzenlemelerinin yayılması).
-    # Durum: draft → analyzed → in_progress → done | failed; kullanıcı rejected yapabilir.
+    # Change requests: feature (new feature), bug, change, edit (propagation of section edits).
+    # Status: draft → analyzed → in_progress → done | failed; the user can set rejected.
     def create_change(self, run_id: str, kind: str, title: str, description: str, status: str = "draft") -> str:
         if kind not in {"feature", "bug", "change", "edit"}:
-            raise ValueError("Bilinmeyen değişiklik türü")
+            raise ValueError("Unknown change type")
         if not title.strip() or len(title) > 200 or len(description) > 4000:
-            raise ValueError("Başlık 1–200, açıklama en fazla 4000 karakter olmalı")
+            raise ValueError("The title must be 1–200 and the description at most 4000 characters")
         with self._connect() as db:
             count = db.execute("SELECT COUNT(*) FROM changes WHERE run_id=?", (run_id,)).fetchone()[0]
             change_id = f"CR-{count + 1:03d}"
@@ -228,7 +228,7 @@ class History:
     def update_change(self, run_id: str, change_id: str, **fields: str | None) -> None:
         allowed = {"status", "impact", "start_stage", "description", "clarifications", "skip_stages"}
         if not fields or set(fields) - allowed:
-            raise ValueError("Geçersiz değişiklik alanı")
+            raise ValueError("Invalid change field")
         assignments = ", ".join(f"{name}=?" for name in fields)
         with self._connect() as db:
             db.execute(
@@ -254,7 +254,7 @@ class History:
 
     def add_iteration(self, run_id: str, label: str, kind: str, change_id: str | None, status: str,
                       attempts: int, snapshot_dir: Path) -> int:
-        """Biten iterasyonu kaydeder; olay aralığı bir önceki sürümün bittiği yerden şimdiye kadardır."""
+        """Records the finished iteration; the event range runs from where the previous version ended until now."""
         with self._connect() as db:
             previous = db.execute(
                 "SELECT MAX(number), MAX(last_event_id) FROM iterations WHERE run_id=?", (run_id,)
@@ -280,10 +280,10 @@ class History:
             return (db.execute("SELECT MAX(number) FROM iterations WHERE run_id=?", (run_id,)).fetchone()[0] or 0) + 1
 
     def add_note(self, run_id: str, content: str) -> None:
-        """Kullanıcının chat üzerinden ajanlara verdiği yönlendirme; sonraki aşamaların bağlamına girer."""
+        """Guidance the user gives the agents through the chat; it enters the context of later stages."""
         text = content.strip()
         if not text or len(text) > 2000:
-            raise ValueError("Not 1–2000 karakter olmalı")
+            raise ValueError("The note must be 1–2000 characters")
         with self._connect() as db:
             db.execute("INSERT INTO notes (run_id, content, created_at) VALUES (?, ?, ?)", (run_id, text, now()))
 
@@ -302,7 +302,7 @@ class History:
             if previous:
                 return previous[0]
             db.execute(
-                "UPDATE questions SET answer='Önceki soru yenilendi', answered_at=? WHERE run_id=? AND answer IS NULL",
+                "UPDATE questions SET answer='Previous question was superseded', answered_at=? WHERE run_id=? AND answer IS NULL",
                 (now(), run_id),
             )
             result = db.execute(
@@ -314,7 +314,7 @@ class History:
     def answer(self, run_id: str, question_id: int, answer: str) -> bool:
         response = answer.strip()
         if not response or len(response) > 2000:
-            raise ValueError("Yanıt 1–2000 karakter olmalı")
+            raise ValueError("The answer must be 1–2000 characters")
         with self._connect() as db:
             result = db.execute(
                 "UPDATE questions SET answer=?, answered_at=? "

@@ -1,36 +1,40 @@
-"""Komut satırı arayüzü."""
+"""Command-line interface."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import yaml
 
-from .intake import choice_label, parse_choice, questions, validate_decisions
+from .i18n import set_language, t
+from .intake import choice_label, parse_choice, question_text, questions, validate_decisions
 from .runner import run_project
 from .storage import History
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="autosdlc", description="CrewAI ile SDLC proje üreticisi")
+    # Messages follow AUTOSDLC_LANG (default English); the language of the generated documents is the --language decision.
+    set_language(os.getenv("AUTOSDLC_LANG"))
+    parser = argparse.ArgumentParser(prog="autosdlc", description=t("SDLC project generator built with CrewAI"))
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     commands = parser.add_subparsers(dest="command", required=True)
 
-    run = commands.add_parser("run", help="Yeni SDLC çalışması başlat")
-    run.add_argument("--idea", help="Kısa proje fikri")
-    run.add_argument("--config", type=Path, help="Fikir, kararlar ve hedef klasörü içeren YAML dosyası")
-    run.add_argument("--model", help="OpenCode Go model kimliği")
+    run = commands.add_parser("run", help=t("Start a new SDLC run"))
+    run.add_argument("--idea", help=t("Short project idea"))
+    run.add_argument("--config", type=Path, help=t("YAML file with the idea, decisions and target folder"))
+    run.add_argument("--model", help=t("OpenCode Go model id"))
     run.add_argument("--max-repairs", type=int, default=2)
-    run.add_argument("--output", type=Path, help="Projeyi oluşturulacak yeni klasör")
-    run.add_argument("--no-prompt", action="store_true", help="Eksik karar varsa soru sormadan hata ver")
+    run.add_argument("--output", type=Path, help=t("New folder the project is created in"))
+    run.add_argument("--no-prompt", action="store_true", help=t("Fail instead of asking when a decision is missing"))
     for name, item in questions().items():
         run.add_argument(f"--{name}", choices=item.get("options"))
 
-    history = commands.add_parser("history", help="Son çalışmaları listele")
+    history = commands.add_parser("history", help=t("List the latest runs"))
     history.add_argument("--limit", type=int, default=20)
-    show = commands.add_parser("show", help="Bir çalışmayı ve aşama olaylarını göster")
+    show = commands.add_parser("show", help=t("Show a run and its stage events"))
     show.add_argument("run_id")
 
     args = parser.parse_args(argv)
@@ -41,15 +45,15 @@ def main(argv: list[str] | None = None) -> int:
             if args.config:
                 request = yaml.safe_load(args.config.read_text(encoding="utf-8"))
                 if not isinstance(request, dict) or set(request) - {"idea", "decisions", "output", "model"}:
-                    raise ValueError("İstek YAML dosyasında yalnızca idea, decisions, output ve model olabilir")
+                    raise ValueError("The request YAML file may only contain idea, decisions, output and model")
             idea = args.idea or request.get("idea", "")
             if not idea and not args.no_prompt:
-                idea = input("Hangi proje oluşturulsun? ").strip()
+                idea = input(t("Which project should be created? ") + " ").strip()
             output = args.output or request.get("output")
             model = args.model or request.get("model")
             raw_decisions = request.get("decisions", {})
             if not isinstance(raw_decisions, dict):
-                raise ValueError("İstek YAML dosyasındaki decisions bir sözlük olmalı")
+                raise ValueError("decisions in the request YAML file must be a mapping")
             selected = raw_decisions.copy()
             selected.update({name: getattr(args, name) for name in questions() if getattr(args, name) is not None})
             if not args.no_prompt:
@@ -59,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
                     if name not in selected:
                         while True:
                             choices = f" ({'/'.join(choice_label(name, value) for value in item['options'])})" if "options" in item else ""
-                            answer = input(f"{item['question']}{choices}: ").strip()
+                            answer = input(f"{question_text(name)}{choices}: ").strip()
                             if item.get("free_text") and (answer or item.get("optional")):
                                 selected[name] = answer
                                 break
@@ -69,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
                             if choice in item.get("options", []):
                                 selected[name] = choice
                                 break
-                            print(f"Seçeneklerden birini gir: {', '.join(choice_label(name, value) for value in item.get('options', []))}" if "options" in item else "Bir değer gir")
+                            print(t("Enter one of the options: {options}", options=", ".join(choice_label(name, value) for value in item.get("options", []))) if "options" in item else t("Enter a value"))
             selected = validate_decisions(selected)
             result = run_project(
                 idea,
@@ -78,10 +82,10 @@ def main(argv: list[str] | None = None) -> int:
                 model=model,
                 decisions=selected,
                 output=output,
-                on_question=(lambda _run_id, stage, question: input(f"{stage} ajanı soruyor: {question}\nYanıt: ")) if not args.no_prompt else None,
+                on_question=(lambda _run_id, stage, question: input(t("The {stage} agent is asking: {question}", stage=stage, question=question) + "\n" + t("Answer") + ": ")) if not args.no_prompt else None,
             )
         except (RuntimeError, ValueError, EOFError, OSError, yaml.YAMLError) as exc:
-            parser.exit(2, f"Hata: {exc}\n")
+            parser.exit(2, t("Error: {error}", error=exc) + "\n")
         print(json.dumps({
             "id": result.id,
             "status": result.status,
@@ -98,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     item = db.get(args.run_id)
     if item is None:
-        parser.exit(2, f"Çalışma bulunamadı: {args.run_id}\n")
+        parser.exit(2, t("Run not found: {run_id}", run_id=args.run_id) + "\n")
     print(json.dumps(item, ensure_ascii=False, indent=2))
     return 0
 

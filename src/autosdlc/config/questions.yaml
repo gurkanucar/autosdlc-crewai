@@ -1,31 +1,63 @@
 project_type:
-  question: Proje türü nedir?
-  options: [backend, frontend, fullstack, cli, library]
+  question: What is the project type?
+  options:
+  - backend
+  - frontend
+  - fullstack
+  - cli
+  - library
 stack:
-  question: Hangi dil ve framework'ler kullanılacak? Backend, frontend ve package manager'ı belirt.
+  question: Which languages and frameworks will be used? State the backend, frontend and package manager.
   free_text: true
 database:
-  question: Hangi veritabanı kullanılacak?
-  options: [none, sqlite, postgres]
-  when: [backend, fullstack]
+  question: Which database will be used?
+  options:
+  - none
+  - sqlite
+  - postgres
+  when:
+  - backend
+  - fullstack
 cache:
-  question: Önbellek kullanılacak mı?
-  options: [none, redis]
-  when: [backend, fullstack]
+  question: Will a cache be used?
+  options:
+  - none
+  - redis
+  when:
+  - backend
+  - fullstack
 observability:
-  question: Docker Compose hangi observability servislerini içersin?
-  options: [none, otel, openobserve]
-  when: [backend, fullstack]
+  question: Which observability services should Docker Compose include?
+  options:
+  - none
+  - otel
+  - openobserve
+  when:
+  - backend
+  - fullstack
 ui:
-  question: Backend projesinde web UI olsun mu?
-  options: [none, web]
-  when: [backend]
+  question: Should the backend project have a web UI?
+  options:
+  - none
+  - web
+  when:
+  - backend
 scale:
-  question: Proje ölçeği nedir? Küçük projede belgeler kısa tutulur, inceleme yalnızca kritik bulguda tasarımı geri gönderir.
-  options: [normal, small]
+  question: What is the project scale? In a small project documents are kept short and the review only sends the design back
+    on a critical finding.
+  options:
+  - normal
+  - small
   optional: true
   default: normal
+language:
+  question: In which language should the agents write the documents?
+  options:
+  - en
+  - tr
+  optional: true
+  default: en
 constraints:
-  question: Başka teknik veya ürün kısıtları var mı?
+  question: Are there any other technical or product constraints?
   free_text: true
   optional: true

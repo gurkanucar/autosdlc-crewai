@@ -1,4 +1,4 @@
-"""Tamamlanan veya duraklatılan çalışmanın kayıt ve dosyalarını kaldırır."""
+"""Removes the record and files of a completed or paused run."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .storage import History
 
 
 def _remove_tree(path: Path) -> None:
-    """Windows'ta salt okunur dosyalar (.git nesneleri, node_modules) rmtree'yi durdurmasın."""
+    """On Windows read-only files (.git objects, node_modules) must not stop rmtree."""
     def retry(function, target, _error):
         os.chmod(target, stat.S_IWRITE)
         function(target)
@@ -29,17 +29,17 @@ def delete_project(workspace: Path, run_id: str) -> None:
     db.recover_stale()
     row = db.get(run_id)
     if row is None:
-        raise ValueError("Proje bulunamadı")
+        raise ValueError("Project not found")
     if row["status"] == "running":
-        raise ValueError("Çalışan projeyi silmeden önce durdur")
+        raise ValueError("Stop the running project before deleting it")
     reports = Path(row["output_dir"])
     project = Path(row["project_dir"])
     expected_reports = root / "runs" / run_id
     if reports.resolve() != expected_reports.resolve() or reports.is_symlink():
-        raise ValueError("Rapor klasörü beklenen konumda değil")
+        raise ValueError("The report folder is not in the expected location")
     resolved_project = project.resolve()
     if project.is_symlink() or resolved_project in {root, root / "projects", root / "runs", reports.parent, reports} or resolved_project in root.parents:
-        raise ValueError("Proje klasörü güvenli bir silme hedefi değil")
+        raise ValueError("The project folder is not a safe deletion target")
     if project.is_dir():
         _remove_tree(project)
     if reports.is_dir():

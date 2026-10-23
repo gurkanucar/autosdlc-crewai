@@ -1,10 +1,12 @@
-"""SDLC aşamalarının durumu ve arayüzde gösterilen yaşam döngüsü diyagramı."""
+"""State of the SDLC stages and the lifecycle diagram shown in the UI."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
+
+from .i18n import t
 
 
 @dataclass(frozen=True)
@@ -18,31 +20,38 @@ class Stage:
 
 
 STAGES = (
-    Stage("planning", "Planlama", "Planlama Ajanı", "planning.md", "Kapsam, paydaşlar, kilometre taşları ve riskler", "Gereksinim mühendisliği"),
-    Stage("analysis", "Analiz", "Analiz Ajanı", "requirements.md", "FR/NFR, kullanıcı hikâyeleri, kabul kriterleri", "Gereksinim mühendisliği"),
-    Stage("design", "Tasarım", "Tasarım Ajanı", "architecture.md", "Bileşen/sıralama diyagramları, API sözleşmesi, veri şeması", "Tasarım ve doğrulama"),
-    Stage("review", "İnceleme", "Mimari İnceleme Ajanı", "design_review.md", "Tasarımın gereksinimlere göre bağımsız denetimi", "Tasarım ve doğrulama"),
-    Stage("development", "Kodlama", "Geliştirme Ajanı", "kaynak kod", "Seçilen teknolojiyle çalışan kod, Dockerfile, project.yaml", "Gerçekleştirme"),
-    Stage("testing", "Test", "Test Ajanı", "test_report.md", "Birim/API/arayüz testleri, izlenebilirlik matrisi", "Gerçekleştirme"),
-    Stage("deployment", "Dağıtım", "Dağıtım Ajanı", "deployment.md", "Compose, ortam değişkenleri, sağlık ve geri alma", "Operasyon"),
-    Stage("maintenance", "Bakım", "Bakım Ajanı", "maintenance_report.md", "İzleme, olay müdahalesi, iyileştirme listesi", "Operasyon"),
+    Stage("planning", "Planning", "Planning Agent", "planning.md", "Scope, stakeholders, milestones and risks", "Requirements engineering"),
+    Stage("analysis", "Analysis", "Analysis Agent", "requirements.md", "FR/NFR, user stories, acceptance criteria", "Requirements engineering"),
+    Stage("design", "Design", "Design Agent", "architecture.md", "Component/sequence diagrams, API contract, data schema", "Design and verification"),
+    Stage("review", "Review", "Architecture Review Agent", "design_review.md", "Independent audit of the design against the requirements", "Design and verification"),
+    Stage("development", "Development", "Development Agent", "source code", "Working code with the chosen technology, Dockerfile, project.yaml", "Implementation"),
+    Stage("testing", "Testing", "Test Agent", "test_report.md", "Unit/API/UI tests, traceability matrix", "Implementation"),
+    Stage("deployment", "Deployment", "Deployment Agent", "deployment.md", "Compose, environment variables, health checks and rollback", "Operations"),
+    Stage("maintenance", "Maintenance", "Maintenance Agent", "maintenance_report.md", "Monitoring, incident response, improvement list", "Operations"),
 )
 STAGE_KEYS = tuple(stage.key for stage in STAGES)
 STAGE_NAMES = {stage.key: stage.label for stage in STAGES}
+
+
+def stage_label(key: str) -> str:
+    return t(STAGE_NAMES[key]) if key in STAGE_NAMES else key
+
+
+def stage_description(key: str) -> str:
+    return t(next(stage.description for stage in STAGES if stage.key == key))
 RUNNING_EVENTS = {
     "started", "repair_started", "answered", "gate_failed",
     "revision_started", "changes_requested", "approved", "traceability", "tests_protected",
 }
-# Onarım bitince sıra teste, tasarım revizyonu bitince sıra incelemeye geçer.
+# When a repair finishes it is the test's turn, when a design revision finishes it is the review's.
 HANDOFFS = {("development", "repair_completed"): "testing", ("design", "revision_completed"): "review"}
 
 
 def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
-    """Her aşama için pending / running / question / done / skipped / stale / failed / paused döndürür.
+    """Returns pending / running / question / done / skipped / stale / failed / paused for every stage.
 
-    "skipped": değişiklik talebi bu aşamayı etkilemediği için önceki belgesi olduğu gibi korundu.
-
-    "stale": aşama tamamlanmıştı ama önceki bir aşamanın belgesi sonradan değişti; güncellenmesi gerekir.
+    "skipped": the change request does not affect this stage, so its previous document was kept.
+    "stale": the stage had completed but an earlier stage's document changed afterwards; it needs updating.
     """
     states = {key: "pending" for key in STAGE_KEYS}
     for event in events:
@@ -52,7 +61,7 @@ def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
                 states[key] = "pending"
             continue
         if stage == "workflow" and status == "stale" and (event["detail"] in states or event["detail"] == "decisions"):
-            # "decisions": mimari kararlar değişti → bütün aşamalar etkilenir.
+            # "decisions": the architecture decisions changed, so every stage is affected.
             first = 0 if event["detail"] == "decisions" else STAGE_KEYS.index(event["detail"]) + 1
             for key in STAGE_KEYS[first:]:
                 if states[key] in {"done", "skipped"}:
@@ -81,10 +90,10 @@ def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
 
 
 def counters(events: list[dict]) -> dict[str, object]:
-    """Projenin bütün geçmişi boyunca döngü sayaçları ve izlenebilirlik kapsamı.
+    """Loop counters and traceability coverage over the project's whole history.
 
-    Yeniden üretim sayaçları sıfırlamaz: bir kez bile geri dönüldüyse bu, sürecin parçası olarak görünür kalır.
-    Geri dönüş, başladığı anda sayılır (revision_started / repair_started).
+    Regeneration does not reset the counters: if a loop-back happened even once, it stays visible as part of the process.
+    A loop-back is counted the moment it starts (revision_started / repair_started).
     """
     result: dict[str, object] = {"repairs": 0, "test_runs": 0, "review_rounds": 0, "revisions": 0, "questions": 0, "coverage": None}
     for event in events:
@@ -106,7 +115,7 @@ def counters(events: list[dict]) -> dict[str, object]:
 
 SEGMENT_STARTS = {"started", "repair_started", "revision_started", "answered"}
 SEGMENT_ENDS = {"completed", "passed", "failed", "repair_completed", "revision_completed", "question", "changes_requested"}
-# Onarım bitince test, tasarım revizyonu bitince inceleme yeni bir "started" olayı olmadan yeniden çalışır.
+# After a repair the test, after a design revision the review runs again without a new "started" event.
 RERUNS = {("development", "repair_completed"): "testing", ("design", "revision_completed"): "review"}
 RUN_STARTS = {"started", "repair_started", "revision_started"}
 
@@ -116,7 +125,7 @@ def _parse_time(value: str) -> datetime:
 
 
 def stage_metrics(events: list[dict], now: datetime | None = None) -> dict[str, dict]:
-    """Aşama başına çalışma sayısı ve aktif süre (soru bekleme süresi hariç), saniye cinsinden."""
+    """Per-stage run count and active time in seconds (time spent waiting for an answer excluded)."""
     now = now or datetime.now(timezone.utc)
     metrics = {key: {"runs": 0, "seconds": 0.0, "open": None, "last_started": None} for key in STAGE_KEYS}
     for event in events:
@@ -156,37 +165,37 @@ def format_duration(seconds: float) -> str:
     minutes, secs = divmod(int(round(seconds)), 60)
     hours, minutes = divmod(minutes, 60)
     if hours:
-        return f"{hours}sa {minutes}dk"
-    return f"{minutes}dk {secs:02d}sn" if minutes else f"{secs}sn"
+        return t("{hours}h {minutes}m", hours=hours, minutes=minutes)
+    return t("{minutes}m {seconds:02d}s", minutes=minutes, seconds=secs) if minutes else t("{seconds}s", seconds=secs)
 
 
 PALETTE = {
-    "pending": ("#f1f5f9", "#94a3b8", "#64748b", "Sırada"),
-    "running": ("#dbeafe", "#2563eb", "#1e3a8a", "Çalışıyor"),
-    "question": ("#fef3c7", "#d97706", "#78350f", "Yanıt bekliyor"),
-    "done": ("#dcfce7", "#16a34a", "#14532d", "Tamamlandı"),
-    "failed": ("#fee2e2", "#dc2626", "#7f1d1d", "Başarısız"),
-    "paused": ("#fff7ed", "#ea580c", "#7c2d12", "Duraklatıldı"),
-    "stale": ("#fef9c3", "#ca8a04", "#713f12", "Güncel değil"),
-    "skipped": ("#f8fafc", "#16a34a", "#475569", "Atlandı (etkilenmedi)"),
+    "pending": ("#f1f5f9", "#94a3b8", "#64748b", "Pending"),
+    "running": ("#dbeafe", "#2563eb", "#1e3a8a", "Running"),
+    "question": ("#fef3c7", "#d97706", "#78350f", "Waiting for answer"),
+    "done": ("#dcfce7", "#16a34a", "#14532d", "Completed"),
+    "failed": ("#fee2e2", "#dc2626", "#7f1d1d", "Failed"),
+    "paused": ("#fff7ed", "#ea580c", "#7c2d12", "Paused"),
+    "stale": ("#fef9c3", "#ca8a04", "#713f12", "Out of date"),
+    "skipped": ("#f8fafc", "#16a34a", "#475569", "Skipped (not affected)"),
 }
 GLYPHS = {"done": "✓", "failed": "✕", "question": "?", "paused": "❚❚", "stale": "↻", "skipped": "↷"}
 
 
 def _node_x(index: int) -> int:
-    # Dört evre × iki aşama; aynı evredeki düğümler aynı arka plan bandında.
+    # Four phases × two stages; nodes of the same phase share a background band.
     return 15 + (index // 2) * 245 + (60 if index % 2 == 0 else 170)
 
 
 def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, object] | None = None,
                selected: str | None = None, durations: dict[str, str] | None = None,
                runs: dict[str, int] | None = None) -> str:
-    """Yaşam döngüsünü tek bir SVG olarak çizer; durum verilmezse tanıtım görünümü üretir."""
+    """Draws the lifecycle as a single SVG; without states it produces the introductory view."""
     states = states or {key: "pending" for key in STAGE_KEYS}
     loop_counts = loop_counts or {}
     y = 128
     parts = [
-        '<svg viewBox="0 0 1000 262" width="100%" role="img" aria-label="SDLC yaşam döngüsü" '
+        '<svg viewBox="0 0 1000 262" width="100%" role="img" aria-label="' + escape(t("SDLC lifecycle")) + '" '
         'xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif">',
         "<defs>",
         '<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
@@ -203,13 +212,13 @@ def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, obje
     for index, phase in enumerate(phases):
         x = 15 + index * 245
         parts.append(f'<rect x="{x}" y="72" width="230" height="150" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>')
-        parts.append(f'<text x="{x + 115}" y="246" text-anchor="middle" font-size="13" font-weight="600" fill="#475569">{escape(phase)}</text>')
+        parts.append(f'<text x="{x + 115}" y="246" text-anchor="middle" font-size="13" font-weight="600" fill="#475569">{escape(t(phase))}</text>')
     for index in range(len(STAGES) - 1):
         x1, x2 = _node_x(index) + 31, _node_x(index + 1) - 33
         parts.append(f'<line x1="{x1}" y1="{y}" x2="{x2}" y2="{y}" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>')
     loops = (
-        ("review", "design", int(loop_counts.get("revisions") or 0), "revizyon"),
-        ("testing", "development", int(loop_counts.get("repairs") or 0), "onarım"),
+        ("review", "design", int(loop_counts.get("revisions") or 0), t("revision")),
+        ("testing", "development", int(loop_counts.get("repairs") or 0), t("repair")),
     )
     for source, target, count, label in loops:
         sx, tx = _node_x(STAGE_KEYS.index(source)), _node_x(STAGE_KEYS.index(target))
@@ -223,17 +232,18 @@ def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, obje
         )
         middle = (sx + tx) / 2
         if active:
-            # Geri dönüş gerçekleştiyse etiket dolgulu bir rozet olur; tek bir dönüş de açıkça görünür.
+            # Once a loop-back happened the label becomes a filled badge, so even a single one is clearly visible.
             text = f"↺ {label} ×{count}"
             parts.append(f'<rect x="{middle - 56}" y="{y - 114}" width="112" height="22" rx="11" fill="#ea580c"/>')
             parts.append(f'<text x="{middle}" y="{y - 99}" text-anchor="middle" font-size="12.5" fill="#ffffff" font-weight="700">{text}</text>')
         else:
-            parts.append(f'<text x="{middle}" y="{y - 97}" text-anchor="middle" font-size="12" fill="{color}" font-weight="600">{label} döngüsü</text>')
+            parts.append(f'<text x="{middle}" y="{y - 97}" text-anchor="middle" font-size="12" fill="{color}" font-weight="600">{escape(t("{label} loop", label=label))}</text>')
     for index, stage in enumerate(STAGES):
         x = _node_x(index)
         state = states.get(stage.key, "pending")
         fill, stroke, ink, state_label = PALETTE[state]
-        parts.append(f"<g><title>{escape(stage.agent)}: {escape(stage.description)} — {state_label}</title>")
+        state_label = t(state_label)
+        parts.append(f"<g><title>{escape(t(stage.agent))}: {escape(t(stage.description))} — {state_label}</title>")
         if state in {"running", "question"}:
             parts.append(f'<circle class="sdlc-halo" cx="{x}" cy="{y}" r="31" fill="none" stroke="{stroke}"/>')
         if stage.key == selected:
@@ -242,13 +252,13 @@ def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, obje
         parts.append(f'<circle cx="{x}" cy="{y}" r="29" fill="{fill}" stroke="{stroke}" stroke-width="2.5"{dash}/>')
         count = (runs or {}).get(stage.key, 0)
         if count > 1:
-            # Birden fazla çalışan aşama (revizyon, onarım, yeniden test) düğümün köşesinde ×N rozeti taşır.
+            # A stage that ran more than once (revision, repair, re-test) carries a ×N badge on the node corner.
             parts.append(f'<circle cx="{x + 24}" cy="{y - 23}" r="12" fill="#ea580c" stroke="#ffffff" stroke-width="2"/>')
             parts.append(f'<text x="{x + 24}" y="{y - 19}" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">×{count}</text>')
         glyph = GLYPHS.get(state, str(index + 1))
         parts.append(f'<text x="{x}" y="{y + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="{ink}">{glyph}</text>')
-        parts.append(f'<text x="{x}" y="{y + 52}" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">{escape(stage.label)}</text>')
-        parts.append(f'<text x="{x}" y="{y + 69}" text-anchor="middle" font-size="11" fill="#64748b">{escape(stage.artifact)}</text>')
+        parts.append(f'<text x="{x}" y="{y + 52}" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">{escape(t(stage.label))}</text>')
+        parts.append(f'<text x="{x}" y="{y + 69}" text-anchor="middle" font-size="11" fill="#64748b">{escape(t(stage.artifact))}</text>')
         timing = f" · {durations[stage.key]}" if durations and durations.get(stage.key) not in {None, "—"} else ""
         parts.append(f'<text x="{x}" y="{y + 85}" text-anchor="middle" font-size="11" fill="{stroke}" font-weight="600">{state_label}{escape(timing)}</text>')
         parts.append("</g>")

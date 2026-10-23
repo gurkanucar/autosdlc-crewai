@@ -21,12 +21,12 @@ def test_packages_include_all_sources_and_latest_stage_documents(tmp_path):
     (project / "node_modules" / "dependency.js").write_text("ignored", encoding="utf-8")
     with zipfile.ZipFile(io.BytesIO(export_zip(project, output))) as archive:
         names = archive.namelist()
-        assert "proje/source304.py" in names
+        assert "project/source304.py" in names
         assert "sdlc/test_report.md" in names
-        assert "proje/.env.example" in names
+        assert "project/.env.example" in names
         assert not any("node_modules" in name or name.endswith(("/.env", ".env.local", ".env.production")) for name in names)
     with zipfile.ZipFile(io.BytesIO(export_zip(project, output, "documents"))) as archive:
-        assert archive.read("belgeler/planning.md") == b"latest"
+        assert archive.read("documents/planning.md") == b"latest"
         assert "README.md" in archive.namelist()
         assert not any(name.endswith(".py") for name in archive.namelist())
     with zipfile.ZipFile(io.BytesIO(export_zip(project, output, "code"))) as archive:

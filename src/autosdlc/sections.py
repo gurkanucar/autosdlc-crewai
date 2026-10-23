@@ -1,4 +1,4 @@
-"""Markdown belgeleri başlık ve gereksinim (FR/NFR) düzeyinde bölümlere ayırır ve bölüm düzenlemelerini uygular."""
+"""Splits Markdown documents into sections at heading and requirement (FR/NFR) level and applies section edits."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ REQUIREMENT_LINE = re.compile(r"^\s*(?:[-*+]\s+|\|\s*|\d+\.\s+)?\**\s*(N?FR-\d{1
 
 @dataclass(frozen=True)
 class Section:
-    key: str          # Kararlı kimlik: "h:<sıra>" başlıklar, "r:FR-01" gereksinim satırları
+    key: str          # Stable id: "h:<order>" for headings, "r:FR-01" for requirement lines
     title: str
     kind: str         # "heading" | "requirement"
-    level: int        # başlık seviyesi; gereksinimlerde içinde bulunduğu başlığın seviyesi + 1
-    start: int        # ilk satırın indeksi
-    end: int          # son satırdan sonraki indeks
+    level: int        # heading level; for requirements the level of the enclosing heading + 1
+    start: int        # index of the first line
+    end: int          # index after the last line
 
     def text(self, lines: list[str]) -> str:
         return "\n".join(lines[self.start:self.end])
@@ -36,7 +36,7 @@ def _code_fence_mask(lines: list[str]) -> list[bool]:
 
 
 def split_sections(markdown: str) -> list[Section]:
-    """Başlıklar (bir sonraki eşit/üst başlığa kadar) ve FR/NFR satırları (paragraf sonuna kadar)."""
+    """Headings (up to the next equal/higher heading) and FR/NFR lines (up to the end of the paragraph)."""
     lines = markdown.split("\n")
     fenced = _code_fence_mask(lines)
     headings = [(index, len(match.group(1)), match.group(2).strip())
@@ -54,7 +54,7 @@ def split_sections(markdown: str) -> list[Section]:
             continue
         seen.add(match.group(1))
         end = index + 1
-        # Tablo satırı tek satırdır; madde/paragraf ise boş satıra, başlığa ya da sonraki gereksinime kadar sürer.
+        # A table row is a single line; a bullet/paragraph runs to a blank line, a heading or the next requirement.
         if not line.lstrip().startswith("|"):
             while end < len(lines) and lines[end].strip() and not HEADING.match(lines[end]) and not REQUIREMENT_LINE.match(lines[end]):
                 end += 1
@@ -87,19 +87,21 @@ def delete_section(markdown: str, section: Section) -> str:
 def unified_diff(before: str, after: str, name: str) -> str:
     return "".join(difflib.unified_diff(
         before.splitlines(keepends=True), after.splitlines(keepends=True),
-        fromfile=f"{name} (önce)", tofile=f"{name} (sonra)", n=2,
+        fromfile=f"{name} (before)", tofile=f"{name} (after)", n=2,
     ))
 
 
 def strip_fences(text: str) -> str:
-    """Model yanıtı ```markdown … ``` içine sarılmışsa çıkarır."""
+    """Removes the ```markdown … ``` fence if the model response is wrapped in one."""
     stripped = text.strip()
     match = re.fullmatch(r"```[\w-]*\n(.*?)\n?```", stripped, re.DOTALL)
     return match.group(1) if match else stripped
 
 
-NO_CHANGE = "DEĞİŞİKLİK YOK"
-AFTER_HINT = re.compile(r"^\s*<!--\s*SONRA:\s*(.+?)\s*-->\s*$")
+# Language-neutral token; the Turkish one from older runs is still recognised.
+NO_CHANGE = "NO CHANGES"
+NO_CHANGE_TOKENS = ("NO CHANGES", "DEĞİŞİKLİK YOK")
+AFTER_HINT = re.compile(r"^\s*<!--\s*(?:AFTER|SONRA):\s*(.+?)\s*-->\s*$")
 CHANGE_TAG = re.compile(r"\s*\[(?:CR|cr)-\d+\]")
 
 
@@ -108,7 +110,7 @@ def _normalize(title: str) -> str:
 
 
 def _patch_chunks(patch: str) -> list[tuple[str, int, str, str | None]]:
-    """Yamayı (başlık, seviye, metin, SONRA ipucu) parçalarına böler; her parça bir sonraki eşit/üst başlığa kadar sürer."""
+    """Splits a patch into (heading, level, text, AFTER hint) chunks; every chunk runs to the next equal/higher heading."""
     lines = patch.split("\n")
     fenced = _code_fence_mask(lines)
     headings = [(index, len(match.group(1)), match.group(2).strip())
@@ -127,18 +129,18 @@ def _patch_chunks(patch: str) -> list[tuple[str, int, str, str | None]]:
 
 
 def apply_patch(base: str, patch: str) -> tuple[str, int, int]:
-    """Ajanın döndürdüğü değişen/yeni bölümleri mevcut belgeye uygular.
+    """Applies the changed/new sections the agent returned to the existing document.
 
-    Mevcut bir başlıkla eşleşen bölüm tamamen değiştirilir; eşleşmeyen yeni bölüm, '<!-- SONRA: başlık -->'
-    ipucundaki bölümün ardına ya da belgenin sonuna eklenir. (belge, değiştirilen, eklenen) döndürür.
+    A section matching an existing heading is replaced entirely; a new section is inserted after the section named in
+    its '<!-- AFTER: heading -->' hint, or at the end of the document. Returns (document, replaced, added).
     """
     patch = strip_fences(patch)
     chunks = _patch_chunks(patch)
     if not chunks:
         return base, 0, 0
-    # Ajan, belge başlığını (H1) koyup altına yalnızca değişen bölümleri yazdıysa H1 parçası belgenin
-    # tamamını silmesin: mevcut alt bölümlerden biri bile yamada yoksa başlık satırı atılır ve alt
-    # bölümler tek tek uygulanır. Hepsi varsa bu, belgenin tamamıdır ve olduğu gibi değiştirilir.
+    # If the agent put the document title (H1) and wrote only the changed sections under it, the H1 chunk must not
+    # wipe the whole document: if even one existing subsection is missing from the patch, the title line is dropped
+    # and the subsections are applied one by one. If all are present it is the whole document and replaces it.
     if len(chunks) == 1 and chunks[0][1] == 1 and "\n" in chunks[0][2]:
         inner = _patch_chunks(chunks[0][2].split("\n", 1)[1])
         children = {_normalize(s.title) for s in split_sections(base) if s.kind == "heading" and s.level == 2}

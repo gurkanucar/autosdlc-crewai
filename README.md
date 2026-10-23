@@ -1,183 +1,160 @@
 # AutoSDLC
 
-AutoSDLC, bir proje fikrini CrewAI Flow ve sekiz ajanla **Planlama → Analiz → Tasarım → İnceleme → Kodlama → Test → Dağıtım → Bakım** aşamalarından geçirir. Orkestrasyon Python ile yazılmıştır; **üretilen proje Python veya FastAPI ile sınırlı değildir**. Proje türünü ve teknoloji yığınını kullanıcı seçer (ör. Go/Gin, Node/Express, Python/Django, bir CLI veya library). Üretilen kod İngilizcedir (değişken, fonksiyon, sınıf, dosya adları ve yorumlar); belgeler Türkçedir ama backend, fullstack, endpoint gibi yerleşik terimler çevrilmez. Bu kurallar [`tasks.yaml`](src/autosdlc/config/tasks.yaml) içindeki `language_rules` bloğundadır.
+[English](README.md) · [Türkçe](README.tr.md)
 
-## Kurulum
+AutoSDLC takes a project idea through **Planning → Analysis → Design → Review → Development → Testing → Deployment → Maintenance** with CrewAI Flow and eight agents. The orchestration is written in Python, but **the generated project is not limited to Python or FastAPI**. The user chooses the project type and technology stack (e.g. Go/Gin, Node/Express, Python/Django, a CLI or a library). Generated code is always English (variable, function, class and file names and comments). The documents are written in the language you choose for the project (English or Turkish, see [Languages](#languages)); established technical terms such as backend, fullstack and endpoint are never translated. These rules live in the `language_rules` block of [`tasks.yaml`](src/autosdlc/config/tasks.yaml).
 
-Python 3.11–3.13, OpenCode Go erişimi ve üretilecek projelerin seçilen araçları gerekir. Docker Compose yalnızca konteynerle çalıştırma için gereklidir. Windows (Git Bash/PowerShell), macOS ve Linux desteklenir. macOS'ta `make` Xcode Command Line Tools ile gelir (`xcode-select --install`); Python için `brew install python@3.13` yeterlidir:
+## Setup
+
+You need Python 3.11–3.13, OpenCode Go access and the tools of the projects you generate. Docker Compose is only needed to run a project in containers. Windows (Git Bash/PowerShell), macOS and Linux are supported. On macOS `make` comes with the Xcode Command Line Tools (`xcode-select --install`); `brew install python@3.13` is enough for Python:
 
 ```bash
 make run
 ```
 
-İlk kullanımda Makefile `.venv` oluşturup paketi ve Playwright Chromium'u kurar; ardından tarayıcı arayüzünü otomatik açar. Yalnızca üç Make hedefi vardır: `setup`, `run`, `test`. İstersen kurulumu önceden `make setup` ile yapabilirsin. Aşağıda `VENV_PY`, sanal ortamın yorumlayıcısıdır: Windows'ta `.venv/Scripts/python.exe`, macOS/Linux'ta `.venv/bin/python`. `make` yoksa `python3 -m venv .venv` (Windows: `python -m venv .venv`), `VENV_PY -m pip install -e .` ve `VENV_PY -m playwright install chromium` kullan. Yerel `.env` içindeki `OPENCODE_API_KEY` otomatik okunur; `.env` Git tarafından yok sayılır. `.env.example` örnek biçimdir. Anahtarı YAML dosyalarına veya üretilen projeye yazma.
+On first use the Makefile creates `.venv`, installs the package and Playwright Chromium, and then opens the browser UI automatically. There are only three Make targets: `setup`, `run`, `test`. You can do the setup beforehand with `make setup`. Below, `VENV_PY` is the virtual environment's interpreter: `.venv/Scripts/python.exe` on Windows, `.venv/bin/python` on macOS/Linux. Without `make`, use `python3 -m venv .venv` (Windows: `python -m venv .venv`), `VENV_PY -m pip install -e .` and `VENV_PY -m playwright install chromium`. `OPENCODE_API_KEY` in the local `.env` is read automatically; `.env` is ignored by Git and `.env.example` shows the format. Never write the key into YAML files or the generated project.
 
-## Çalıştırma
+## Languages
 
-`make run` tarayıcı arayüzünü açar. Proje fikrini, türünü, teknoloji yığınını,
-package manager'ı ve diğer teknik kısıtları formda yazarsın. Backend/fullstack
-için database, cache ve observability; backend için isteğe bağlı web
-UI seçilir.
+AutoSDLC is fully localized; English is the default and Turkish is available. There are two independent settings:
 
-Arayüzün yaşam döngüsü diyagramı sekiz aşamayı dört evrede (gereksinim
-mühendisliği, tasarım ve doğrulama, gerçekleştirme, operasyon) gösterir. Her
-düğüm canlı durumunu (sırada, çalışıyor, yanıt bekliyor, tamamlandı, başarısız)
-ve ürettiği belgeyi taşır. Turuncu oklar geri besleme döngüleridir:
-**İnceleme → Tasarım** (revizyon) ve **Test → Kodlama** (onarım); döngü
-çalıştıkça sayaçları artar.
+- **Interface language:** the **Interface language** selector in the sidebar switches the whole UI at once (also remembered in the URL as `?lang=tr`). For the command line use the `AUTOSDLC_LANG` environment variable.
+- **Document language:** a project decision (**Document language** in the new-project form, `language` in `decisions`; `--language` on the command line). Every agent writes its documents in that language (Turkish project → Turkish plan, requirements, design, review, deployment and maintenance documents), and the reports the application writes itself (test report, traceability matrix, changelog, project README) follow it too. Agent prompts are English; the language is added to every prompt as a rule. By default the document language follows the interface language until you pick one.
 
-**Yeni proje** sayfasında formu kendin doldurabilir ya da **Örnek proje şablonu**
-seçip **Uygula** ile doldurabilirsin. Şablonlar
-[`templates.yaml`](src/autosdlc/config/templates.yaml) içindedir. Başlatınca
-**Projeler** sayfası açılır; projeler kenar çubuğunda listelenir. Çalışma alanı
-sayfayı yenilemeden kendini günceller:
+**Technical jargon is never translated, in any language.** Terms such as backend, frontend, fullstack, CLI, library, framework, API, endpoint, HTTP request/response, middleware, pipeline, container, package manager, mock, commit, branch and repository stay English even in Turkish text (never "arka uç" or "tam yığın"). The list lives in [`glossary.yaml`](src/autosdlc/config/glossary.yaml); it feeds the agent prompts, and a test checks that no translation catalog changes these terms. Protocol tokens the agents write (`VERDICT`, `START`, `SKIP`, `QUESTION`) are language neutral; the Turkish tokens of older runs are still accepted.
 
-- **Diyagram ve aşama seçici:** bir aşamaya tıklayınca o aşamanın detayı açılır. Seçim yapmazsan görünüm aktif aşamayı izler.
-- **Metrikler:** tamamlanan aşama, toplam ajan süresi, inceleme turu, test çalıştırma, onarım ve FR test kapsamı. Her aşamanın detayında o aşamanın süresi ve kaç kez çalıştığı (onarım/revizyon turları dahil) görünür. Süreye, ajanın senin yanıtını beklediği süre katılmaz.
-- **Aşama detayı:** çalışan aşamada ajanın çıktısı **canlı akar** (LLM yanıtı akış olarak alınır). Biten aşamada üretilen belge (Mermaid diyagramları çizilmiş hâlde), Kodlama'da dosya görüntüleyici ve ZIP indirme gösterilir. Belgeler **✏️ Düzenle** ile değiştirilebilir; **Kaydet ve yeniden üret** sonraki aşamaları düzenlenmiş belgeyle yeniden çalıştırır.
-- **Ajan akışı (chat):** ajanların ilerleme mesajları, soruları ve senin yanıtların. Bir ajan karar isterse soru burada görünür ve chat kutusuna yazdığın metin yanıt olarak gider. Soru yoksa yazdığın metin **yönlendirme notu** olarak kaydedilir ve sonraki aşamaların ajan bağlamına eklenir (ör. "arayüz koyu tema olsun").
-- **Üst bar:** ⏸ Durdur, ▶ Devam et ve ⚙️ Yönet (fikri/kısıtları düzenle, bir aşamadan itibaren yeniden üret, projeyi sil).
+To add a language: create `src/autosdlc/config/locales/<code>/` with `English text: translation` mappings (copy `tr/` as a template), add the code to `LANGUAGES` and `PROMPT_NAMES` in [`i18n.py`](src/autosdlc/i18n.py) and to the `language` options in `questions.yaml`. A missing translation falls back to English, and `tests/test_i18n.py` lists every string that still needs one.
 
-**Çıktıları indirme:** README'nin yanındaki **İndir** menüsünden tüm proje ve SDLC
-çıktılarını tek ZIP olarak, yalnızca belgeleri/raporları veya kaynak kodları ayrı
-paketler olarak indirebilirsin. Tam pakette `proje/` kaynakları, `sdlc/` tüm aşama
-çıktılarını içerir. Henüz bitmemiş çalışmalarda o ana kadar üretilen dosyalar alınır.
-Yerel `.env` dosyaları ve bağımlılık klasörleri pakete katılmaz; `.env.example` korunur.
-Her belgenin **Büyüt** düğmesinin yanında tek dosya indirme düğmesi de vardır.
-README tam genişlikte açıldığında üstteki **İndir** düğmesini kullanabilirsin.
+## Running
 
-Yaşam döngüsünün düğüm grafiğini **Büyüt** ile açıp boyutunu ayarlayabilir,
-**SVG indir** ile görüntü olarak saklayabilirsin. Büyütülmüş görünümde durumlar
-canlı güncellenir. Belgeler ve Mermaid diyagramları içerik yüksekliğine göre açılır;
-uzun belgeleri sayfanın kaydırma çubuğuyla okuyabilirsin.
+`make run` opens the browser UI. You write the project idea, type, technology stack, package manager and other technical constraints in the form. For backend/fullstack you choose database, cache and observability; for backend an optional web UI.
 
-Durdurma o sırada süren ajan çağrısı bitince uygulanır; devam ettirince tamamlanmış
-aşamalar yeniden üretilmez. Çalışan iş her 10 saniyede bir kalp atışı
-yazar. Arayüz kapanır ya da bilgisayar uyursa, iş kesintiye uğramış kabul edilip
-duraklatılır; kayıt kilitli kalmaz, devam ettirilebilir veya silinebilir.
-Terminal yalnızca yerel arayüz sunucusunu çalıştırır; kapatmak için `Ctrl+C`.
-Tarayıcı kendiliğinden açılmazsa `http://127.0.0.1:8501` adresine git.
+The UI's lifecycle diagram shows the eight stages in four phases (requirements engineering, design and verification, implementation, operations). Every node carries its live state (pending, running, waiting for an answer, completed, failed, skipped) and the document it produces. The orange arrows are feedback loops: **Review → Design** (revision) and **Testing → Development** (repair); their counters rise as the loops run.
 
-Varsayılan proje konumu bu deponun `projects/<proje-adı>-<run-id>/` klasörüdür.
-`projects/` otomatik oluşturulur ve Git tarafından yok sayılır. Başka bir klasör istiyorsan
-formdaki **Yeni proje klasörü** alanını doldur veya **Gözat…** ile mevcut üst
-klasörü seçip yeni klasör adını yaz; hedef klasör henüz mevcut
-olmamalı. Her çalıştırma ayrı proje ve SDLC belgeleri oluşturur, geçmiş
-`runs/history.sqlite3` içinde saklanır. Sorular [`questions.yaml`](src/autosdlc/config/questions.yaml) dosyasındadır.
-Arayüz, OpenCode Go'nun canlı listesinden bu uygulamanın API biçimiyle uyumlu
-modelleri seçtirir. Yerel `.env` anahtarı varsa alan maskeli gösterilir; gerçek
-değer tarayıcıya gönderilmez. İstersen farklı bir anahtar girebilirsin.
+On the **New project** page you can fill the form yourself or pick an **Example project template** and press **Apply**. The templates are in [`templates.yaml`](src/autosdlc/config/templates.yaml). When you start, the **Projects** page opens; projects are listed in the sidebar. The workspace updates itself without refreshing the page:
 
-Kararları görünür bir YAML dosyasında tutmak istersen kendi `request.yaml` dosyanı oluştur:
+- **Diagram and stage picker:** clicking a stage opens that stage's detail. If you do not pick one, the view follows the active stage.
+- **Metrics:** completed stages, total agent time, review rounds, test runs, repairs and FR test coverage. A stage's detail shows its duration and how many times it ran (repair/revision rounds included). The time an agent waits for your answer is not counted.
+- **Stage detail:** in a running stage the agent's output **streams live** (the LLM response is received as a stream). In a finished stage the produced document (Mermaid diagrams drawn), in Development a file viewer and ZIP download are shown. Documents can be edited with **✏️ Whole**; saving marks later stages out of date.
+- **Agent feed (chat):** the agents' progress messages, questions and your answers. If an agent needs a decision the question appears here and the text you type in the chat box goes back as the answer. If there is no question, what you type is saved as a **steering note** and added to the context of later stages (e.g. "the UI should use a dark theme").
+- **Top bar:** ⏸ Stop, ▶ Resume, ↻ Retry, 📝 Changes, 📘 README, 🕓 Versions, 📂 Folder and ⚙️ Manage (edit the idea/constraints, regenerate from a stage, delete the project).
+
+**Downloading outputs:** from the **Download** menu next to the README you can download the whole project and SDLC outputs as a single ZIP, or only the documents/reports, or only the source code, as separate bundles. In the full bundle `project/` holds the sources and `sdlc/` all stage outputs. For unfinished runs the files produced so far are taken. Local `.env` files and dependency folders are left out; `.env.example` is kept. Every document also has a single-file download button next to **Enlarge**. When the README is open at full width you can use the **Download** button at the top.
+
+You can open the lifecycle node graph with **Enlarge**, adjust its size and save it as an image with **Download SVG**. In the enlarged view the states update live. Documents and Mermaid diagrams expand to their content height; read long documents with the page scrollbar.
+
+Stopping takes effect when the running agent call finishes; when you resume, completed stages are not regenerated. A running job writes a heartbeat every 10 seconds. If the UI closes or the computer sleeps, the job is considered interrupted and paused; the record is not left locked and can be resumed or deleted. The terminal only runs the local UI server; press `Ctrl+C` to close it. If the browser does not open by itself go to `http://127.0.0.1:8501`.
+
+The default project location is the `projects/<project-name>-<run-id>/` folder of this repository. `projects/` is created automatically and ignored by Git. If you want another folder fill in the **Project folder** field of the form, or use **Browse…** to pick an existing parent folder and type the new folder name; the target folder must not exist yet. Every run creates separate project and SDLC documents; the history is kept in `runs/history.sqlite3`. The questions are in [`questions.yaml`](src/autosdlc/config/questions.yaml). The UI lets you choose, from OpenCode Go's live list, models compatible with this application's API format. If a local `.env` key exists the field is shown masked; the real value is not sent to the browser. You can enter a different key if you want.
+
+If you want to keep the decisions in a visible YAML file, create your own `request.yaml`:
 
 ```yaml
-idea: Stok takibi için HTTP API
-output: ~/projeler/stok-uygulamasi   # Windows: D:\projeler\stok-uygulamasi
+idea: HTTP API for stock tracking
+output: ~/projects/stock-app   # Windows: D:\projects\stock-app
 decisions:
   project_type: fullstack
-  stack: Node.js backend + sade HTML/CSS/JS arayüz
-  constraints: Paket yöneticisi pnpm olsun; frontend çatısı kullanma.
+  stack: Node.js backend + plain HTML/CSS/JS interface
+  constraints: Use pnpm as the package manager; no frontend framework.
   database: postgres
   cache: none
   observability: openobserve
+  scale: normal
+  language: en            # document language: en or tr
 ```
 
-YAML ile otomatik çalıştırma gerekiyorsa `VENV_PY -m autosdlc run --config request.yaml --no-prompt` komutunu kullan. Bu ayrı bir zorunlu adım değildir; normal kullanım tarayıcı arayüzüdür.
+If you need to run it automatically from YAML use `VENV_PY -m autosdlc run --config request.yaml --no-prompt`. This is not a separate required step; normal use is the browser UI.
 
 ```bash
-VENV_PY -m autosdlc run --idea "Kitap API'si" --project_type backend --stack "Go/Gin" --database postgres --cache redis --observability otel --ui none --no-prompt
+VENV_PY -m autosdlc run --idea "Book API" --project_type backend --stack "Go/Gin" --database postgres --cache redis --observability otel --ui none --language en --no-prompt
 ```
 
-`VENV_PY -m autosdlc history` ve `show <run-id>` komutları otomasyon için geçmişi verir; aynı bilgi arayüzde de görünür.
+The `VENV_PY -m autosdlc history` and `show <run-id>` commands give the history for automation; the same information is also in the UI.
 
-## Çıktılar ve belgeler
+## Outputs and documents
 
-Her çalışmanın raporları `runs/<run-id>/` altında saklanır. Üretilen uygulama
-varsayılan olarak `projects/<proje-adı>-<run-id>/` içindedir; oradaki `README.md`
-belgeleri ve çalıştırma yolunu bağlar. Aynı belgelerin kopyası projenin `docs/`
-klasöründedir:
+Every run's reports are stored under `runs/<run-id>/`. The generated application is by default in `projects/<project-name>-<run-id>/`; the `README.md` there links the documents and the way to run it. Copies of the same documents are in the project's `docs/` folder:
 
-| Aşama | Dosya | İçerik |
+| Stage | File | Content |
 | --- | --- | --- |
-| Kararlar | `decisions.yaml` | Proje türü, yığın ve mimari seçimler |
-| Aşama soruları | `clarifications.yaml` | Ajanların istediği ek kararlar ve kullanıcı yanıtları; yalnızca soru sorulursa |
-| Planlama | `planning.md` | Kapsam, paydaşlar, takvim, riskler |
-| Analiz | `requirements.md` | FR/NFR kimlikleri, user story, kabul kriterleri, test izlenebilirliği |
-| Tasarım | `architecture.md` | Bileşen/sekans Mermaid diyagramları, varsa ER şeması ve API sözleşmesi |
-| İnceleme | `design_review.md` | Bağımsız mimari inceleme: önem dereceli bulgu tablosu ve ONAY/REVİZYON kararı |
-| Kodlama | `project/` | Seçilen teknolojiyle kaynak kod ve `project.yaml` |
-| Test | `traceability.md` | FR/NFR → test dosyası izlenebilirlik matrisi ve kapsama oranı |
-| Test | `test_report.md`, `test_attempts/` | Gerçek komut sonuçları, başarısızlık ve düzeltme döngüsü |
-| Dağıtım | `deployment.md`, `project/Dockerfile`, `project/compose.yaml` | Çalıştırma, ortam değişkenleri, sağlık ve geri alma adımları |
-| Bakım | `maintenance_report.md` | İzleme, olay müdahalesi, yedekleme, iyileştirme listesi |
+| Decisions | `decisions.yaml` | Project type, stack and architecture choices |
+| Stage questions | `clarifications.yaml` | Extra decisions the agents asked for and the user's answers; only if a question was asked |
+| Planning | `planning.md` | Scope, stakeholders, schedule, risks |
+| Analysis | `requirements.md` | FR/NFR ids, user stories, acceptance criteria, test traceability |
+| Design | `architecture.md` | Component/sequence Mermaid diagrams, ER schema and API contract if any |
+| Review | `design_review.md` | Independent architecture review: findings table by severity and the APPROVE/REVISE verdict |
+| Development | `project/` | Source code with the chosen technology and `project.yaml` |
+| Testing | `traceability.md` | FR/NFR → test file traceability matrix and coverage ratio |
+| Testing | `test_report.md`, `test_attempts/` | Real command results, failures and the repair loop |
+| Deployment | `deployment.md`, `project/Dockerfile`, `project/compose.yaml` | Running, environment variables, health checks and rollback steps |
+| Maintenance | `maintenance_report.md` | Monitoring, incident response, backup, improvement list |
 
-CrewAI Flow sıralamayı yönetir. Ajan rolleri [`agents.yaml`](src/autosdlc/config/agents.yaml), görevleri ve belge gereksinimleri [`tasks.yaml`](src/autosdlc/config/tasks.yaml) içindedir. `project.yaml` seçilen yığına ait kurulum, API, UI, birim test ve başlatma komutlarını listeler. Komutlar kabuk kullanılmadan proje klasöründe çalıştırılır. Backend/fullstack için API testi zorunludur; UI varsa Playwright testi canlı uygulamaya karşı çalışır. Başarısız test sonucu Developer Agent'a gider; en fazla iki onarım denemesi yapılır. Rapor gerçek test sonucunu gösterir.
+CrewAI Flow manages the sequence. The agent roles are in [`agents.yaml`](src/autosdlc/config/agents.yaml), the tasks and document requirements in [`tasks.yaml`](src/autosdlc/config/tasks.yaml). `project.yaml` lists the setup, API, UI, unit test and start commands of the chosen stack. The commands run in the project folder without a shell. An API test is mandatory for backend/fullstack; with a UI the Playwright test runs against the live application. A failing test result goes to the Development Agent; at most two repair attempts are made. The report shows the real test result.
 
-### Kalite kapıları ve izlenebilirlik
+### Quality gates and traceability
 
-- **Proje ölçeği:** Formdaki **Ölçek** seçeneği `Normal` ya da `Küçük` olabilir (hızlı demo, CLI ve library şablonları `Küçük` gelir). Küçük projede her belge yaklaşık 3500 karakterle sınırlanır ve inceleme yalnızca **Kritik** bulguda tasarımı geri gönderir; yüksek/orta bulgular raporda kalır ve bakım listesine aktarılır.
-- **Mimari inceleme (V&V):** Mimari İnceleme Ajanı tasarımı gereksinimlere (her FR'nin karşılığı, NFR'ler, API/veri tutarlılığı, kararlara uyum) göre denetler. Kritik veya yüksek bulgu varsa `KARAR: REVİZYON` verir; Tasarım Ajanı belgenin yalnızca bulgulardan etkilenen bölümlerini yeniden yazar ve inceleme tekrarlanır (en fazla 2 tur). Onay çıkmazsa açık bulgular kaydedilerek devam edilir ve kodlama ile bakım ajanlarına aktarılır.
+- **Project scale:** the **Scale** option of the form can be `Normal` or `Small` (the quick demo, CLI and library templates come as `Small`). In a small project every document is limited to about 3500 characters and the review sends the design back only on a **Critical** finding; high/medium findings stay in the report and are passed to the maintenance list.
+- **Architecture review (V&V):** the Architecture Review Agent audits the design against the requirements (a counterpart for every FR, NFRs, API/data consistency, compliance with decisions). If there is a critical or high finding it gives `VERDICT: REVISE`; the Design Agent rewrites only the sections of the document affected by the findings and the review is repeated (at most 2 rounds). If no approval comes, the open findings are recorded and passed to the development and maintenance agents.
+- **Stage gates:** the analysis document must contain FR-xx and NFR-xx ids, the design document at least two Mermaid diagrams (`erDiagram` if a database is chosen). A document that fails the gate is given back to the agent with the gap in writing and rewritten once; if it still fails the run stops.
+- **Traceability matrix:** the testing stage produces `traceability.md`. Requirement ids are matched with the references in the test files (`FR-01`, `test_fr01_...`) and the FR/NFR coverage ratio is passed to the test report and the deployment/maintenance agents.
+- **Protected tests:** in the repair loop the Development Agent cannot change the `tests/` and `test/` files; such changes are rejected and recorded as events. So the tests cannot be "made to pass" by changing them.
+- **Stage-specific context:** every agent receives only the relevant earlier documents (e.g. Development: design + requirements). User answers and the real test result are put at the head of the context; they are not lost even if long documents are truncated.
+- **Piece-by-piece code generation:** in the first development the Development Agent first produces a file plan and then writes the files in groups of four; every group sees the earlier files. Big (e.g. fullstack) projects do not hit the model's output limit in a single response. If a response is still cut, this is reported clearly and the agent is asked for a shorter response.
+- **Configuration repair:** if `project.yaml`/`Dockerfile` cannot be validated the error is given back to the Development Agent to fix once; unused commands may be left empty (`ui_test: []`).
+- **Test coverage check:** if the `project.yaml` test commands do not run some test files (e.g. a command targets a single file) this shows as a warning in the test report and the events; a test that does not run does not count as passed.
 
-- **Aşama kapıları:** Analiz belgesi FR-xx ve NFR-xx kimlikleri, tasarım belgesi en az iki Mermaid diyagramı (veritabanı seçildiyse `erDiagram`) içermelidir. Kapıdan geçemeyen belge, eksiği yazılı olarak ajana geri verilir ve bir kez yeniden yazdırılır; yine geçemezse çalışma durur.
-- **İzlenebilirlik matrisi:** Test aşaması `traceability.md` üretir. Gereksinim kimlikleri test dosyalarındaki referanslarla (`FR-01`, `test_fr01_...`) eşleştirilir ve FR/NFR kapsama oranı test raporuna ve dağıtım/bakım ajanlarına aktarılır.
-- **Testlerin korunması:** Onarım döngüsünde Geliştirme Ajanı `tests/` ve `test/` dosyalarını değiştiremez; bu tür değişiklikler reddedilir ve olay olarak kaydedilir. Böylece testler değiştirilerek "geçirilemez".
-- **Aşamaya özgü bağlam:** Her ajan yalnızca ilgili önceki belgeleri alır (ör. Kodlama: tasarım + gereksinimler). Kullanıcı yanıtları ve gerçek test sonucu bağlamın başına konur; uzun belgeler kırpılsa bile kaybolmaz.
-- **Parça parça kod üretimi:** İlk kodlamada Geliştirme Ajanı önce dosya planını çıkarır, sonra dosyaları dörderli gruplar hâlinde yazar; her grup önceki dosyaları görür. Büyük (ör. fullstack) projeler tek yanıtta modelin çıktı sınırına takılıp kesilmez. Bir yanıt yine de kesilirse bu açıkça bildirilir ve ajandan daha kısa yanıt istenir.
-- **Yapılandırma onarımı:** `project.yaml`/`Dockerfile` doğrulanamazsa hata Geliştirme Ajanı'na geri verilir ve bir kez düzelttirilir; kullanılmayan komutlar boş bırakılabilir (`ui_test: []`).
-- **Test kapsamı denetimi:** `project.yaml` test komutları bazı test dosyalarını çalıştırmıyorsa (ör. komut tek dosyayı hedefliyorsa) bu, test raporunda ve olaylarda uyarı olarak görünür; çalışmayan test geçmiş sayılmaz.
+## Change management
 
-## Değişiklik yönetimi
+The SDLC continues after the project is finished. There are three kinds of intervention.
 
-Proje bittikten sonra da SDLC devam eder. Üç tür müdahale vardır.
+**1. Section-level intervention in a document.** In a stage's document switch to **🎯 Section** mode; pick a heading (`§`) or a single requirement (`📌 FR-02`):
 
-**1. Belgede bölüm düzeyinde müdahale.** Bir aşamanın belgesinde **🎯 Bölüm** moduna geç; bir başlık (`§`) ya da tek bir gereksinim (`📌 FR-02`) seç:
-
-| İşlem | Ne yapar |
+| Action | What it does |
 | --- | --- |
-| 💬 Sor | O aşamanın ajanına bölüm hakkında soru sorar; belge değişmez, yanıt ajan akışına da düşer. |
-| ✍️ Yeniden yaz | Talimata göre bölümü yeniden yazdırır (ör. "kabul kriterlerini Given/When/Then yap"). |
-| ➕ Ekle | Bölümün altına yeni içerik yazdırır (ör. yeni bir FR; numara otomatik sıradakidir). |
-| 🗑️ Sil / ✏️ Elle | Bölümü siler ya da elle düzenlersin. |
+| 💬 Ask | Asks that stage's agent a question about the section; the document does not change, the answer also lands in the agent feed. |
+| ✍️ Rewrite | Has the section rewritten according to the instruction (e.g. "make the acceptance criteria Given/When/Then"). |
+| ➕ Add | Has new content written below the section (e.g. a new FR; the number is automatically the next one). |
+| 🗑️ Delete / ✏️ Manual | Deletes the section or you edit it by hand. |
 
-Ajanın önerisi **diff** olarak gösterilir; **Kabul et** dersen kaydedilir. Belgenin önceki hâli `runs/<id>/versions/` altına yedeklenir.
+The agent's proposal is shown as a **diff**; if you **Accept** it is saved. The document's previous version is backed up under `runs/<id>/versions/`.
 
-**2. Etki: "güncel değil".** Bir belge değişince sonraki aşamalar otomatik yeniden üretilmez; diyagramda sarı **↻ Güncel değil** olarak işaretlenir. Uyarıdaki **Etkilenenleri güncelle** iki seçenek sunar:
-- **Delta:** mevcut belgeler ve kod korunur; ajanlar belgenin tamamını değil yalnızca değişen ya da yeni bölümleri döndürür ve bunlar başlık eşleşmesiyle belgeye yerleştirilir (değişen yerler `[CR-xxx]` ile etiketlenir). Çıktı kısa kaldığı için iterasyon hızlıdır; kodda yalnızca değişen dosyalar yazılır, ardından tüm testler regresyon olarak koşar.
-- **Baştan üret:** bu aşamalar sıfırdan yazılır.
+**2. Impact: "out of date".** When a document changes, later stages are not regenerated automatically; they are marked in yellow **↻ Out of date** in the diagram. **Update affected stages** in the warning offers two options:
+- **Delta:** the existing documents and code are kept; the agents return not the whole document but only the changed or new sections, which are placed into the document by heading match (changed places are tagged `[CR-xxx]`). Because the output stays short the iteration is fast; only changed files are written in the code, then all tests run as regression.
+- **Regenerate:** these stages are written from scratch.
 
-Fikir/kısıt değişikliği bütün aşamaları "güncel değil" yapar.
+Changing the idea/constraints marks all stages "out of date".
 
-**3. Değişiklik talebi (yeni özellik / hata / değişiklik).** Üst çubukta **📝 Değişiklik**:
-1. Talep oluştur (`CR-001`, türü ve açıklaması).
-2. **Etki analizi:** Etki Analizi Ajanı izlenebilirlik zinciriyle (FR → tasarım → dosya → test) etkilenen gereksinim, tasarım, dosya ve testleri raporlar ve başlangıç aşamasını önerir (yeni/değişen gereksinim → Analiz, yalnızca tasarım → Tasarım, yalnızca kod/hata → Kodlama). Ayrıca değişiklikten **etkilenmeyen aşamaları** (`ATLA: review, deployment, maintenance`) önerir; onay ekranında bu liste düzenlenebilir. Atlanan aşama diyagramda kesik çizgili **↷ Atlandı** olarak görünür ve önceki belgesi korunur. Kodlama ve test hiçbir zaman atlanmaz.
-3. **Açık sorular:** Etki analizi belirsiz noktaları `SORU:` satırları olarak listeler (ör. "Kelvin negatif olabilir mi?"). Hepsini yanıtlamadan uygulanamaz; yanıtlar talebe kaydedilir ve bütün aşamalara kesin karar olarak gider. Böylece netleştirme ajanın soru sorup sormamasına bırakılmaz.
-4. **Onayla ve uygula:** başlangıç aşamasından itibaren delta iterasyonu çalışır; önceki aşamalar olduğu gibi kalır.
-   - **Yeni özellik:** yeni gereksinim `FR-0n [CR-001]` olarak eklenir, tasarım ve kod güncellenir, yeni testler mevcutlara eklenir.
-   - **Hata (TDD):** Test Ajanı önce hatayı yeniden üreten bir regresyon testi yazar ve testin **başarısız** olduğu doğrulanır; Geliştirme Ajanı bu başarısız test çıktısıyla kodu düzeltir; ardından tüm testler koşar.
-5. Sonuç `CHANGELOG.md`'ye yazılır; talep **Tamamlandı** ya da **Başarısız** olur. Diyagramda geri dönüşler (revizyon, onarım) sayaçlarıyla kalıcı olarak görünür; birden fazla çalışan aşamalar ×N rozeti taşır.
+**3. Change request (new feature / bug / change).** **📝 Changes** in the top bar:
+1. Create a request (`CR-001`, its type and description).
+2. **Impact analysis:** the Impact Analysis Agent reports the affected requirements, design, files and tests through the traceability chain (FR → design → file → test) and suggests a starting stage (new/changed requirement → Analysis, design only → Design, code/bug only → Development). It also suggests the **stages not affected** by the change (`SKIP: review, deployment, maintenance`); this list can be edited on the approval screen. A skipped stage appears in the diagram with a dashed outline as **↷ Skipped** and keeps its previous document. Development and testing are never skipped.
+3. **Open questions:** the impact analysis lists unclear points as `QUESTION:` lines (e.g. "Can Kelvin be negative?"). It cannot be applied until all are answered; the answers are saved on the request and go to all stages as firm decisions. So clarification is not left to whether an agent happens to ask.
+4. **Approve and apply:** the delta iteration runs from the starting stage on; earlier stages stay as they are.
+   - **New feature:** the new requirement is added as `FR-0n [CR-001]`, design and code are updated, new tests are added to the existing ones.
+   - **Bug (TDD):** the Test Agent first writes a regression test that reproduces the bug and it is verified that the test **fails**; the Development Agent fixes the code with that failing test output; then all tests run.
+5. The result is written to `CHANGELOG.md`; the request becomes **Completed** or **Failed**. In the diagram the loop-backs (revision, repair) stay visible permanently with their counters; stages that ran more than once carry a ×N badge.
 
-**Sürüm geçmişi.** Her biten iterasyon — ilk üretim, her CR, her bugfix, başarılı ya da başarısız — bir sürüm olarak saklanır (`v1 · İlk sürüm`, `v2 · CR-001 · Yeni özellik: …`). Sürümle birlikte o anki belgelerin ve kodun kopyası (`runs/<id>/iterations/v<n>/`) ve olay aralığı tutulur. Üst çubuktaki **🕓 Sürümler** penceresinde bir sürüm seçince o andaki yaşam döngüsü diyagramı, o sürümde geçen ajan süresi, sürümü oluşturan talep ve netleştirmeleri, belgeleri ve **önceki sürümle farkı** görünür; sürüm ZIP olarak indirilebilir. Başlıkta projenin güncel sürümü yazar.
+**Version history.** Every finished iteration — first generation, every CR, every bugfix, successful or failed — is stored as a version (`v1 · Initial version`, `v2 · CR-001 · New feature: …`). With the version, a copy of the documents and code at that moment (`runs/<id>/iterations/v<n>/`) and the event range are kept. In the **🕓 Versions** window of the top bar, picking a version shows the lifecycle diagram at that moment, the agent time spent in that version, the request that produced it with its clarifications, the documents and the **diff against the previous version**; a version can be downloaded as a ZIP. The header shows the project's current version.
 
-Chat kutusuna yazılan notlar da sonraki aşamaların bağlamına girer (ör. "arayüz koyu tema olsun").
+Notes written in the chat box also enter the context of later stages (e.g. "the UI should use a dark theme").
 
 ## Docker Compose
 
-Her proje bir Dockerfile ve Compose dosyası alır. Veritabanı olarak Postgres seçilirse `db`, Redis seçilirse `redis`, OpenTelemetry seçilirse Collector, OpenObserve seçilirse Collector ve OpenObserve servisleri eklenir. Gerekli değişkenler `project/.env.example` içindedir. Değerleri `project/.env` içine koy:
+Every project gets a Dockerfile and a Compose file. If Postgres is chosen as the database a `db` service is added, for Redis `redis`, for OpenTelemetry the Collector, for OpenObserve the Collector and OpenObserve services. The required variables are in `project/.env.example`. Put the values into `project/.env`:
 
-Proje klasörüne girip `docker compose config`, `docker compose up --build -d` ve gerektiğinde `docker compose down` kullan.
+Enter the project folder and use `docker compose config`, `docker compose up --build -d` and, when needed, `docker compose down`.
 
-OpenObserve seçilirse `OPENOBSERVE_BASIC_AUTH`, `ZO_ROOT_USER_EMAIL:ZO_ROOT_USER_PASSWORD` dizgesinin Base64 kodlanmış hâlidir. Uygulama telemetriyi `otel-collector:4318` adresine göndermelidir; seçilen dilin SDK ve enstrümantasyonunu Developer Agent sağlar. Yayımlamadan önce Dockerfile, Compose ve uygulama kodunu gözden geçir.
+If OpenObserve is chosen, `OPENOBSERVE_BASIC_AUTH` is the Base64-encoded form of the string `ZO_ROOT_USER_EMAIL:ZO_ROOT_USER_PASSWORD`. The application must send telemetry to `otel-collector:4318`; the Development Agent provides the SDK and instrumentation of the chosen language. Review the Dockerfile, Compose and application code before publishing.
 
-## Arayüz ve yönetim API'si
+## UI and management API
 
-Tarayıcı arayüzü `make run` ile açılır. Yönetim API'si gerekiyorsa `VENV_PY -m uvicorn autosdlc.api:app --host 127.0.0.1 --port 8000` kullanabilirsin.
+The browser UI opens with `make run`. If you need the management API use `VENV_PY -m uvicorn autosdlc.api:app --host 127.0.0.1 --port 8000`.
 
-Streamlit arayüzü fikir ve mimari seçimleri toplar; çalışma geçmişini ve belgeleri gösterir. Yönetim API'sinde `GET /questions`, `POST /runs`, `GET /runs`, `GET /runs/{id}` ve `GET /health` bulunur. `POST /runs` isteği `decisions` alanında gerekli seçimleri alır ve çalışma bitene kadar bekler. API belgeleri `http://127.0.0.1:8000/docs` adresindedir.
+The Streamlit UI collects the idea and architecture choices; it shows the run history and documents. The management API has `GET /questions`, `POST /runs`, `GET /runs`, `GET /runs/{id}` and `GET /health`. The `POST /runs` request takes the required choices in the `decisions` field and waits until the run finishes. The API documentation is at `http://127.0.0.1:8000/docs`.
 
-## Geliştirme doğrulaması
+## Development verification
 
 ```bash
 make test
 ```
 
-AI tarafından üretilen kod ve testler yerel alt süreçte çalışır. Bu araç üretilen kod için güvenlik sandbox'ı sağlamaz; güvenilmeyen fikir veya promptları çalıştırmadan ve dağıtmadan önce incele.
+AI-generated code and tests run in a local subprocess. This tool does not provide a security sandbox for generated code; review untrusted ideas or prompts before running and deploying them.

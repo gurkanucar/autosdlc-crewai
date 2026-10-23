@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 
 
 RESERVED_DIRECTORIES = {"docs", "node_modules", "runs", ".venv", ".git"}
-# .gitignore, .github/ gibi yaygın nokta dosyalarına izin verilir; gizli değer ve ortam klasörlerine verilmez.
+# Common dotfiles such as .gitignore and .github/ are allowed; secrets and environment folders are not.
 FORBIDDEN_PARTS = {".git", ".venv", ".autosdlc-venv", ".env", ".ssh"}
 
 
@@ -16,10 +16,10 @@ def _forbidden_part(part: str) -> bool:
 
 def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
     if not files or len(files) > 40:
-        raise ValueError("Ajan 1–40 dosya döndürmeli")
+        raise ValueError("The agent must return 1–40 files")
     for name, content in files.items():
         if not isinstance(name, str) or not isinstance(content, str):
-            raise ValueError("Üretilen dosya adları ve içerikleri metin olmalı")
+            raise ValueError("Generated file names and contents must be text")
         path = PurePosixPath(name)
         if (
             not path.parts
@@ -35,10 +35,10 @@ def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
             or path.parts[0] in RESERVED_DIRECTORIES
             or len(content.encode("utf-8")) > 50_000
         ):
-            raise ValueError(f"İzin verilmeyen üretilmiş dosya: {name}")
+            raise ValueError(f"Generated file not allowed: {name}")
         target = project_dir.joinpath(*path.parts)
         if not target.resolve().is_relative_to(project_dir.resolve()):
-            raise ValueError(f"Üretilen dosya proje klasörünün dışına çıkıyor: {name}")
+            raise ValueError(f"The generated file escapes the project folder: {name}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
 
