@@ -15,7 +15,7 @@ import streamlit.components.v1 as components
 import yaml
 from dotenv import load_dotenv
 
-from autosdlc.intake import choice_label, questions, validate_decisions
+from autosdlc.intake import choice_label, questions, templates, validate_decisions
 from autosdlc.lifecycle import STAGE_KEYS, STAGE_NAMES, STAGES, counters, render_svg, stage_states
 from autosdlc.models import available_models, default_model
 from autosdlc.project_management import delete_project
@@ -112,6 +112,39 @@ def start_run(idea: str, decisions: dict[str, str], output: Path | None, model: 
 
 def resume_run(run_id: str, api_key: str | None) -> None:
     _spawn(run_id, "resume", idea="", resume_run_id=run_id, api_key=api_key)
+
+
+FORM_FIELDS = {"project_type", "stack", "constraints"}
+
+
+def apply_template(template_id: str | None) -> None:
+    """Seçilen şablonun değerlerini form alanlarına yazar (düğme geri çağrısı: widget'lardan önce çalışır)."""
+    template = next((item for item in templates() if item["id"] == template_id), None)
+    if template is None:
+        return
+    chosen = template["decisions"]
+    st.session_state.update({
+        "idea_input": template["idea"],
+        "project_type_input": chosen["project_type"],
+        "stack_input": chosen["stack"],
+        "constraints_input": chosen.get("constraints", ""),
+    })
+    for name, item in questions().items():
+        if name not in FORM_FIELDS:
+            st.session_state[f"choice_{name}"] = chosen.get(name, item["options"][0])
+
+
+def template_picker() -> None:
+    catalog = {item["id"]: item for item in templates()}
+    with st.container(border=True):
+        pick, apply = st.columns([4, 1], vertical_alignment="bottom")
+        selected = pick.selectbox(
+            "📋 Örnek proje şablonu", [None, *catalog], key="template_choice",
+            format_func=lambda key: "— Şablon seçerek formu doldur —" if key is None else catalog[key]["title"],
+        )
+        apply.button("Uygula", key="apply_template", disabled=selected is None, width="stretch",
+                     on_click=apply_template, args=(selected,))
+        st.caption(catalog[selected]["description"] if selected else "Bir şablon seçip Uygula'ya bas; alanları sonra istediğin gibi değiştirebilirsin.")
 
 
 def api_key_field(prefix: str) -> tuple[bool, str | None]:
@@ -312,14 +345,15 @@ def home_page() -> None:
     left, right = st.columns([2, 1], gap="large")
     with left:
         st.subheader("1 · Proje tanımı")
-        idea = st.text_area("Ne geliştirmek istiyorsun?", placeholder="Örn: Küçük işletme için stok takip uygulaması; ürün ekleme, stok hareketi ve kritik stok uyarısı", height=110)
+        template_picker()
+        idea = st.text_area("Ne geliştirmek istiyorsun?", key="idea_input", placeholder="Örn: Küçük işletme için stok takip uygulaması; ürün ekleme, stok hareketi ve kritik stok uyarısı", height=130)
         catalog = questions()
         type_col, stack_col = st.columns([1, 2])
         project_type = type_col.selectbox(
             catalog["project_type"]["question"], catalog["project_type"]["options"],
-            format_func=lambda value: choice_label("project_type", value),
+            key="project_type_input", format_func=lambda value: choice_label("project_type", value),
         )
-        stack = stack_col.text_input(catalog["stack"]["question"], placeholder="Örn: Node.js/Express, pnpm, sade HTML/CSS/JS")
+        stack = stack_col.text_input(catalog["stack"]["question"], key="stack_input", placeholder="Örn: Node.js/Express, pnpm, sade HTML/CSS/JS")
         decisions = {"project_type": project_type, "stack": stack}
         options = [(name, item) for name, item in catalog.items()
                    if name not in {"project_type", "stack", "constraints"} and (not item.get("when") or project_type in item["when"])]
@@ -331,7 +365,7 @@ def home_page() -> None:
                     item["question"], item["options"], key=f"choice_{name}",
                     format_func=lambda value, key=name: choice_label(key, value),
                 )
-        decisions["constraints"] = st.text_area(catalog["constraints"]["question"], placeholder="Örn: pnpm kullan, ön yüz sade HTML olsun, Türkçe arayüz.", height=75)
+        decisions["constraints"] = st.text_area(catalog["constraints"]["question"], key="constraints_input", placeholder="Örn: pnpm kullan, ön yüz sade HTML olsun, Türkçe arayüz.", height=100)
         path_col, browse_col = st.columns([5, 1], vertical_alignment="bottom")
         output_path = path_col.text_input("Yeni proje klasörü (isteğe bağlı)", key="output_path", placeholder="Boşsa projects/<proje-adı>-<kimlik>")
         if browse_col.button("Gözat…", width="stretch"):

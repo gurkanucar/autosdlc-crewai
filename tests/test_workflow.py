@@ -605,3 +605,35 @@ def test_streamlit_create_button_starts_a_run(monkeypatch):
         time.sleep(0.1)
     assert calls and calls[0]["idea"] == "Basit envanter takip uygulaması"
     assert calls[0]["run_id"] and calls[0]["decisions"]["stack"] == "Node.js, pnpm, sade HTML"
+
+
+def test_templates_are_valid_decisions():
+    from autosdlc.intake import templates
+
+    items = templates()
+    assert len({item["id"] for item in items}) == len(items) >= 4
+    for item in items:
+        assert 0 < len(item["idea"].strip()) <= 1000, item["id"]
+        validate_decisions(item["decisions"])
+    inventory = next(item for item in items if item["id"] == "envanter-takip")["decisions"]
+    assert inventory["project_type"] == "fullstack" and "pnpm" in inventory["stack"]
+
+
+def test_streamlit_template_fills_the_form(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
+    app = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30).run()
+    assert not app.exception and app.button(key="apply_template").disabled
+    app.selectbox(key="template_choice").select("envanter-takip").run()
+    app.button(key="apply_template").click().run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert "envanter takip" in app.text_area(key="idea_input").value
+    assert app.selectbox(key="project_type_input").value == "fullstack"
+    assert "pnpm" in app.text_input(key="stack_input").value
+    assert app.selectbox(key="choice_database").value == "sqlite"
+    assert "Türkçe" in app.text_area(key="constraints_input").value
+    app.selectbox(key="template_choice").select("gorev-api").run()
+    app.button(key="apply_template").click().run()
+    assert app.selectbox(key="project_type_input").value == "backend"
+    assert app.selectbox(key="choice_ui").value == "none"

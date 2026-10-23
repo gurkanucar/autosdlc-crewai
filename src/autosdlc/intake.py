@@ -31,6 +31,12 @@ def questions() -> dict[str, dict]:
     return yaml.safe_load(source.read_text(encoding="utf-8"))
 
 
+def templates() -> list[dict]:
+    """Arayüzde formu dolduran örnek proje şablonları."""
+    source = files("autosdlc").joinpath("config/templates.yaml")
+    return yaml.safe_load(source.read_text(encoding="utf-8"))
+
+
 def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
     selected = decisions or {}
     catalog = questions()
