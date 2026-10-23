@@ -80,7 +80,8 @@ development:
       api_test: [çalıştırılabilir, argüman, ...] (backend/fullstack için zorunlu)
       ui_test: [çalıştırılabilir, argüman, ...] (web UI varsa zorunlu)
       start: [çalıştırılabilir, argüman, ...] (web UI varsa zorunlu)
-    Test komutları tek bir dosyayı değil test klasörünü çalıştırsın (ör. pytest -q tests);
+    Test dosyası yazma: testleri Test Ajanı tests/ klasörü altında yazar.
+    Test komutları tek bir dosyayı değil tests klasörünü çalıştırsın (ör. pytest -q tests);
     böylece sonradan eklenen testler de koşar.
     Bu komutlar proje kökünde kabuk kullanılmadan çalıştırılır. Python için
     çalıştırılabilir olarak "python" yaz; uygulama doğru yorumlayıcıyı seçer.
@@ -106,8 +107,8 @@ testing:
     $context
     Uygulama dosyaları:
     $files
-    Bütün açıklamaları Türkçe yaz. Seçilen dil ve framework'e uygun testleri tests/
-    veya test/ altında üret. YALNIZCA {"files": {"goreli/yol": "tam içerik"}}
+    Bütün açıklamaları Türkçe yaz. Seçilen dil ve framework'e uygun testleri YALNIZCA
+    tests/ (ya da test/) klasörü altında üret; proje köküne test dosyası koyma. YALNIZCA {"files": {"goreli/yol": "tam içerik"}}
     biçiminde JSON döndür. Testleri FR/NFR kimlikleriyle ilişkilendir; başarılı
     ve hatalı kullanımları kapsa. Her testin adında veya açıklamasında ilgili
     kimliği (ör. FR-01) açıkça yaz; izlenebilirlik matrisi bu kimliklerden üretilir.

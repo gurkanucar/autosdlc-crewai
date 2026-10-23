@@ -12,8 +12,8 @@
     project_type: library
     stack: Python 3.12, pytest
     constraints: >-
-      Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü, tek test
-      dosyası, project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla
+      Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü,
+      tests/ altında tek test dosyası, project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla
       yarım sayfa); en fazla 3 FR ve 2 NFR yaz.
 
 - id: envanter-takip

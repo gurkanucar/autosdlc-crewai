@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from autosdlc.crewai_engine import CrewAIEngine
 from autosdlc.exports import export_files, export_zip
+from autosdlc.desktop import open_folder
 from autosdlc.intake import choice_label, questions, templates, validate_decisions
 from autosdlc.lifecycle import (
     STAGE_KEYS, STAGE_NAMES, STAGES, counters, format_duration, render_svg, stage_metrics, stage_states,
@@ -793,6 +794,7 @@ def header(db: History, row: dict) -> None:
         primary = st.container(width="content")
         changes = st.container(width="content")
         readme = st.container(width="content")
+        folder = st.container(width="content")
         downloads = st.container(width="content")
         manage = st.container(width="content")
         if changes.button("📝 Değişiklik", key=f"changes_{run_id}", width="stretch", help="Yeni özellik, hata ya da değişiklik talebi"):
@@ -800,6 +802,13 @@ def header(db: History, row: dict) -> None:
         readme_path = Path(row["project_dir"]) / "README.md"
         if readme.button("📘 README", key=f"readme_{run_id}", width="stretch", disabled=not readme_path.is_file()):
             open_focus(row, readme_path, "README")
+        project_dir = Path(row["project_dir"])
+        if folder.button("📂 Klasör", key=f"open_folder_{run_id}", width="stretch", disabled=not project_dir.is_dir(),
+                         help=f"Proje klasörünü dosya yöneticisinde aç (Explorer / Finder): {project_dir}"):
+            try:
+                open_folder(project_dir)
+            except ValueError as exc:
+                st.error(str(exc))
         with downloads.popover("İndir", icon=":material/download:", width="stretch"):
             st.markdown("**Proje çıktıları**")
             st.caption("Şu ana kadar üretilen dosyalar indirilir. Bağımlılıklar ve yerel .env dosyaları dahil edilmez.")

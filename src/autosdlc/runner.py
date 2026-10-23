@@ -99,6 +99,16 @@ def _stop_process(process: subprocess.Popen) -> None:
         process.wait()
 
 
+def test_placement_problem(tests: dict[str, str]) -> str | None:
+    """Test Ajanı yalnızca tests/ veya test/ altına yazabilir; ihlal varsa gerekçeyi döndürür."""
+    outside = sorted(name for name in tests if not name.startswith(TEST_DIRS))
+    if not tests or len(outside) == len(tests):
+        return "Test dosyaları tests/ veya test/ altında olmalı" + (f" (gelen: {', '.join(outside)})" if outside else "")
+    if outside:
+        return f"Test Ajanı yalnızca tests/ veya test/ altına yazabilir (dışarıda: {', '.join(outside)})"
+    return None
+
+
 PATH_RUNNERS = {"pytest", "node", "jest", "mocha", "vitest"}
 
 
@@ -583,13 +593,22 @@ class RunSession:
             tests = {**existing, **new_tests}
             self._event("testing", "regression", f"{len(new_tests)} yeni/güncellenen, toplam {len(tests)} test dosyası")
         else:
-            tests = self._with_questions(
-                "testing", lambda: self.engine.tests(self.idea, self._context("testing"), self.code_files)
-            )
-            if not any(name.startswith(TEST_DIRS) for name in tests):
-                raise ValueError("Test ajanı tests/ veya test/ altında dosya üretmeli")
-            if any(not name.startswith(TEST_DIRS) for name in tests):
-                raise ValueError("Test ajanı yalnızca test dosyası yazabilir")
+            gate_feedback = ""
+            for _ in range(2):
+                tests = self._with_questions("testing", lambda: self.engine.tests(
+                    self.idea, gate_feedback + self._context("testing"), self.code_files
+                ))
+                problem = test_placement_problem(tests)
+                if problem is None:
+                    break
+                # Diğer kalite kapıları gibi: gerekçe Test Ajanı'na verilir, bir kez düzeltmesi istenir.
+                self._event("testing", "gate_failed", problem)
+                gate_feedback = (
+                    f"ÖNCEKİ TEST ÇIKTIN REDDEDİLDİ: {problem}. Bütün test dosyalarını tests/ klasörü altında "
+                    "yaz (ör. tests/test_x.py); kökteki test dosyalarını da tests/ altında yeniden yaz.\n\n"
+                )
+            else:
+                raise ValueError(problem)
             write_generated_files(self.project_dir, tests)
         self.test_files = tests
         if hasattr(self.engine, "current_files"):

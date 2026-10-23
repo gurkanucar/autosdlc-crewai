@@ -1107,3 +1107,33 @@ def test_truncated_output_is_reported_and_development_is_batched(monkeypatch):
     files = engine.code("x", "docs")
     assert batches == [["f0.py", "f1.py", "f2.py", "f3.py"], ["f4.py", "f5.py"]]
     assert set(files) == {f"f{i}.py" for i in range(6)} and "BU ADIMDA KOD YAZMA" in plan_calls[0]
+
+
+def test_tests_written_outside_tests_dir_are_sent_back_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    contexts = []
+
+    class RootTester(StubEngine):
+        def tests(self, idea, docs, files, change=None):
+            contexts.append(docs)
+            content = super().tests(idea, docs, files)["tests/test_api.py"]
+            return {"tests/test_api.py": content} if "REDDEDİLDİ" in docs else {"test_api.py": content}
+
+    result = run_project("Root tests", workspace=tmp_path, engine=RootTester(), decisions=BACKEND)
+    assert result.status == "completed", result.error
+    assert len(contexts) == 2 and "test_api.py" in contexts[1].split("\n")[0]
+    assert (result.project_dir / "tests/test_api.py").is_file() and not (result.project_dir / "test_api.py").exists()
+
+
+@pytest.mark.parametrize("platform, expected", [("win32", "startfile"), ("darwin", ["open"]), ("linux", ["xdg-open"])])
+def test_open_folder_uses_platform_file_manager(tmp_path, monkeypatch, platform, expected):
+    from autosdlc import desktop
+
+    calls = []
+    monkeypatch.setattr(desktop.sys, "platform", platform)
+    monkeypatch.setattr(desktop.os, "startfile", lambda path: calls.append("startfile"), raising=False)
+    monkeypatch.setattr(desktop.subprocess, "run", lambda command, **kwargs: calls.append(command[:1]))
+    desktop.open_folder(tmp_path)
+    assert calls == [expected]
+    with pytest.raises(ValueError, match="bulunamadı"):
+        desktop.open_folder(tmp_path / "yok")
