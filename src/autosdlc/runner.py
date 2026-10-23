@@ -478,7 +478,7 @@ class RunSession:
         self.code_files = self._with_questions("development", lambda: self.engine.code(self.idea, self._context("development")))
         write_generated_files(self.project_dir, self.code_files)
         self._save_code_files()
-        self.manifest = read_project_manifest(self.project_dir, self.decisions)
+        self._load_manifest()
         write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
         self._event("development", "completed", ", ".join(self.code_files))
         return "uygulama hazır"
@@ -519,7 +519,7 @@ class RunSession:
             write_generated_files(self.project_dir, replacements)
             self.code_files.update(replacements)
             self._save_code_files()
-            self.manifest = read_project_manifest(self.project_dir, self.decisions)
+            self._load_manifest()
             write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
         self._event("development", "completed", ", ".join(replacements) or "değişen dosya yok")
         return "değişiklik uygulandı"
@@ -543,6 +543,25 @@ class RunSession:
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return env
+
+    def _load_manifest(self) -> None:
+        """project.yaml/Dockerfile doğrulanır; hata varsa Geliştirme Ajanı'na gerekçesiyle bir kez düzelttirilir."""
+        try:
+            self.manifest = read_project_manifest(self.project_dir, self.decisions)
+            return
+        except ValueError as exc:
+            problem = str(exc)
+        self._event("development", "gate_failed", problem)
+        fixes = self._with_questions("development", lambda: self.engine.code(
+            self.idea, self._context("development"),
+            feedback=f"PROJE YAPILANDIRMASI DOĞRULANAMADI: {problem}\nproject.yaml ve gerekiyorsa Dockerfile'ı düzelterek döndür.",
+        ))
+        fixes = {name: content for name, content in fixes.items() if not name.startswith(TEST_DIRS)}
+        if fixes:
+            write_generated_files(self.project_dir, fixes)
+            self.code_files.update(fixes)
+            self._save_code_files()
+        self.manifest = read_project_manifest(self.project_dir, self.decisions)
 
     def _save_code_files(self) -> None:
         (self.output_dir / "code_files.json").write_text(
@@ -615,7 +634,7 @@ class RunSession:
                 write_generated_files(self.project_dir, replacements)
                 self.code_files.update(replacements)
                 self._save_code_files()
-                self.manifest = read_project_manifest(self.project_dir, self.decisions)
+                self._load_manifest()
                 self.setup_done = False
                 self._event("development", "repair_completed", ", ".join(replacements))
         summary = "BAŞARILI" if self.test_passed else "BAŞARISIZ"

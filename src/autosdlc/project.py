@@ -1,5 +1,6 @@
 """Validate the generated project's tool commands before executing them."""
 
+import shlex
 from pathlib import Path
 
 import yaml
@@ -17,8 +18,15 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
         raise ValueError("project.yaml bir sözlük içermeli")
     for key in COMMANDS:
         command = manifest.get(key)
-        if command is not None and (not isinstance(command, list) or not command or len(command) > 20 or not all(isinstance(arg, str) and 0 < len(arg) < 300 for arg in command)):
-            raise ValueError(f"project.yaml içindeki {key}, komut argümanları listesi olmalı")
+        # Modeller kullanılmayan komutu boş liste/boş dizge yazar ("ui_test: []"): bu "yok" demektir.
+        if command in (None, [], ""):
+            manifest.pop(key, None)
+            continue
+        # "python -m pytest -q" gibi tek dizge de kabul edilir; kabuk kullanılmadan argümanlara bölünür.
+        if isinstance(command, str):
+            command = manifest[key] = shlex.split(command)
+        if not isinstance(command, list) or len(command) > 20 or not all(isinstance(arg, str) and 0 < len(arg) < 300 for arg in command):
+            raise ValueError(f"project.yaml içindeki {key}, komut argümanları listesi olmalı (ör. [python, -m, pytest, -q, tests])")
     port = manifest.get("port", 8000)
     if not isinstance(port, int) or not 1024 <= port <= 65535:
         raise ValueError("project.yaml port değeri 1024–65535 arasında olmalı")

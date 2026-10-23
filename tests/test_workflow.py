@@ -141,7 +141,10 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
         "# Requirements\nFR-01: Create and list books.\nNFR-01: Fast.",
         "# Design\n```mermaid\nflowchart LR\nA-->B\n```\n```mermaid\nsequenceDiagram\nA->>B: Request\n```\n```mermaid\nerDiagram\nBOOK { int id }\n```",
         "# İnceleme\nBulgu yok.\nKARAR: ONAY",
-        json.dumps({"files": StubEngine().code("", "", feedback="fix")}),
+        # Kodlama: önce dosya planı, sonra dörder dosyalık gruplar.
+        json.dumps({"plan": [{"path": path, "purpose": "x"} for path in StubEngine().code("", "", feedback="fix")]}),
+        json.dumps({"files": dict(list(StubEngine().code("", "", feedback="fix").items())[:4])}),
+        json.dumps({"files": dict(list(StubEngine().code("", "", feedback="fix").items())[4:])}),
         json.dumps({"files": {
             "tests/test_api.py": "from fastapi.testclient import TestClient\nfrom app.main import app\n\ndef test_api():\n    assert TestClient(app).get('/').json()['answer'] == 1\n",
         }}),
@@ -200,7 +203,7 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     assert result.attempts == 1
     assert "BAŞARILI" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
     # Ajan yanıtları akış olarak alındı ve canlı gösterim dosyalarına yazıldı.
-    assert len(streamed) == 8
+    assert len(streamed) == 10  # 6 belge aşaması + test + kodlamada plan ve iki dosya grubu
     assert "book tracker" in (result.output_dir / "live" / "planning.md").read_text(encoding="utf-8").lower()
 
 
@@ -1026,3 +1029,81 @@ def test_language_rules_reach_every_agent_and_terms_are_not_translated(monkeypat
     assert all("DİL KURALLARI" in prompt and "addProduct" in prompt for prompt in prompts)
     assert choice_label("project_type", "fullstack") == "Fullstack" and choice_label("project_type", "backend") == "Backend"
     assert "Arka uç" not in str(questions()) and "Backend" in questions()["ui"]["question"]
+
+
+def test_empty_manifest_commands_mean_absent(tmp_path):
+    from autosdlc.project import read_project_manifest
+
+    (tmp_path / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+    (tmp_path / "project.yaml").write_text(
+        'port: 1024\nsetup: []\nunit_test: "python -m pytest -q tests"\napi_test: []\nui_test: ""\nstart:\n', encoding="utf-8")
+    manifest = read_project_manifest(tmp_path, validate_decisions({"project_type": "library", "stack": "Python"}))
+    assert manifest["unit_test"] == ["python", "-m", "pytest", "-q", "tests"]
+    assert not {"setup", "api_test", "ui_test", "start"} & set(manifest)
+
+
+def test_invalid_manifest_is_sent_back_to_developer(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    feedbacks = []
+
+    class SloppyDeveloper(StubEngine):
+        def code(self, idea, docs, feedback=None, change=None):
+            files = super().code(idea, docs, feedback=None)
+            if feedback and "PROJE YAPILANDIRMASI" in feedback:
+                feedbacks.append(feedback)
+                return {"project.yaml": "port: 8000\napi_test: [python, -m, pytest, -q, tests]\n"}
+            if feedback:
+                return super().code(idea, docs, feedback)
+            return {**files, "project.yaml": "port: 8000\napi_test: 42\n"}
+
+    result = run_project("Sloppy API", workspace=tmp_path, engine=SloppyDeveloper(), decisions=BACKEND)
+    assert result.status == "completed", result.error
+    assert feedbacks and "api_test" in feedbacks[0]
+
+
+def test_truncated_output_is_reported_and_development_is_batched(monkeypatch):
+    from autosdlc.crewai_engine import OutputTruncated
+
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    replies = iter([
+        ('{"files": {"a.py": "x = ', "length"),  # _ask: kesik yanıt → OutputTruncated
+        ('{"files": {"a.py": "x = ', "length"),  # _ask_files ilk deneme: yine kesik
+        ('{"files": {"a.py": "x = 1"}}', "stop"),  # _ask_files ikinci deneme: "daha kısa yaz" uyarısıyla
+    ])
+    prompts = []
+
+    class Response:
+        def __init__(self, content, finish):
+            self.content, self.finish = content, finish
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"finish_reason": self.finish, "message": {"content": self.content}}]}
+
+    def fake_post(url, *, headers, json, timeout):
+        prompts.append(str(json["messages"]))
+        return Response(*next(replies))
+
+    monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
+    engine = CrewAIEngine(api_key="test-key")
+    with pytest.raises(OutputTruncated):
+        engine._ask("testing", idea="x", context="", files="{}")
+    assert engine._ask_files("testing", idea="x", context="", files="{}") == {"a.py": "x = 1"}
+    assert "uzunluk sınırında kesildi" in prompts[-1] and "daha az ve daha kısa" in prompts[-1]
+
+    plan_calls = []
+    monkeypatch.setattr(engine, "_ask", lambda stage, extra="", **values: (plan_calls.append(extra), '{"plan": ['
+        + ", ".join(f'{{"path": "f{i}.py"}}' for i in range(6)) + "]}")[1])
+    batches = []
+
+    def fake_files(stage, extra="", **values):
+        names = extra.split("ŞİMDİ YALNIZCA şu dosyaları eksiksiz yaz: ")[1].split(". ")[0].split(", ")
+        batches.append(names)
+        return {name: "pass" for name in names}
+
+    monkeypatch.setattr(engine, "_ask_files", fake_files)
+    files = engine.code("x", "docs")
+    assert batches == [["f0.py", "f1.py", "f2.py", "f3.py"], ["f4.py", "f5.py"]]
+    assert set(files) == {f"f{i}.py" for i in range(6)} and "BU ADIMDA KOD YAZMA" in plan_calls[0]

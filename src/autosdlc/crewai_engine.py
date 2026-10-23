@@ -20,18 +20,22 @@ DEFAULT_MODEL = "glm-5.3-flash"
 RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
-def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None]) -> str:
-    """SSE akışını okur ve biriken metni her parçada on_text'e verir; sunucu akış vermezse düz JSON'a düşer."""
+def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None]) -> tuple[str, str | None]:
+    """SSE akışını okur ve biriken metni her parçada on_text'e verir; sunucu akış vermezse düz JSON'a düşer.
+
+    (metin, finish_reason) döndürür.
+    """
     with httpx.stream("POST", url, headers=headers, json={**payload, "stream": True}, timeout=300) as response:
         if response.status_code >= 400:
             response.read()  # Hata gövdesi (sunucunun gerekçesi) mesajda gösterilebilsin.
         response.raise_for_status()
         if "text/event-stream" not in response.headers.get("content-type", ""):
             response.read()
-            content = response.json()["choices"][0]["message"]["content"]
-            on_text(content)
-            return content
+            choice = response.json()["choices"][0]
+            on_text(choice["message"]["content"])
+            return choice["message"]["content"], choice.get("finish_reason")
         parts: list[str] = []
+        finish = None
         for line in response.iter_lines():
             if not line.startswith("data:"):
                 continue
@@ -39,11 +43,23 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
             if data == "[DONE]":
                 break
             choices = json.loads(data).get("choices") or [{}]
+            finish = choices[0].get("finish_reason") or finish
             delta = (choices[0].get("delta") or {}).get("content") or ""
             if delta:
                 parts.append(delta)
                 on_text("".join(parts))
-        return "".join(parts)
+        return "".join(parts), finish
+
+
+class OutputTruncated(ValueError):
+    """Model, çıktı uzunluk sınırına ulaştığı için yanıtı yarıda kesti."""
+
+
+PLAN_INSTRUCTION = (
+    "\nBU ADIMDA KOD YAZMA. Yukarıdaki JSON biçimi yerine YALNIZCA dosya planını döndür: "
+    '{"plan": [{"path": "goreli/yol", "purpose": "tek cümlelik amaç"}]}. '
+    "project.yaml ve Dockerfile dahil gereken bütün dosyaları listele; en fazla 30 dosya, kilit dosyası yok."
+)
 
 
 class ClarificationNeeded(Exception):
@@ -54,7 +70,21 @@ class ClarificationNeeded(Exception):
         self.question = question
 
 
-def _parse_file_bundle(raw: str) -> dict[str, str]:
+def _parse_plan(raw: str) -> list[dict]:
+    value = _extract_json(raw)
+    items = (value.get("plan") or value.get("files")) if isinstance(value, dict) else None
+    plan, seen = [], set()
+    for item in items if isinstance(items, list) else []:
+        path = item.get("path") if isinstance(item, dict) else item
+        if isinstance(path, str) and path.strip() and path not in seen:
+            seen.add(path)
+            plan.append({"path": path.strip(), "purpose": item.get("purpose", "") if isinstance(item, dict) else ""})
+    if not plan:
+        raise ValueError("Ajan geçerli bir dosya planı döndürmedi")
+    return plan[:40]
+
+
+def _extract_json(raw: str):
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -69,6 +99,11 @@ def _parse_file_bundle(raw: str) -> dict[str, str]:
             value = None
         if value is None:
             raise ValueError("Ajan geçerli JSON dosyaları döndürmedi")
+    return value
+
+
+def _parse_file_bundle(raw: str) -> dict[str, str]:
+    value = _extract_json(raw)
     files = value.get("files") if isinstance(value, dict) else None
     if not isinstance(files, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in files.items()
@@ -99,6 +134,8 @@ class CrewAIEngine:
                 inner.session_id = session_id
                 # Tanımlıysa yanıt akış olarak alınır ve biriken metin canlı gösterim için buraya verilir.
                 inner.listener = None
+                # Son yanıt modelin çıktı uzunluk sınırında kesildiyse True (finish_reason == "length").
+                inner.truncated = False
 
             def call(
                 inner,
@@ -119,11 +156,12 @@ class CrewAIEngine:
                     payload = {"model": inner.model, "messages": messages}
                     try:
                         if inner.listener is not None:
-                            content = _stream_completion(url, headers, payload, inner.listener)
+                            content, finish = _stream_completion(url, headers, payload, inner.listener)
                         else:
                             response = httpx.post(url, headers=headers, json=payload, timeout=300)
                             response.raise_for_status()
-                            content = response.json()["choices"][0]["message"]["content"]
+                            choice = response.json()["choices"][0]
+                            content, finish = choice["message"]["content"], choice.get("finish_reason")
                         break
                     except httpx.HTTPStatusError as exc:
                         # 400 normalde kalıcıdır; ama ağ geçidi geçici olarak da 400 dönebildiği için bir kez yeniden denenir.
@@ -145,6 +183,7 @@ class CrewAIEngine:
                         raise RuntimeError("OpenCode Go isteği başarısız") from exc
                     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
                         raise RuntimeError("OpenCode Go isteği veya yanıtı başarısız") from exc
+                inner.truncated = finish == "length"
                 if not isinstance(content, str) or not content.strip():
                     raise RuntimeError("OpenCode Go boş yanıt döndürdü")
                 return content
@@ -198,10 +237,13 @@ class CrewAIEngine:
             expected_output=task_config["expected_output"],
             agent=agent,
         )
+        self.llm.truncated = False
         result = self.Crew(
             agents=[agent], tasks=[task], process=self.Process.sequential, verbose=False
         ).kickoff()
         raw = result.raw.strip()
+        if self.llm.truncated:
+            raise OutputTruncated("Ajan çıktısı modelin uzunluk sınırında kesildi")
         match = re.fullmatch(r"KULLANICI_SORUSU:\s*(.{1,1000})", raw, re.DOTALL)
         if match:
             raise ClarificationNeeded(match.group(1).strip())
@@ -212,10 +254,36 @@ class CrewAIEngine:
         try:
             return _parse_file_bundle(self._ask(stage, extra=extra, **values))
         except ValueError as exc:
+            shorter = (" Bu kez daha az ve daha kısa dosya döndür; yalnızca gerekenleri yaz."
+                       if isinstance(exc, OutputTruncated) else "")
             return _parse_file_bundle(self._ask(stage, extra=extra + (
-                f"\nÖNCEKİ YANITIN REDDEDİLDİ: {exc}. Açıklama veya Markdown ekleme; "
+                f"\nÖNCEKİ YANITIN REDDEDİLDİ: {exc}.{shorter} Açıklama veya Markdown ekleme; "
                 'yalnızca {"files": {...}} biçiminde geçerli JSON döndür.'
             ), **values))
+
+    def _ask_files_batched(self, stage: str, batch_size: int = 4, **values: str) -> dict[str, str]:
+        """Büyük projeyi tek yanıtta yazdırmak çıktı sınırına takılır: önce dosya planı, sonra küçük gruplar.
+
+        Her grup, daha önce yazılan dosyaları görür; böylece modüller arası arayüzler tutarlı kalır.
+        Plan alınamazsa tek parça üretime geri dönülür.
+        """
+        try:
+            plan = _parse_plan(self._ask(stage, extra=PLAN_INSTRUCTION, **values))
+        except ValueError:
+            return self._ask_files(stage, **values)
+        plan_text = "\n".join(f"- {item['path']}: {item.get('purpose', '')}" for item in plan)
+        files: dict[str, str] = {}
+        for start in range(0, len(plan), batch_size):
+            batch = [item["path"] for item in plan[start:start + batch_size]]
+            extra = (
+                f"\nDOSYA PLANI (bütün proje):\n{plan_text}\n"
+                f"Daha önce yazılan dosyalar (bunlarla tutarlı ol, tekrar yazma):\n"
+                f"{json.dumps(files, ensure_ascii=False)[:16000]}\n"
+                f"ŞİMDİ YALNIZCA şu dosyaları eksiksiz yaz: {', '.join(batch)}. "
+                'Yalnızca {"files": {"goreli/yol": "tam içerik"}} JSON döndür.'
+            )
+            files.update(self._ask_files(stage, extra=extra, **values))
+        return files
 
     def document(self, stage: str, idea: str, context: str) -> str:
         return self._ask(stage, idea=idea, context=context[:24000])
@@ -236,7 +304,9 @@ class CrewAIEngine:
             # Hata özeti genellikle çıktının sonundadır; bu yüzden sondan alınır.
             instruction = f"Bu test çıktısına göre uygulamayı düzelt:\n{feedback[-8000:]}\n" + current
         else:
-            instruction = "İlk uygulamayı oluştur.\n"
+            files = self._ask_files_batched("development", idea=idea, context=docs[:20000], feedback="İlk uygulamayı oluştur.\n")
+            self.current_files.update(files)
+            return files
         files = self._ask_files("development", idea=idea, context=docs[:20000], feedback=instruction)
         self.current_files.update(files)
         return files

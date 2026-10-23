@@ -121,6 +121,8 @@ CrewAI Flow sıralamayı yönetir. Ajan rolleri [`agents.yaml`](src/autosdlc/con
 - **İzlenebilirlik matrisi:** Test aşaması `traceability.md` üretir. Gereksinim kimlikleri test dosyalarındaki referanslarla (`FR-01`, `test_fr01_...`) eşleştirilir ve FR/NFR kapsama oranı test raporuna ve dağıtım/bakım ajanlarına aktarılır.
 - **Testlerin korunması:** Onarım döngüsünde Geliştirme Ajanı `tests/` ve `test/` dosyalarını değiştiremez; bu tür değişiklikler reddedilir ve olay olarak kaydedilir. Böylece testler değiştirilerek "geçirilemez".
 - **Aşamaya özgü bağlam:** Her ajan yalnızca ilgili önceki belgeleri alır (ör. Kodlama: tasarım + gereksinimler). Kullanıcı yanıtları ve gerçek test sonucu bağlamın başına konur; uzun belgeler kırpılsa bile kaybolmaz.
+- **Parça parça kod üretimi:** İlk kodlamada Geliştirme Ajanı önce dosya planını çıkarır, sonra dosyaları dörderli gruplar hâlinde yazar; her grup önceki dosyaları görür. Büyük (ör. fullstack) projeler tek yanıtta modelin çıktı sınırına takılıp kesilmez. Bir yanıt yine de kesilirse bu açıkça bildirilir ve ajandan daha kısa yanıt istenir.
+- **Yapılandırma onarımı:** `project.yaml`/`Dockerfile` doğrulanamazsa hata Geliştirme Ajanı'na geri verilir ve bir kez düzelttirilir; kullanılmayan komutlar boş bırakılabilir (`ui_test: []`).
 - **Test kapsamı denetimi:** `project.yaml` test komutları bazı test dosyalarını çalıştırmıyorsa (ör. komut tek dosyayı hedefliyorsa) bu, test raporunda ve olaylarda uyarı olarak görünür; çalışmayan test geçmiş sayılmaz.
 
 ## Değişiklik yönetimi
