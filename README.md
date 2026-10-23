@@ -1,115 +1,90 @@
 # AutoSDLC
 
-CrewAI ajanlarıyla SDLC sürecini çalıştıran ders projesi. Kullanıcı küçük bir
-FastAPI + SQLite uygulaması fikri verir; sistem planlama, analiz, tasarım, kod,
-test, dağıtım ve bakım çıktılarını oluşturur. Test başarısız olursa hata çıktısı
-Developer Agent'a döner. En fazla iki düzeltme yapılır.
+AutoSDLC, bir proje fikrini CrewAI Flow ve yedi ajanla **Planlama → Analiz → Tasarım → Kodlama → Test → Dağıtım → Bakım** aşamalarından geçirir. Orkestrasyon Python ile yazılmıştır; **üretilen proje Python veya FastAPI ile sınırlı değildir**. Proje türünü ve teknoloji yığınını kullanıcı seçer (ör. Go/Gin, Node/Express, Python/Django, bir CLI veya kütüphane).
 
-## Akış
+## Kurulum
 
-```text
-Fikir → Planning → Analysis → Design → Developer → Tester + pytest
-                                          ↑                │
-                                          └── hata/düzeltme ┘
-                                              │
-                                        Deployment → Maintenance
+Python 3.11–3.13, OpenCode Go erişimi ve üretilecek projelerin seçilen araçları gerekir. Docker Compose yalnızca konteynerle çalıştırma için gereklidir. Git Bash veya PowerShell'de:
+
+```bash
+make run
 ```
 
-CrewAI Flow aşama sırasını yönetir. Yedi CrewAI ajanının rolü ve hedefi
-[`agents.yaml`](src/autosdlc/config/agents.yaml), görevleri ve beklenen çıktıları
-[`tasks.yaml`](src/autosdlc/config/tasks.yaml) içindedir. Bu dosyaları düzenleyerek
-ajan talimatlarını değiştirebilirsin. Dağıtım ve bakım raporlarını ilgili ajanlar
-yazar; Flow gerçek pytest sonucunu bu ajanlara iletir. Dockerfile akışta hazırlanır.
+İlk kullanımda Makefile `.venv` oluşturup paketi ve Playwright Chromium'u kurar, ardından proje fikrini ve kararları sorar. Yalnızca üç Make hedefi vardır: `setup`, `run`, `test`. İstersen kurulumu önceden `make setup` ile yapabilirsin. `make` yoksa `python -m venv .venv`, `.venv/Scripts/python.exe -m pip install -e .` ve `.venv/Scripts/python.exe -m playwright install chromium` kullan. Yerel `.env` içindeki `OPENCODE_API_KEY` otomatik okunur; `.env` Git tarafından yok sayılır. `.env.example` örnek biçimdir. Anahtarı YAML dosyalarına veya üretilen projeye yazma.
 
-## Gereksinimler
-
-- Python 3.11–3.13 (önerilen: 3.12)
-- OpenCode Go üyeliği ve API anahtarı
-- Paket kurulumu ve AI çağrıları için internet
-- Üretilen uygulamayı konteynerde denemek istersen Docker
-
-## Kurulum (Windows PowerShell)
+## Çalıştırma
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e .
+make run IDEA="Bir kitap takip uygulaması"
 ```
 
-PowerShell aktivasyonu engellerse aşağıdaki komutlarda `python` yerine
-`.\.venv\Scripts\python.exe` kullan.
+CLI sırasıyla proje türünü, teknoloji yığınını ve ilgili mimari kararları sorar. Backend/fullstack için veritabanı, önbellek ve gözlemlenebilirlik; backend için isteğe bağlı web arayüzü sorulur. Frontend/fullstack projelerde arayüz zaten vardır. Sorular [`questions.yaml`](src/autosdlc/config/questions.yaml) içindedir. Etkileşimsiz kullanım:
 
-## Gerçek CrewAI çalıştırması
-
-Anahtarı yalnızca yerel ortam değişkeninde tut. Repoya veya YAML dosyalarına
-yazma. PowerShell'de:
+Varsayılan proje konumu `runs/<run-id>/project` olur. Başka bir klasör istiyorsan (klasör henüz bulunmamalı):
 
 ```powershell
-$env:OPENCODE_API_KEY = Read-Host "OpenCode Go API key"
-autosdlc run --idea "Kütüphane kitaplarını takip eden küçük bir API"
-autosdlc history
+make run IDEA="Bir kitap takip uygulaması" OUTPUT="D:\\software_projects\\kitap-uygulamasi"
 ```
 
-Varsayılan model `glm-5.3-flash` ve OpenCode Go'nun Chat Completions API'si
-kullanılır. Model değiştirmek için `--model <model-id>` veya `AUTOSDLC_MODEL`
-kullan. Modelin [OpenCode Go belgelerinde](https://dev.opencode.ai/v2/docs/console/go)
-Chat Completions endpoint'inde listelenmesi gerekir.
+Bu araç tekrar kullanılabilir: her çalıştırma ayrı bir proje ve SDLC belgeleri oluşturur, geçmiş `runs/history.sqlite3` içinde saklanır. `--output` yalnızca proje klasörünün konumunu değiştirir; çalışma raporları yine `runs/<run-id>/` içinde de saklanır.
 
-Bir çalıştırma `runs/<run-id>/` klasöründe şu çıktıları oluşturur:
+Kararları görünür bir YAML dosyasında tutmak istersen kendi `request.yaml` dosyanı oluştur:
 
-| SDLC aşaması | Çıktı |
-| --- | --- |
-| Planlama | `planning.md` |
-| Analiz | `requirements.md` |
-| Tasarım | `architecture.md` |
-| Geliştirme | `project/app/*.py` |
-| Test | `project/tests/*.py`, `test_report.md`, `test_attempts/` |
-| Dağıtım | `project/Dockerfile`, `deployment.md` |
-| Bakım | `maintenance_report.md` |
+```yaml
+idea: Stok takibi için HTTP API
+output: D:\software_projects\stok-uygulamasi
+decisions:
+  project_type: backend
+  stack: Go / Gin
+  database: postgres
+  cache: redis
+  observability: otel
+  ui: none
+```
 
-`runs/history.sqlite3` her çalıştırmanın durumunu ve aşama olaylarını saklar.
-Bir kaydı incelemek için `autosdlc show <run-id>` komutunu kullan.
-
-## Arayüz ve API
+Ardından `make run REQUEST=request.yaml` çalıştır. Dosyadaki her anahtar isteğe bağlıdır; eksik mimari kararları CLI sorar. API veya Streamlit kullanıyorsan aynı seçimleri formda/JSON isteğinde belirtirsin.
 
 ```powershell
-streamlit run streamlit_app.py
-uvicorn autosdlc.api:app --reload
+python -m autosdlc run --idea "Kitap API'si" --project_type backend --stack "Go/Gin" --database postgres --cache redis --observability otel --ui none --no-prompt
 ```
 
-Streamlit ekranında fikir, model ve API anahtarını girip çalıştırabilirsin.
-Aşama geçmişi ve Markdown çıktılar ekranda görünür. FastAPI yönetim API'si
-`GET /health`, `POST /runs`, `GET /runs`, `GET /runs/{id}` sunar;
-`http://127.0.0.1:8000/docs` üzerinden denenebilir. `POST /runs` iş bitene
-kadar bekler. Sunucuyu repo kökünden aç, böylece aynı `runs/` klasörünü kullanır.
-Bu akademik API'de kimlik doğrulama yok; internete açık sunucu olarak kullanma.
+`make run` için ek bayraklar `ARGS="--project_type ..."` ile verilebilir. `python -m autosdlc history` ve `python -m autosdlc show <run-id>` geçmişi gösterir.
 
-## Üretilen uygulamayı çalıştırma
+## Çıktılar ve belgeler
 
-Başarılı bir çalıştırmanın `project/` klasöründe:
+Her çalışma `runs/<run-id>/` altında saklanır. Üretilen uygulama `project/` içindedir; `project/README.md` belgeleri ve çalıştırma yolunu bağlar. Aynı belgelerin kopyası `project/docs/` içindedir:
+
+| Aşama | Dosya | İçerik |
+| --- | --- | --- |
+| Kararlar | `decisions.yaml` | Proje türü, yığın ve mimari seçimler |
+| Planlama | `planning.md` | Kapsam, paydaşlar, takvim, riskler |
+| Analiz | `requirements.md` | FR/NFR kimlikleri, user story, kabul kriterleri, test izlenebilirliği |
+| Tasarım | `architecture.md` | Bileşen/sekans Mermaid diyagramları, varsa ER şeması ve API sözleşmesi |
+| Kodlama | `project/` | Seçilen teknolojiyle kaynak kod ve `project.yaml` |
+| Test | `test_report.md`, `test_attempts/` | Gerçek komut sonuçları, başarısızlık ve düzeltme döngüsü |
+| Dağıtım | `deployment.md`, `project/Dockerfile`, `project/compose.yaml` | Çalıştırma, ortam değişkenleri, sağlık ve geri alma adımları |
+| Bakım | `maintenance_report.md` | İzleme, olay müdahalesi, yedekleme, iyileştirme listesi |
+
+CrewAI Flow sıralamayı yönetir. Ajan rolleri [`agents.yaml`](src/autosdlc/config/agents.yaml), görevleri ve belge gereksinimleri [`tasks.yaml`](src/autosdlc/config/tasks.yaml) içindedir. `project.yaml` seçilen yığına ait kurulum, API, UI, birim test ve başlatma komutlarını listeler. Komutlar kabuk kullanılmadan proje klasöründe çalıştırılır. Backend/fullstack için API testi zorunludur; UI varsa Playwright testi canlı uygulamaya karşı çalışır. Başarısız test sonucu Developer Agent'a gider; en fazla iki onarım denemesi yapılır. Rapor gerçek test sonucunu gösterir.
+
+## Docker Compose
+
+Her proje bir Dockerfile ve Compose dosyası alır. Veritabanı olarak Postgres seçilirse `db`, Redis seçilirse `redis`, OpenTelemetry seçilirse Collector, OpenObserve seçilirse Collector ve OpenObserve servisleri eklenir. Gerekli değişkenler `project/.env.example` içindedir. Değerleri `project/.env` içine koy:
+
+Proje klasörüne girip `docker compose config`, `docker compose up --build -d` ve gerektiğinde `docker compose down` kullan.
+
+OpenObserve seçilirse `OPENOBSERVE_BASIC_AUTH`, `ZO_ROOT_USER_EMAIL:ZO_ROOT_USER_PASSWORD` dizgesinin Base64 kodlanmış hâlidir. Uygulama telemetriyi `otel-collector:4318` adresine göndermelidir; seçilen dilin SDK ve enstrümantasyonunu Developer Agent sağlar. Yayımlamadan önce Dockerfile, Compose ve uygulama kodunu gözden geçir.
+
+## Arayüz ve yönetim API'si
+
+Streamlit arayüzünü `python -m streamlit run streamlit_app.py`, yönetim API'sini `python -m uvicorn autosdlc.api:app --host 127.0.0.1 --port 8000` ile açabilirsin.
+
+Streamlit arayüzü fikir ve mimari seçimleri toplar; çalışma geçmişini ve belgeleri gösterir. Yönetim API'sinde `GET /questions`, `POST /runs`, `GET /runs`, `GET /runs/{id}` ve `GET /health` bulunur. `POST /runs` isteği `decisions` alanında gerekli seçimleri alır ve çalışma bitene kadar bekler. API belgeleri `http://127.0.0.1:8000/docs` adresindedir.
+
+## Geliştirme doğrulaması
 
 ```powershell
-cd runs\<run-id>\project
-python -m pip install -r requirements.txt
-uvicorn app.main:app --reload
+make test
 ```
 
-Uygulamanın API belgeleri `http://127.0.0.1:8000/docs` adresindedir. Docker
-ile denemek için aynı klasörden:
-
-```powershell
-docker build -t autosdlc-example .
-docker run --rm -p 8000:8000 -v task_data:/data autosdlc-example
-```
-
-## Geliştirici doğrulaması
-
-```powershell
-python -m pytest -q
-```
-
-Gerçek AI çıktısı her seferinde değişebilir. Testler iki düzeltmeden sonra hâlâ
-başarısızsa sonuç `failed` olur ve hata ayrıntıları `test_report.md` içindedir.
-Üretilen Python kodu ve testleri yerel alt süreçte çalışır. Bu akademik proje
-bir güvenlik sandbox'ı değildir; üretilen kodu paylaşmadan veya dağıtmadan önce
-incele.
+AI tarafından üretilen kod ve testler yerel alt süreçte çalışır. Bu araç üretilen kod için güvenlik sandbox'ı sağlamaz; güvenilmeyen fikir veya promptları çalıştırmadan ve dağıtmadan önce incele.

@@ -1,0 +1,22 @@
+project_type:
+  question: What kind of project should be built?
+  options: [backend, frontend, fullstack, cli, library]
+stack:
+  question: Which language and framework should the generated project use? (e.g. Go/Gin, Node/Express, Python/Django)
+  free_text: true
+database:
+  question: Which database should the generated application use?
+  options: [none, sqlite, postgres]
+  when: [backend, fullstack]
+cache:
+  question: Should the generated application use a cache?
+  options: [none, redis]
+  when: [backend, fullstack]
+observability:
+  question: Which observability stack should Docker Compose include?
+  options: [none, otel, openobserve]
+  when: [backend, fullstack]
+ui:
+  question: Should the backend include a web UI?
+  options: [none, web]
+  when: [backend]

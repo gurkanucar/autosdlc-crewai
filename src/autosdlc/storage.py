@@ -24,6 +24,7 @@ class History:
                     provider TEXT NOT NULL,
                     status TEXT NOT NULL,
                     output_dir TEXT NOT NULL,
+                    project_dir TEXT,
                     attempts INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     completed_at TEXT,
@@ -39,6 +40,8 @@ class History:
                 );
                 """
             )
+            if "project_dir" not in {row[1] for row in db.execute("PRAGMA table_info(runs)")}:
+                db.execute("ALTER TABLE runs ADD COLUMN project_dir TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=10)
@@ -46,12 +49,12 @@ class History:
         db.execute("PRAGMA foreign_keys = ON")
         return db
 
-    def create(self, run_id: str, idea: str, output_dir: Path) -> None:
+    def create(self, run_id: str, idea: str, output_dir: Path, project_dir: Path) -> None:
         with self._connect() as db:
             db.execute(
-                "INSERT INTO runs (id, idea, provider, status, output_dir, created_at) "
-                "VALUES (?, ?, ?, 'running', ?, ?)",
-                (run_id, idea, "opencode-go", str(output_dir), now()),
+                "INSERT INTO runs (id, idea, provider, status, output_dir, project_dir, created_at) "
+                "VALUES (?, ?, ?, 'running', ?, ?, ?)",
+                (run_id, idea, "opencode-go", str(output_dir), str(project_dir), now()),
             )
 
     def event(self, run_id: str, stage: str, status: str, detail: str = "") -> None:

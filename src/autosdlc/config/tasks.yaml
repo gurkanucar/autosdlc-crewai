@@ -2,74 +2,98 @@
 planning:
   description: |
     Project idea: $idea
-    Write a planning document with scope, exclusions, milestones, deliverables and risks.
-    Keep the example to a single small Python FastAPI CRUD service.
+    Architecture choices:
+    $context
+    Write a practical charter: goals, scope, exclusions, stakeholders, milestones,
+    deliverables, assumptions, dependencies and a risk register with mitigations.
+    Use the requested project type and technology stack. Do not impose Python or FastAPI.
     Output Markdown only. Do not claim tests or deployment have run.
-  expected_output: A concrete Markdown plan.
+  expected_output: A concrete Markdown project plan.
 
 analysis:
   description: |
     Project idea: $idea
-    Previous SDLC artifacts:
+    Previous SDLC artifacts and architecture choices:
     $context
-    Write user stories, acceptance criteria, API behavior and nonfunctional requirements.
-    Keep the example to a single small Python FastAPI CRUD service.
-    Output Markdown only. Do not claim tests or deployment have run.
-  expected_output: Testable requirements in Markdown.
+    Write numbered functional requirements (FR-01...), user stories with acceptance criteria,
+    nonfunctional requirements (NFR-01...), data and API behavior only where applicable,
+    and a traceability table linking requirements to planned tests.
+    Honor the selected stack and architecture decisions. Output Markdown only.
+  expected_output: Testable requirements and traceability in Markdown.
 
 design:
   description: |
     Project idea: $idea
-    Previous SDLC artifacts:
+    Previous SDLC artifacts and architecture choices:
     $context
-    Design components, SQLite schema, API routes, error handling, testing and deployment.
-    Keep the example to a single small Python FastAPI CRUD service.
-    Output Markdown only. Do not claim tests or deployment have run.
-  expected_output: A concrete Markdown architecture document.
+    Design the selected stack, components, interfaces, error handling, tests and deployment.
+    Include a Mermaid component diagram and a Mermaid sequence diagram.
+    If a database is selected, include an ER diagram and schema with keys and indexes.
+    If there is an API, specify endpoints, request/response contracts and status codes.
+    Explain decisions and tradeoffs; honor every architecture choice. Output Markdown only.
+  expected_output: A Markdown architecture with diagrams and schemas.
 
 development:
   description: |
     Project idea: $idea
-    SDLC documents:
+    SDLC documents and architecture choices:
     $context
     $feedback
-    Return ONLY a JSON object with key "files", mapping relative paths to complete UTF-8 file contents.
-    Supply app/__init__.py and app/main.py. Use FastAPI, Pydantic, Python standard library and SQLite only.
-    Use TASK_DB_PATH to make the SQLite database path configurable.
-    No markdown fences, package installation, network requests, shell calls, dynamic code execution or external tools.
-    Keep all source in app/*.py. For repairs, return complete replacement files, not patches.
-  expected_output: Valid JSON containing complete Python source files under the files key.
+    Implement the requested project in the chosen language/framework, without changing stack.
+    Return ONLY JSON: {"files": {"relative/path": "complete file content", ...}}.
+    Include a Dockerfile suitable for this stack and project.yaml with:
+      port: integer (1024-65535; web service port)
+      setup: [executable, argument, ...] (optional dependency setup)
+      unit_test: [executable, argument, ...] (required for CLI/library)
+      api_test: [executable, argument, ...] (required for backend/fullstack)
+      ui_test: [executable, argument, ...] (required if UI is web)
+      start: [executable, argument, ...] (required if UI is web)
+    Commands run without a shell from the project root. For Python use "python";
+    it resolves to the active interpreter. API tests must issue real HTTP requests against
+    the app (in process or against a live server). UI tests must use Playwright in a browser
+    against BASE_URL. Include dependency manifests and all required source files.
+    If setup installs Python dependencies, include pytest and any HTTP/browser test
+    dependencies too; the workflow installs them into a dedicated project virtual environment.
+    For Python pytest-playwright UI tests include [-p, pytest_playwright.pytest_playwright]
+    in ui_test because plugin autoload is disabled.
+    Use TASK_DB_PATH for SQLite, DATABASE_URL for Postgres, REDIS_URL for Redis and
+    OTEL_EXPORTER_OTLP_ENDPOINT for telemetry when those choices apply.
+    No Markdown fences. For repairs, return complete replacement files, not patches.
+  expected_output: Valid JSON containing complete project files, Dockerfile and project.yaml.
 
 testing:
   description: |
     Project idea: $idea
-    SDLC documents:
+    SDLC documents and architecture choices:
     $context
     Implementation:
     $files
-    Return ONLY a JSON object with key "files", mapping relative paths to complete file contents.
-    Supply tests/test_app.py using pytest and FastAPI TestClient.
-    Test successful behavior and at least one invalid input. Use tmp_path and monkeypatch for database isolation.
-    No markdown fences, network requests, shell calls or dynamic code execution.
-  expected_output: Valid JSON containing complete pytest source files under the files key.
+    Write tests for the chosen language/framework under tests/ or test/ and return ONLY
+    JSON {"files": {"relative/path": "complete content"}}. Test requirements by ID,
+    including success and failure cases. For backend/fullstack, exercise real API HTTP
+    routes. If UI is web, use Playwright to open BASE_URL and verify a visible interaction.
+    The implementation's project.yaml declares commands the workflow will run.
+    Isolate test data and keep tests deterministic. No Markdown fences.
+  expected_output: Valid JSON containing complete test source files under the files key.
 
 deployment:
   description: |
     Project idea: $idea
     Previous SDLC artifacts and actual test result:
     $context
-    Write a concise Markdown deployment report for the generated FastAPI application.
-    The workflow has prepared a Dockerfile, but do not claim an image was built or deployed.
-    State clearly if tests failed and deployment is blocked. Include local build and run commands.
-    Do not include API keys or secrets. Output Markdown only.
-  expected_output: An honest Markdown deployment report with readiness status and commands.
+    Write a deployment runbook for the generated stack: prerequisites, environment
+    variables, docker compose build/up, health checks, rollback and backup steps.
+    The workflow prepared Dockerfile and compose.yaml; do not claim an image was built
+    or deployed. State clearly if tests failed. Do not include secrets. Output Markdown only.
+  expected_output: An honest Markdown deployment runbook with readiness status.
 
 maintenance:
   description: |
     Project idea: $idea
     Previous SDLC artifacts and actual test result:
     $context
-    Write a concise Markdown maintenance report with known limitations, unresolved
-    test failures if any, and prioritized improvements. Do not claim issues have been fixed
-    or production monitoring is active. Output Markdown only.
-  expected_output: A concrete Markdown maintenance report with next actions.
+    Write a maintenance plan with ownership, monitoring signals, incident response,
+    backup/restore, dependency updates, known limitations, unresolved test failures
+    and prioritized improvements. Do not claim issues were fixed or production
+    monitoring is active. Output Markdown only.
+  expected_output: A concrete Markdown maintenance plan.

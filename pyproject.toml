@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "autosdlc"
 version = "0.1.0"
-description = "A demonstrable SDLC workflow with CrewAI agents and a test feedback loop"
+description = "A CrewAI SDLC workflow with API and browser tests"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
   "httpx>=0.27,<1",
   "PyYAML>=6,<7",
   "pytest>=8,<10",
+  "pytest-playwright>=0.7,<1",
   "python-dotenv>=1,<2",
   "streamlit>=1.40,<2",
   "uvicorn>=0.30,<1",
