@@ -669,6 +669,10 @@ class RunSession:
         env = os.environ.copy()
         for secret_name in ("OPENCODE_API_KEY", "OPENAI_API_KEY"):
             env.pop(secret_name, None)
+        # Keep a generated SQLite application runnable during API checks even when
+        # the user has not created a local .env file. Isolate it from project data.
+        if self.decisions.get("database") == "sqlite":
+            env["TASK_DB_PATH"] = str(self.output_dir / "tmp" / "autosdlc-test.sqlite3")
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return env

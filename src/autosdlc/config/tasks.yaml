@@ -86,6 +86,14 @@ development:
     Do not write test files: the Test Agent writes the tests under the tests/ folder.
     The test commands must run the tests folder, not a single file (e.g. pytest -q tests),
     so tests added later run too.
+    For a Node.js ESM TypeScript project using tsx, use a Node test glob such as
+    `node --import tsx --test tests/*.test.ts`; do not pass `tests/` as a directory.
+    When using pnpm, pin a compatible packageManager version. On pnpm 10.26+ allow only the
+    specific native dependencies that need install scripts through `allowBuilds` in
+    pnpm-workspace.yaml; never enable all dependency scripts. Include that file in Docker's
+    dependency-install layer. Use the pinned manager consistently in project.yaml commands
+    (for example `corepack pnpm@10.26.0 install`). On Windows, use pnpm's hoisted node linker
+    when symlink setup fails.
     These commands run at the project root without a shell. For Python write "python" as the
     executable; the application picks the right interpreter.
     API tests must verify real HTTP behavior. UI tests must verify a visible interaction with Playwright on the
@@ -97,6 +105,10 @@ development:
     [-p, pytest_playwright.pytest_playwright] to the ui_test list; automatic plugin loading is off.
     Use the environment variables TASK_DB_PATH for SQLite, DATABASE_URL for Postgres, REDIS_URL for Redis
     and OTEL_EXPORTER_OTLP_ENDPOINT for telemetry.
+    For a SQLite backend, the API test runner supplies an isolated TASK_DB_PATH; the app must still
+    support a practical local default. In Docker, make the persistent data directory writable by the
+    non-root runtime user. Copy the pnpm lockfile and workspace policy before installing dependencies;
+    include native build tools in the build stage when the chosen package requires them.
     At most 40 files, at most 50 KB per file. Do not produce lock files (package-lock.json,
     pnpm-lock.yaml, go.sum, etc.); the setup command creates them.
     Do not write a .env file; use .env.example if needed.
@@ -118,6 +130,9 @@ testing:
     Every FR must be covered by at least one test. In a backend/fullstack project test the real API HTTP
     endpoints. If there is a web UI, open BASE_URL with Playwright
     and verify a visible interaction. Keep the test data isolated and deterministic.
+    For Node.js ESM TypeScript projects using tsx, use `node --import tsx --test tests/*.test.ts`;
+    `node --test tests/` is not a valid directory invocation. Check that every imported helper and
+    exported function exists in the supplied application files before returning tests.
     The test commands are specified in the application's project.yaml.
   expected_output: Valid JSON containing complete test files suited to the chosen technology.
 
