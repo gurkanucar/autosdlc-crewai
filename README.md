@@ -10,23 +10,32 @@ Python 3.11–3.13, OpenCode Go erişimi ve üretilecek projelerin seçilen ara�
 make run
 ```
 
-İlk kullanımda Makefile `.venv` oluşturup paketi ve Playwright Chromium'u kurar, ardından proje fikrini ve kararları sorar. Yalnızca üç Make hedefi vardır: `setup`, `run`, `test`. İstersen kurulumu önceden `make setup` ile yapabilirsin. `make` yoksa `python -m venv .venv`, `.venv/Scripts/python.exe -m pip install -e .` ve `.venv/Scripts/python.exe -m playwright install chromium` kullan. Yerel `.env` içindeki `OPENCODE_API_KEY` otomatik okunur; `.env` Git tarafından yok sayılır. `.env.example` örnek biçimdir. Anahtarı YAML dosyalarına veya üretilen projeye yazma.
+İlk kullanımda Makefile `.venv` oluşturup paketi ve Playwright Chromium'u kurar; ardından tarayıcı arayüzünü otomatik açar. Yalnızca üç Make hedefi vardır: `setup`, `run`, `test`. İstersen kurulumu önceden `make setup` ile yapabilirsin. `make` yoksa `python -m venv .venv`, `.venv/Scripts/python.exe -m pip install -e .` ve `.venv/Scripts/python.exe -m playwright install chromium` kullan. Yerel `.env` içindeki `OPENCODE_API_KEY` otomatik okunur; `.env` Git tarafından yok sayılır. `.env.example` örnek biçimdir. Anahtarı YAML dosyalarına veya üretilen projeye yazma.
 
 ## Çalıştırma
 
-```powershell
-make run IDEA="Bir kitap takip uygulaması"
-```
+`make run` tarayıcı arayüzünü açar. Proje fikrini, türünü, teknoloji yığınını,
+paket yöneticisini ve diğer teknik kısıtları formda yazarsın. Arka uç/tam yığın
+için veritabanı, önbellek ve gözlemlenebilirlik; arka uç için isteğe bağlı web
+arayüzü seçilir. Ana sayfada yedi aşamanın canlı durumunu görürsün; önceki
+çalışmalar ve belgeler **Projeler** sayfasındadır. Bir ajan kritik karar isterse
+ilgili aşama duraklar, soru görünür; yanıtı yazıp **Yanıtla ve devam et** dersin.
+Çalışan bir işi **Çalışmayı durdur** ile duraklatabilir, sonra **Kaldığı yerden
+devam et** ile tamamlanmış aşamaları yeniden üretmeden sürdürebilirsin. Durdurma
+o sırada çalışan ajan çağrısı bitince uygulanır. Projeler sayfasında duraklatılmış
+veya bitmiş bir projenin klasörünü ve raporlarını onaylayarak silebilirsin.
+Terminal yalnızca yerel arayüz sunucusunu çalıştırır; kapatmak için `Ctrl+C`.
+Tarayıcı kendiliğinden açılmazsa `http://127.0.0.1:8501` adresine git.
 
-CLI sırasıyla proje türünü, teknoloji yığınını ve ilgili mimari kararları sorar. Backend/fullstack için veritabanı, önbellek ve gözlemlenebilirlik; backend için isteğe bağlı web arayüzü sorulur. Frontend/fullstack projelerde arayüz zaten vardır. Sorular [`questions.yaml`](src/autosdlc/config/questions.yaml) içindedir. Etkileşimsiz kullanım:
-
-Varsayılan proje konumu `runs/<run-id>/project` olur. Başka bir klasör istiyorsan (klasör henüz bulunmamalı):
-
-```powershell
-make run IDEA="Bir kitap takip uygulaması" OUTPUT="D:\\software_projects\\kitap-uygulamasi"
-```
-
-Bu araç tekrar kullanılabilir: her çalıştırma ayrı bir proje ve SDLC belgeleri oluşturur, geçmiş `runs/history.sqlite3` içinde saklanır. `--output` yalnızca proje klasörünün konumunu değiştirir; çalışma raporları yine `runs/<run-id>/` içinde de saklanır.
+Varsayılan proje konumu bu deponun `projects/<proje-adı>-<run-id>/` klasörüdür.
+`projects/` otomatik oluşturulur ve Git tarafından yok sayılır. Başka bir klasör istiyorsan
+formdaki **Yeni proje klasörü** alanını doldur veya **Gözat…** ile mevcut üst
+klasörü seçip yeni klasör adını yaz; hedef klasör henüz mevcut
+olmamalı. Her çalıştırma ayrı proje ve SDLC belgeleri oluşturur, geçmiş
+`runs/history.sqlite3` içinde saklanır. Sorular [`questions.yaml`](src/autosdlc/config/questions.yaml) dosyasındadır.
+Arayüz, OpenCode Go'nun canlı listesinden bu uygulamanın API biçimiyle uyumlu
+modelleri seçtirir. Yerel `.env` anahtarı varsa alan maskeli gösterilir; gerçek
+değer tarayıcıya gönderilmez. İstersen farklı bir anahtar girebilirsin.
 
 Kararları görünür bir YAML dosyasında tutmak istersen kendi `request.yaml` dosyanı oluştur:
 
@@ -34,29 +43,33 @@ Kararları görünür bir YAML dosyasında tutmak istersen kendi `request.yaml` 
 idea: Stok takibi için HTTP API
 output: D:\software_projects\stok-uygulamasi
 decisions:
-  project_type: backend
-  stack: Go / Gin
+  project_type: fullstack
+  stack: Node.js backend + sade HTML/CSS/JS arayüz
+  constraints: Paket yöneticisi pnpm olsun; frontend çatısı kullanma.
   database: postgres
-  cache: redis
-  observability: otel
-  ui: none
+  cache: none
+  observability: openobserve
 ```
 
-Ardından `make run REQUEST=request.yaml` çalıştır. Dosyadaki her anahtar isteğe bağlıdır; eksik mimari kararları CLI sorar. API veya Streamlit kullanıyorsan aynı seçimleri formda/JSON isteğinde belirtirsin.
+YAML ile otomatik çalıştırma gerekiyorsa `.venv/Scripts/python.exe -m autosdlc run --config request.yaml --no-prompt` komutunu kullan. Bu ayrı bir zorunlu adım değildir; normal kullanım tarayıcı arayüzüdür.
 
 ```powershell
 python -m autosdlc run --idea "Kitap API'si" --project_type backend --stack "Go/Gin" --database postgres --cache redis --observability otel --ui none --no-prompt
 ```
 
-`make run` için ek bayraklar `ARGS="--project_type ..."` ile verilebilir. `python -m autosdlc history` ve `python -m autosdlc show <run-id>` geçmişi gösterir.
+`.venv/Scripts/python.exe -m autosdlc history` ve `show <run-id>` komutları otomasyon için geçmişi verir; aynı bilgi arayüzde de görünür.
 
 ## Çıktılar ve belgeler
 
-Her çalışma `runs/<run-id>/` altında saklanır. Üretilen uygulama `project/` içindedir; `project/README.md` belgeleri ve çalıştırma yolunu bağlar. Aynı belgelerin kopyası `project/docs/` içindedir:
+Her çalışmanın raporları `runs/<run-id>/` altında saklanır. Üretilen uygulama
+varsayılan olarak `projects/<proje-adı>-<run-id>/` içindedir; oradaki `README.md`
+belgeleri ve çalıştırma yolunu bağlar. Aynı belgelerin kopyası projenin `docs/`
+klasöründedir:
 
 | Aşama | Dosya | İçerik |
 | --- | --- | --- |
 | Kararlar | `decisions.yaml` | Proje türü, yığın ve mimari seçimler |
+| Aşama soruları | `clarifications.yaml` | Ajanların istediği ek kararlar ve kullanıcı yanıtları; yalnızca soru sorulursa |
 | Planlama | `planning.md` | Kapsam, paydaşlar, takvim, riskler |
 | Analiz | `requirements.md` | FR/NFR kimlikleri, user story, kabul kriterleri, test izlenebilirliği |
 | Tasarım | `architecture.md` | Bileşen/sekans Mermaid diyagramları, varsa ER şeması ve API sözleşmesi |
@@ -77,7 +90,7 @@ OpenObserve seçilirse `OPENOBSERVE_BASIC_AUTH`, `ZO_ROOT_USER_EMAIL:ZO_ROOT_USE
 
 ## Arayüz ve yönetim API'si
 
-Streamlit arayüzünü `python -m streamlit run streamlit_app.py`, yönetim API'sini `python -m uvicorn autosdlc.api:app --host 127.0.0.1 --port 8000` ile açabilirsin.
+Tarayıcı arayüzü `make run` ile açılır. Yönetim API'si gerekiyorsa `.venv/Scripts/python.exe -m uvicorn autosdlc.api:app --host 127.0.0.1 --port 8000` kullanabilirsin.
 
 Streamlit arayüzü fikir ve mimari seçimleri toplar; çalışma geçmişini ve belgeleri gösterir. Yönetim API'sinde `GET /questions`, `POST /runs`, `GET /runs`, `GET /runs/{id}` ve `GET /health` bulunur. `POST /runs` isteği `decisions` alanında gerekli seçimleri alır ve çalışma bitene kadar bekler. API belgeleri `http://127.0.0.1:8000/docs` adresindedir.
 

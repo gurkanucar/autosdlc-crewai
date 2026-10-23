@@ -1,4 +1,5 @@
 BASE_PYTHON ?= python
+.DEFAULT_GOAL := run
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
 else
@@ -8,21 +9,6 @@ PYTHON := $(VENV_PYTHON)
 export TEMP := $(CURDIR)/.tmp
 export TMP := $(CURDIR)/.tmp
 export TMPDIR := $(CURDIR)/.tmp
-IDEA ?=
-OUTPUT ?=
-REQUEST ?=
-ARGS ?=
-
-ifneq ($(strip $(IDEA)),)
-IDEA_ARG := --idea "$(IDEA)"
-endif
-ifneq ($(strip $(OUTPUT)),)
-OUTPUT_ARG := --output "$(OUTPUT)"
-endif
-ifneq ($(strip $(REQUEST)),)
-REQUEST_ARG := --config "$(REQUEST)"
-endif
-
 .PHONY: setup run test
 
 .venv/pyvenv.cfg:
@@ -38,7 +24,7 @@ endif
 setup: .venv/.autosdlc-ready
 
 run: .venv/.autosdlc-ready
-	$(PYTHON) -m autosdlc run $(REQUEST_ARG) $(IDEA_ARG) $(OUTPUT_ARG) $(ARGS)
+	$(PYTHON) -m streamlit run streamlit_app.py --server.headless false --server.showEmailPrompt false --browser.gatherUsageStats false --server.address 127.0.0.1 --theme.base light
 
 test: .venv/.autosdlc-ready
 	$(PYTHON) -m pytest -q

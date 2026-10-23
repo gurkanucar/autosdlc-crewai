@@ -10,10 +10,10 @@ RESERVED_DIRECTORIES = {"docs", "node_modules", "runs", ".venv", ".git"}
 
 def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
     if not files or len(files) > 40:
-        raise ValueError("Agent must return between 1 and 40 files")
+        raise ValueError("Ajan 1–40 dosya döndürmeli")
     for name, content in files.items():
         if not isinstance(name, str) or not isinstance(content, str):
-            raise ValueError("Generated file names and contents must be strings")
+            raise ValueError("Üretilen dosya adları ve içerikleri metin olmalı")
         path = PurePosixPath(name)
         if (
             not path.parts
@@ -29,10 +29,10 @@ def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
             or path.parts[0] in RESERVED_DIRECTORIES
             or len(content.encode("utf-8")) > 50_000
         ):
-            raise ValueError(f"Disallowed generated file: {name}")
+            raise ValueError(f"İzin verilmeyen üretilmiş dosya: {name}")
         target = project_dir.joinpath(*path.parts)
         if not target.resolve().is_relative_to(project_dir.resolve()):
-            raise ValueError(f"Generated file escapes project: {name}")
+            raise ValueError(f"Üretilen dosya proje klasörünün dışına çıkıyor: {name}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
 

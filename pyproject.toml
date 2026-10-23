@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "autosdlc"
 version = "0.1.0"
-description = "A CrewAI SDLC workflow with API and browser tests"
+description = "CrewAI ile API ve tarayıcı testleri içeren SDLC proje üreticisi"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [

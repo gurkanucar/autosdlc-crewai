@@ -11,24 +11,24 @@ COMMANDS = {"setup", "unit_test", "api_test", "ui_test", "start"}
 def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
     path = project_dir / "project.yaml"
     if not path.is_file():
-        raise ValueError("Developer must supply project.yaml")
+        raise ValueError("Geliştirme ajanı project.yaml üretmeli")
     manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
-        raise ValueError("project.yaml must contain a mapping")
+        raise ValueError("project.yaml bir sözlük içermeli")
     for key in COMMANDS:
         command = manifest.get(key)
         if command is not None and (not isinstance(command, list) or not command or len(command) > 20 or not all(isinstance(arg, str) and 0 < len(arg) < 300 for arg in command)):
-            raise ValueError(f"project.yaml {key} must be a list of command arguments")
+            raise ValueError(f"project.yaml içindeki {key}, komut argümanları listesi olmalı")
     port = manifest.get("port", 8000)
     if not isinstance(port, int) or not 1024 <= port <= 65535:
-        raise ValueError("project.yaml port must be 1024–65535")
+        raise ValueError("project.yaml port değeri 1024–65535 arasında olmalı")
     manifest["port"] = port
     if decisions["project_type"] in {"backend", "fullstack"} and not manifest.get("api_test"):
-        raise ValueError("project.yaml requires api_test for backend/fullstack projects")
+        raise ValueError("Arka uç/tam yığın projede project.yaml api_test içermeli")
     if decisions["ui"] == "web" and (not manifest.get("ui_test") or not manifest.get("start")):
-        raise ValueError("project.yaml requires ui_test and start for web UI projects")
+        raise ValueError("Web arayüzlü projede project.yaml ui_test ve start içermeli")
     if decisions["project_type"] in {"cli", "library"} and not manifest.get("unit_test"):
-        raise ValueError("project.yaml requires unit_test for CLI/library projects")
+        raise ValueError("Komut satırı/kütüphane projesinde project.yaml unit_test içermeli")
     if not (project_dir / "Dockerfile").is_file():
-        raise ValueError("Developer must supply a Dockerfile for the selected stack")
+        raise ValueError("Geliştirme ajanı seçilen teknoloji için Dockerfile üretmeli")
     return manifest

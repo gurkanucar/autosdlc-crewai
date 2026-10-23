@@ -5,6 +5,27 @@ from importlib.resources import files
 import yaml
 
 
+CHOICE_LABELS = {
+    "project_type": {"backend": "Arka uç", "frontend": "Ön yüz", "fullstack": "Tam yığın", "cli": "Komut satırı", "library": "Kütüphane"},
+    "database": {"none": "Yok", "sqlite": "SQLite", "postgres": "PostgreSQL"},
+    "cache": {"none": "Yok", "redis": "Redis"},
+    "observability": {"none": "Yok", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
+    "ui": {"none": "Yok", "web": "Web arayüzü"},
+}
+
+
+def choice_label(name: str, value: str) -> str:
+    return CHOICE_LABELS.get(name, {}).get(value, value)
+
+
+def parse_choice(name: str, answer: str) -> str:
+    normalized = answer.strip().casefold()
+    for code, label in CHOICE_LABELS.get(name, {}).items():
+        if normalized in {code.casefold(), label.casefold()}:
+            return code
+    return answer.strip()
+
+
 def questions() -> dict[str, dict]:
     source = files("autosdlc").joinpath("config/questions.yaml")
     return yaml.safe_load(source.read_text(encoding="utf-8"))
@@ -15,20 +36,20 @@ def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
     catalog = questions()
     unknown = set(selected) - set(catalog)
     if unknown:
-        raise ValueError(f"Unknown architecture choices: {', '.join(sorted(unknown))}")
+        raise ValueError(f"Bilinmeyen mimari kararlar: {', '.join(sorted(unknown))}")
     project_type = selected.get("project_type")
     if project_type not in catalog["project_type"]["options"]:
-        raise ValueError("Choose project_type from: " + ", ".join(catalog["project_type"]["options"]))
-    missing = [name for name, item in catalog.items() if (not item.get("when") or project_type in item["when"]) and name not in selected]
+        raise ValueError("Proje türünü seç: " + ", ".join(catalog["project_type"]["options"]))
+    missing = [name for name, item in catalog.items() if not item.get("optional") and (not item.get("when") or project_type in item["when"]) and name not in selected]
     if missing:
-        raise ValueError(f"Architecture choices required: {', '.join(missing)}")
+        raise ValueError(f"Şu mimari kararlar gerekli: {', '.join(missing)}")
     for name, value in selected.items():
         if catalog[name].get("free_text"):
-            if not isinstance(value, str) or not value.strip() or len(value) > 120:
-                raise ValueError(f"Invalid {name}: supply 1–120 characters")
+            if not isinstance(value, str) or (not catalog[name].get("optional") and not value.strip()) or len(value) > (1000 if catalog[name].get("optional") else 200):
+                raise ValueError(f"Geçersiz {name}: kısa bir metin gir")
         elif value not in catalog[name]["options"]:
-            raise ValueError(f"Invalid {name}: {value}. Choose from {catalog[name]['options']}")
-    normalized = {name: selected.get(name, "none") for name in catalog}
+            raise ValueError(f"Geçersiz {name}: {value}. Seçenekler: {catalog[name]['options']}")
+    normalized = {name: selected.get(name, "" if item.get("optional") else "none") for name, item in catalog.items()}
     if project_type in {"frontend", "fullstack"}:
         normalized["ui"] = "web"
     return normalized

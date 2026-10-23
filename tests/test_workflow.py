@@ -3,9 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from autosdlc.crewai_engine import CrewAIEngine
+from autosdlc.crewai_engine import ClarificationNeeded, CrewAIEngine
+from autosdlc.models import CHAT_MODELS, available_models
+from autosdlc.project_management import delete_project
 from autosdlc.files import write_generated_files
-from autosdlc.runner import run_project
+from autosdlc.runner import RunPaused, run_project
 from autosdlc.intake import validate_decisions
 from autosdlc.deployment import render_compose
 from autosdlc.storage import History
@@ -42,23 +44,31 @@ BACKEND = {"project_type": "backend", "stack": "Python / FastAPI", "database": "
 
 def test_flow_creates_artifacts_and_repairs_failed_test(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
-    result = run_project("Task tracking API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND)
+    events = []
+    result = run_project("Task tracking API", workspace=tmp_path, engine=StubEngine(), decisions=BACKEND, on_event=lambda stage, status, detail: events.append((stage, status)))
 
     assert result.status == "completed", result.error
     assert result.attempts == 2
     for name in (
         "planning.md", "requirements.md", "architecture.md", "test_report.md",
-        "deployment.md", "maintenance_report.md", "project/app/main.py",
-        "project/tests/test_api.py", "project/Dockerfile", "project/compose.yaml",
-        "project/docs/architecture.md", "project/README.md", "decisions.yaml",
+        "deployment.md", "maintenance_report.md", "decisions.yaml",
     ):
         assert (result.output_dir / name).is_file(), name
+    for name in (
+        "app/main.py", "tests/test_api.py", "Dockerfile", "compose.yaml",
+        "docs/architecture.md", "README.md",
+    ):
+        assert (result.project_dir / name).is_file(), name
+    assert result.project_dir.parent == tmp_path / "projects"
+    assert result.project_dir.name.startswith("task-tracking-api-")
     stored = History(tmp_path / "runs" / "history.sqlite3").get(result.id)
     assert stored["status"] == "completed"
     assert stored["provider"] == "opencode-go"
     assert any(e["stage"] == "testing" and e["status"] == "failed" for e in stored["events"])
     assert any(e["stage"] == "development" and e["status"] == "repair_completed" for e in stored["events"])
     assert any(e["stage"] == "testing" and e["status"] == "passed" for e in stored["events"])
+    assert ("planning", "started") in events
+    assert ("maintenance", "completed") in events
 
 
 def test_generated_file_path_cannot_escape_project(tmp_path: Path):
@@ -85,8 +95,8 @@ def test_yaml_config_and_opencode_request_header(monkeypatch):
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
     engine = CrewAIEngine(api_key="test-key", model="glm-5.3-flash")
-    assert engine.agents["analysis"]["role"] == "Analysis Agent"
-    assert "acceptance criteria" in engine.tasks["analysis"]["description"]
+    assert engine.agents["analysis"]["role"] == "Analiz Ajanı"
+    assert "kabul kriterleri" in engine.tasks["analysis"]["description"]
     assert len(engine.agents) == 7
     assert engine.llm.call("hello") == "OK"
     assert seen["url"].endswith("/openai/v1/chat/completions")
@@ -150,11 +160,11 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     result = run_project("Book tracker", workspace=tmp_path, engine=engine, decisions=BACKEND)
     assert result.status == "completed", result.error
     assert result.attempts == 1
-    assert "PASS" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
+    assert "BAŞARILI" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
 
 
 def test_architecture_choices_and_compose():
-    with pytest.raises(ValueError, match="required"):
+    with pytest.raises(ValueError, match="gerekli"):
         validate_decisions({"project_type": "backend", "stack": "Go/Gin"})
     cli = validate_decisions({"project_type": "cli", "stack": "Rust"})
     assert cli["database"] == "none"
@@ -198,13 +208,13 @@ def test_yaml_request_passes_stack_and_output_to_runner(tmp_path, monkeypatch):
 
 
 def test_plain_make_run_prompts_for_idea_and_decisions(tmp_path, monkeypatch):
-    answers = iter(["A tiny CLI", "cli", "Rust"])
+    answers = iter(["A tiny CLI", "cli", "Rust", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     captured = {}
 
     def fake_run(idea, **kwargs):
         captured.update(idea=idea, **kwargs)
-        return RunResult("run123", "completed", tmp_path / "runs/run123", tmp_path / "runs/run123/project", 1)
+        return RunResult("run123", "completed", tmp_path / "runs/run123", tmp_path / "projects/a-tiny-cli-run123", 1)
 
     monkeypatch.setattr("autosdlc.cli.run_project", fake_run)
     assert cli_main(["run"]) == 0
@@ -246,5 +256,147 @@ def test_ui_choice_runs_playwright_against_live_app(tmp_path, monkeypatch):
     result = run_project("A small UI", workspace=tmp_path, decisions=choices, engine=UiEngine(), max_repairs=0)
     assert result.status == "completed", result.error
     report = (result.output_dir / "test_report.md").read_text(encoding="utf-8")
-    assert "API tests" in report and "UI tests" in report
+    assert "API testleri" in report and "Arayüz testleri" in report
+
+
+def test_stage_question_waits_for_answer_and_records_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+
+    class AskingEngine(StubEngine):
+        def document(self, stage, idea, context):
+            if stage == "planning" and "Yanıt: küçük işletme" not in context:
+                raise ClarificationNeeded("Hedef kullanıcı kim?")
+            return super().document(stage, idea, context)
+
+    def answer(run_id, stage, prompt):
+        db = History(tmp_path / "runs" / "history.sqlite3")
+        question_id = db.ask(run_id, stage, prompt)
+        assert db.pending_question(run_id)["id"] == question_id
+        assert db.answer(run_id, question_id, "küçük işletme")
+        assert not db.answer(run_id, question_id, "ikinci cevap")
+        return db.question(question_id)["answer"]
+
+    result = run_project(
+        "Stok API", workspace=tmp_path, engine=AskingEngine(),
+        decisions=BACKEND, on_question=answer,
+    )
+    assert result.status == "completed", result.error
+    row = History(tmp_path / "runs" / "history.sqlite3").get(result.id)
+    assert row["questions"][0]["prompt"] == "Hedef kullanıcı kim?"
+    assert row["questions"][0]["answer"] == "küçük işletme"
+    assert "küçük işletme" in (result.output_dir / "clarifications.yaml").read_text(encoding="utf-8")
+    assert [event["status"] for event in row["events"] if event["stage"] == "planning"] == [
+        "started", "question", "answered", "completed",
+    ]
+
+
+def test_model_picker_filters_to_supported_chat_models(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"id": "glm-5.3-flash"}, {"id": "gpt-6-luna"}]}
+
+    monkeypatch.setattr("autosdlc.models.httpx.get", lambda *args, **kwargs: Response())
+    assert available_models() == ["glm-5.3-flash"]
+    assert "gpt-6-luna" not in CHAT_MODELS
+
+
+def test_agent_question_marker_is_detected(monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "KULLANICI_SORUSU: Hedef kullanıcı kim?"}}]}
+
+    monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", lambda *args, **kwargs: Response())
+    engine = CrewAIEngine(api_key="test-key")
+    with pytest.raises(ClarificationNeeded, match="Hedef kullanıcı kim"):
+        engine.document("planning", "Stok API", "")
+
+
+def test_pause_resume_and_delete_project(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    run_id = "pause1234567"
+    db = History(tmp_path / "runs" / "history.sqlite3")
+
+    def request_pause(stage, status, _detail):
+        if stage == "analysis" and status == "completed":
+            assert db.request_pause(run_id)
+
+    paused = run_project(
+        "Stok yönetimi", workspace=tmp_path, engine=StubEngine(),
+        decisions=BACKEND, run_id=run_id, on_event=request_pause,
+    )
+    assert paused.status == "paused"
+    assert paused.project_dir.parent == tmp_path / "projects"
+    assert (paused.output_dir / "requirements.md").is_file()
+    assert not (paused.output_dir / "architecture.md").exists()
+    assert db.get(run_id)["status"] == "paused"
+
+    resumed = run_project("", workspace=tmp_path, engine=StubEngine(), resume_run_id=run_id)
+    assert resumed.status == "completed", resumed.error
+    assert resumed.project_dir == paused.project_dir
+    row = db.get(run_id)
+    assert sum(event["stage"] == "planning" and event["status"] == "started" for event in row["events"]) == 1
+    assert sum(event["stage"] == "analysis" and event["status"] == "started" for event in row["events"]) == 1
+
+    delete_project(tmp_path, run_id)
+    assert db.get(run_id) is None
+    assert not resumed.project_dir.exists()
+    assert not resumed.output_dir.exists()
+
+
+def test_delete_rejects_workspace_itself(tmp_path):
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    run_id = "unsafe123456"
+    reports = tmp_path / "runs" / run_id
+    reports.mkdir()
+    db.create(run_id, "Unsafe", reports, tmp_path)
+    db.finish(run_id, "failed", 0, None)
+    with pytest.raises(ValueError, match="güvenli"):
+        delete_project(tmp_path, run_id)
+    assert tmp_path.is_dir()
+    assert db.get(run_id) is not None
+
+
+def test_pause_while_question_waits_then_resume(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    run_id = "questionpause"
+    db = History(tmp_path / "runs" / "history.sqlite3")
+
+    class AskingEngine(StubEngine):
+        def document(self, stage, idea, context):
+            if stage == "planning" and "Yanıt: işletme sahibi" not in context:
+                raise ClarificationNeeded("Hedef kullanıcı kim?")
+            return super().document(stage, idea, context)
+
+    def stop_at_question(current_id, stage, prompt):
+        db.ask(current_id, stage, prompt)
+        db.request_pause(current_id)
+        raise RunPaused()
+
+    paused = run_project(
+        "Stok API", workspace=tmp_path, engine=AskingEngine(), decisions=BACKEND,
+        run_id=run_id, on_question=stop_at_question,
+    )
+    assert paused.status == "paused"
+    pending = db.pending_question(run_id)
+    assert pending["prompt"] == "Hedef kullanıcı kim?"
+
+    def reply(current_id, stage, prompt):
+        assert db.ask(current_id, stage, prompt) == pending["id"]
+        assert db.answer(current_id, pending["id"], "işletme sahibi")
+        return db.question(pending["id"])["answer"]
+
+    resumed = run_project(
+        "", workspace=tmp_path, engine=AskingEngine(),
+        resume_run_id=run_id, on_question=reply,
+    )
+    assert resumed.status == "completed", resumed.error
+    assert db.pending_question(run_id) is None
 

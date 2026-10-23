@@ -1,9 +1,10 @@
-"""CrewAI agents configured in YAML and backed by OpenCode Go."""
+"""YAML ile tanımlanan ve OpenCode Go kullanan CrewAI ajanları."""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from importlib.resources import files as resource_files
 from string import Template
@@ -17,6 +18,14 @@ GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
 DEFAULT_MODEL = "glm-5.3-flash"
 
 
+class ClarificationNeeded(Exception):
+    """Bir ajan, devam etmeden önce kullanıcıdan tek bir karar ister."""
+
+    def __init__(self, question: str):
+        super().__init__(question)
+        self.question = question
+
+
 def _parse_file_bundle(raw: str) -> dict[str, str]:
     text = raw.strip()
     if text.startswith("```"):
@@ -24,12 +33,12 @@ def _parse_file_bundle(raw: str) -> dict[str, str]:
     try:
         value = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ValueError("Agent did not return valid JSON files") from exc
+        raise ValueError("Ajan geçerli JSON dosyaları döndürmedi") from exc
     files = value.get("files") if isinstance(value, dict) else None
     if not isinstance(files, dict) or not all(
         isinstance(k, str) and isinstance(v, str) for k, v in files.items()
     ):
-        raise ValueError("Agent output must be a JSON object with a files mapping")
+        raise ValueError("Ajan çıktısı files alanı içeren bir JSON nesnesi olmalı")
     return files
 
 
@@ -39,12 +48,12 @@ class CrewAIEngine:
             from crewai import Agent, BaseLLM, Crew, Process, Task
             import yaml
         except ImportError as exc:
-            raise RuntimeError("Dependencies are missing. Install with: pip install -e .") from exc
+            raise RuntimeError("Bağımlılıklar eksik. Kurulum için make setup çalıştır") from exc
 
         load_dotenv()
         self.key = api_key or os.getenv("OPENCODE_API_KEY", "")
         if not self.key:
-            raise RuntimeError("OPENCODE_API_KEY is required")
+            raise RuntimeError("OPENCODE_API_KEY gerekli; yerel .env dosyasını kontrol et")
         self.model = model or os.getenv("AUTOSDLC_MODEL", DEFAULT_MODEL)
         self.session_id = "ses_" + uuid.uuid4().hex
 
@@ -63,7 +72,7 @@ class CrewAIEngine:
                 **_kwargs: Any,
             ) -> str:
                 if tools:
-                    raise ValueError("This project does not grant agents external tools")
+                    raise ValueError("Bu projede ajanlara harici araç izni verilmez")
                 if isinstance(messages, str):
                     messages = [{"role": "user", "content": messages}]
                 try:
@@ -80,12 +89,12 @@ class CrewAIEngine:
                     content = response.json()["choices"][0]["message"]["content"]
                 except httpx.HTTPStatusError as exc:
                     raise RuntimeError(
-                        f"OpenCode Go returned HTTP {exc.response.status_code}"
+                        f"OpenCode Go HTTP {exc.response.status_code} döndürdü"
                     ) from exc
                 except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
-                    raise RuntimeError("OpenCode Go request or response failed") from exc
+                    raise RuntimeError("OpenCode Go isteği veya yanıtı başarısız") from exc
                 if not isinstance(content, str) or not content.strip():
-                    raise RuntimeError("OpenCode Go returned empty text")
+                    raise RuntimeError("OpenCode Go boş yanıt döndürdü")
                 return content
 
             def supports_function_calling(inner) -> bool:
@@ -111,6 +120,11 @@ class CrewAIEngine:
         agent_config = self.agents[stage]
         task_config = self.tasks[stage]
         prompt = Template(task_config["description"]).substitute(values)
+        prompt += (
+            "\nKritik bir kullanıcı kararı eksikse varsayım yapmadan yalnızca "
+            "'KULLANICI_SORUSU: <tek, açık Türkçe soru>' biçiminde yanıt ver. "
+            "Yeterli bilgi varsa bu biçimi kullanma; görevin normal çıktısını üret."
+        )
         agent = self.Agent(
             role=agent_config["role"],
             goal=agent_config["goal"],
@@ -128,17 +142,21 @@ class CrewAIEngine:
         result = self.Crew(
             agents=[agent], tasks=[task], process=self.Process.sequential, verbose=False
         ).kickoff()
-        return result.raw
+        raw = result.raw.strip()
+        match = re.fullmatch(r"KULLANICI_SORUSU:\s*(.{1,1000})", raw, re.DOTALL)
+        if match:
+            raise ClarificationNeeded(match.group(1).strip())
+        return raw
 
     def document(self, stage: str, idea: str, context: str) -> str:
         return self._ask(stage, idea=idea, context=context[:12000])
 
     def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]:
         repair = (
-            "Current implementation:\n"
+            "Mevcut uygulama:\n"
             f"{json.dumps(self.current_files, ensure_ascii=False)[:18000]}\n"
-            f"Repair the implementation based on this pytest output:\n{feedback[:10000]}\n"
-            if feedback else "Create the first implementation.\n"
+                    f"Bu test çıktısına göre uygulamayı düzelt:\n{feedback[:10000]}\n"
+            if feedback else "İlk uygulamayı oluştur.\n"
         )
         raw = self._ask("development", idea=idea, context=docs[:14000], feedback=repair)
         files = _parse_file_bundle(raw)

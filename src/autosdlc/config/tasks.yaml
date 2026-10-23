@@ -1,99 +1,107 @@
-# Variables beginning with $ are filled by the application at runtime.
+# $ ile başlayan değişkenleri uygulama çalışma sırasında doldurur.
 planning:
   description: |
-    Project idea: $idea
-    Architecture choices:
+    Proje fikri: $idea
+    Mimari kararlar ve kullanıcı kısıtları:
     $context
-    Write a practical charter: goals, scope, exclusions, stakeholders, milestones,
-    deliverables, assumptions, dependencies and a risk register with mitigations.
-    Use the requested project type and technology stack. Do not impose Python or FastAPI.
-    Output Markdown only. Do not claim tests or deployment have run.
-  expected_output: A concrete Markdown project plan.
+    Bütün belgeyi Türkçe yaz. Gerçekçi bir proje planı hazırla: hedefler, kapsam,
+    kapsam dışı işler, paydaşlar, kilometre taşları, teslimatlar, varsayımlar,
+    bağımlılıklar ve önlemleriyle birlikte risk tablosu.
+    İstenen proje türüne ve teknolojiye uy; belirli bir dil veya çatı dayatma.
+    Yalnızca Markdown döndür. Testlerin ya da dağıtımın yapıldığını iddia etme.
+  expected_output: Türkçe ve somut bir Markdown proje planı.
 
 analysis:
   description: |
-    Project idea: $idea
-    Previous SDLC artifacts and architecture choices:
+    Proje fikri: $idea
+    Önceki SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
     $context
-    Write numbered functional requirements (FR-01...), user stories with acceptance criteria,
-    nonfunctional requirements (NFR-01...), data and API behavior only where applicable,
-    and a traceability table linking requirements to planned tests.
-    Honor the selected stack and architecture decisions. Output Markdown only.
-  expected_output: Testable requirements and traceability in Markdown.
+    Bütün belgeyi Türkçe yaz. FR-01 gibi numaralı işlevsel gereksinimler,
+    kullanıcı hikâyeleri ve kabul kriterleri, NFR-01 gibi işlevsel olmayan
+    gereksinimler ve gereksinimleri planlanan testlere bağlayan izlenebilirlik
+    tablosu hazırla. Veri ve API davranışını yalnızca projede varsa açıkla.
+    Seçilen teknolojiye ve tüm kararlara uy. Yalnızca Markdown döndür.
+  expected_output: Türkçe, sınanabilir gereksinimler ve izlenebilirlik tablosu.
 
 design:
   description: |
-    Project idea: $idea
-    Previous SDLC artifacts and architecture choices:
+    Proje fikri: $idea
+    Önceki SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
     $context
-    Design the selected stack, components, interfaces, error handling, tests and deployment.
-    Include a Mermaid component diagram and a Mermaid sequence diagram.
-    If a database is selected, include an ER diagram and schema with keys and indexes.
-    If there is an API, specify endpoints, request/response contracts and status codes.
-    Explain decisions and tradeoffs; honor every architecture choice. Output Markdown only.
-  expected_output: A Markdown architecture with diagrams and schemas.
+    Bütün belgeyi Türkçe yaz. Seçilen teknolojiyle bileşenleri, arayüzleri,
+    hata yönetimini, test yaklaşımını ve dağıtımı tasarla.
+    En az bir Mermaid bileşen diyagramı ve bir Mermaid sıralama diyagramı ekle.
+    Veritabanı seçildiyse erDiagram ve anahtarları/indeksleriyle veri şeması ekle.
+    API varsa uç noktaları, istek/yanıt sözleşmelerini ve durum kodlarını yaz.
+    Kararların gerekçelerini ve ödünleşimleri açıkla. Yalnızca Markdown döndür.
+  expected_output: Türkçe mimari belgesi, Mermaid diyagramları ve uygun veri şeması.
 
 development:
   description: |
-    Project idea: $idea
-    SDLC documents and architecture choices:
+    Proje fikri: $idea
+    SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
     $context
     $feedback
-    Implement the requested project in the chosen language/framework, without changing stack.
-    Return ONLY JSON: {"files": {"relative/path": "complete file content", ...}}.
-    Include a Dockerfile suitable for this stack and project.yaml with:
-      port: integer (1024-65535; web service port)
-      setup: [executable, argument, ...] (optional dependency setup)
-      unit_test: [executable, argument, ...] (required for CLI/library)
-      api_test: [executable, argument, ...] (required for backend/fullstack)
-      ui_test: [executable, argument, ...] (required if UI is web)
-      start: [executable, argument, ...] (required if UI is web)
-    Commands run without a shell from the project root. For Python use "python";
-    it resolves to the active interpreter. API tests must issue real HTTP requests against
-    the app (in process or against a live server). UI tests must use Playwright in a browser
-    against BASE_URL. Include dependency manifests and all required source files.
-    If setup installs Python dependencies, include pytest and any HTTP/browser test
-    dependencies too; the workflow installs them into a dedicated project virtual environment.
-    For Python pytest-playwright UI tests include [-p, pytest_playwright.pytest_playwright]
-    in ui_test because plugin autoload is disabled.
-    Use TASK_DB_PATH for SQLite, DATABASE_URL for Postgres, REDIS_URL for Redis and
-    OTEL_EXPORTER_OTLP_ENDPOINT for telemetry when those choices apply.
-    No Markdown fences. For repairs, return complete replacement files, not patches.
-  expected_output: Valid JSON containing complete project files, Dockerfile and project.yaml.
+    İstenen dil, çatı, paket yöneticisi ve arayüz sadeliğine tam uy.
+    YALNIZCA şu JSON biçimini döndür: {"files": {"goreli/yol": "dosyanın tam içeriği", ...}}.
+    Seçilen teknolojiye uygun Dockerfile ve şu anahtarları taşıyan project.yaml üret:
+      port: 1024-65535 arasında tamsayı (web hizmetinin portu)
+      setup: [çalıştırılabilir, argüman, ...] (isteğe bağlı bağımlılık kurulumu)
+      unit_test: [çalıştırılabilir, argüman, ...] (CLI/kütüphane için zorunlu)
+      api_test: [çalıştırılabilir, argüman, ...] (backend/fullstack için zorunlu)
+      ui_test: [çalıştırılabilir, argüman, ...] (web arayüzü varsa zorunlu)
+      start: [çalıştırılabilir, argüman, ...] (web arayüzü varsa zorunlu)
+    Bu komutlar proje kökünde kabuk kullanılmadan çalıştırılır. Python için
+    çalıştırılabilir olarak "python" yaz; uygulama doğru yorumlayıcıyı seçer.
+    API testleri gerçek HTTP davranışını sınamalı. Arayüz testleri Playwright ile
+    BASE_URL adresindeki çalışan uygulamada görünür bir etkileşimi doğrulamalı.
+    Bağımlılık dosyalarını ve tüm kaynak dosyalarını ekle. Python setup komutu
+    kullanılıyorsa pytest ve gereken HTTP/tarayıcı test bağımlılıklarını da kur;
+    uygulama bu bağımlılıkları projeye özel sanal ortama yükler.
+    Python pytest-playwright testi için ui_test listesine
+    [-p, pytest_playwright.pytest_playwright] ekle; otomatik eklenti yükleme kapalı.
+    SQLite için TASK_DB_PATH, Postgres için DATABASE_URL, Redis için REDIS_URL,
+    telemetri için OTEL_EXPORTER_OTLP_ENDPOINT ortam değişkenlerini kullan.
+    Markdown kod bloğu döndürme. Düzeltmede yama değil tam dosya içeriği ver.
+  expected_output: Dockerfile, project.yaml ve eksiksiz kaynak dosyalarını içeren geçerli JSON.
 
 testing:
   description: |
-    Project idea: $idea
-    SDLC documents and architecture choices:
+    Proje fikri: $idea
+    SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
     $context
-    Implementation:
+    Uygulama dosyaları:
     $files
-    Write tests for the chosen language/framework under tests/ or test/ and return ONLY
-    JSON {"files": {"relative/path": "complete content"}}. Test requirements by ID,
-    including success and failure cases. For backend/fullstack, exercise real API HTTP
-    routes. If UI is web, use Playwright to open BASE_URL and verify a visible interaction.
-    The implementation's project.yaml declares commands the workflow will run.
-    Isolate test data and keep tests deterministic. No Markdown fences.
-  expected_output: Valid JSON containing complete test source files under the files key.
+    Bütün açıklamaları Türkçe yaz. Seçilen dil ve çatıya uygun testleri tests/
+    veya test/ altında üret. YALNIZCA {"files": {"goreli/yol": "tam içerik"}}
+    biçiminde JSON döndür. Testleri FR/NFR kimlikleriyle ilişkilendir; başarılı
+    ve hatalı kullanımları kapsa. Backend/fullstack projede gerçek API HTTP
+    uç noktalarını sına. Web arayüzü varsa Playwright ile BASE_URL adresini aç
+    ve görünür bir etkileşimi doğrula. Test verisini yalıt ve deterministik tut.
+    Test komutları uygulamanın project.yaml dosyasında belirtilmiştir.
+  expected_output: Seçilen teknolojiye uygun eksiksiz test dosyalarını içeren geçerli JSON.
 
 deployment:
   description: |
-    Project idea: $idea
-    Previous SDLC artifacts and actual test result:
+    Proje fikri: $idea
+    Önceki SDLC belgeleri ve gerçek test sonucu:
     $context
-    Write a deployment runbook for the generated stack: prerequisites, environment
-    variables, docker compose build/up, health checks, rollback and backup steps.
-    The workflow prepared Dockerfile and compose.yaml; do not claim an image was built
-    or deployed. State clearly if tests failed. Do not include secrets. Output Markdown only.
-  expected_output: An honest Markdown deployment runbook with readiness status.
+    Bütün belgeyi Türkçe yaz. Seçilen teknoloji için ön koşulları, ortam
+    değişkenlerini, docker compose build/up adımlarını, sağlık kontrollerini,
+    geri alma ve yedekleme adımlarını içeren dağıtım kılavuzu hazırla.
+    Dockerfile ve compose.yaml hazırlanmıştır; imajın oluşturulduğunu veya
+    uygulamanın dağıtıldığını iddia etme. Testler başarısızsa açıkça belirt.
+    Gizli anahtarları yazma. Yalnızca Markdown döndür.
+  expected_output: Türkçe, gerçek durumu yansıtan dağıtım kılavuzu.
 
 maintenance:
   description: |
-    Project idea: $idea
-    Previous SDLC artifacts and actual test result:
+    Proje fikri: $idea
+    Önceki SDLC belgeleri ve gerçek test sonucu:
     $context
-    Write a maintenance plan with ownership, monitoring signals, incident response,
-    backup/restore, dependency updates, known limitations, unresolved test failures
-    and prioritized improvements. Do not claim issues were fixed or production
-    monitoring is active. Output Markdown only.
-  expected_output: A concrete Markdown maintenance plan.
+    Bütün belgeyi Türkçe yaz. Sorumlulukları, izleme sinyallerini, olay
+    müdahalesini, yedekleme/geri yüklemeyi, bağımlılık güncellemelerini,
+    bilinen sınırları, açık test hatalarını ve öncelikli iyileştirmeleri yaz.
+    Sorunların çözüldüğünü veya üretimde izleme yapıldığını iddia etme.
+    Yalnızca Markdown döndür.
+  expected_output: Türkçe ve uygulanabilir bakım planı.
