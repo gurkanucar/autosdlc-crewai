@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from html import escape
 
 
@@ -29,9 +30,11 @@ STAGES = (
 STAGE_KEYS = tuple(stage.key for stage in STAGES)
 STAGE_NAMES = {stage.key: stage.label for stage in STAGES}
 RUNNING_EVENTS = {
-    "started", "repair_started", "repair_completed", "answered", "gate_failed",
-    "revision_started", "revision_completed", "changes_requested", "approved", "traceability", "tests_protected",
+    "started", "repair_started", "answered", "gate_failed",
+    "revision_started", "changes_requested", "approved", "traceability", "tests_protected",
 }
+# Onarım bitince sıra teste, tasarım revizyonu bitince sıra incelemeye geçer.
+HANDOFFS = {("development", "repair_completed"): "testing", ("design", "revision_completed"): "review"}
 
 
 def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
@@ -45,7 +48,10 @@ def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
             continue
         if stage not in states:
             continue
-        if status in RUNNING_EVENTS:
+        if (stage, status) in HANDOFFS:
+            states[stage] = "done"
+            states[HANDOFFS[(stage, status)]] = "running"
+        elif status in RUNNING_EVENTS:
             states[stage] = "running"
         elif status == "question":
             states[stage] = "question"
@@ -53,12 +59,6 @@ def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
             states[stage] = "done"
         elif status == "failed":
             states[stage] = "failed"
-    # Tasarım revizyonu biter bitmez aşama yeniden "tamamlandı" sayılır.
-    if states["design"] == "running" and states["review"] != "pending":
-        states["design"] = "done"
-    # Onarım tamamlanınca kodlama, testin sonucunu bekler.
-    if states["development"] == "running" and states["testing"] != "pending":
-        states["development"] = "done"
     if run_status != "running":
         for key, value in states.items():
             if value in {"running", "question"}:
@@ -88,6 +88,62 @@ def counters(events: list[dict]) -> dict[str, object]:
     return result
 
 
+SEGMENT_STARTS = {"started", "repair_started", "revision_started", "answered"}
+SEGMENT_ENDS = {"completed", "passed", "failed", "repair_completed", "revision_completed", "question", "changes_requested"}
+# Onarım bitince test, tasarım revizyonu bitince inceleme yeni bir "started" olayı olmadan yeniden çalışır.
+RERUNS = {("development", "repair_completed"): "testing", ("design", "revision_completed"): "review"}
+RUN_STARTS = {"started", "repair_started", "revision_started"}
+
+
+def _parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value)
+
+
+def stage_metrics(events: list[dict], now: datetime | None = None) -> dict[str, dict]:
+    """Aşama başına çalışma sayısı ve aktif süre (soru bekleme süresi hariç), saniye cinsinden."""
+    now = now or datetime.now(timezone.utc)
+    metrics = {key: {"runs": 0, "seconds": 0.0, "open": None, "last_started": None} for key in STAGE_KEYS}
+    for event in events:
+        item = metrics.get(event["stage"])
+        status = event["status"]
+        if event["stage"] == "workflow" and status in {"paused", "failed", "interrupted"}:
+            for value in metrics.values():
+                if value["open"] is not None:
+                    value["seconds"] += (_parse_time(event["created_at"]) - value["open"]).total_seconds()
+                    value["open"] = None
+            continue
+        if item is None:
+            continue
+        moment = _parse_time(event["created_at"])
+        if status in RUN_STARTS:
+            item["runs"] += 1
+            item["last_started"] = event["created_at"]
+        if status in SEGMENT_STARTS and item["open"] is None:
+            item["open"] = moment
+        elif status in SEGMENT_ENDS and item["open"] is not None:
+            item["seconds"] += (moment - item["open"]).total_seconds()
+            item["open"] = None
+        follower = RERUNS.get((event["stage"], status))
+        if follower:
+            metrics[follower]["runs"] += 1
+            metrics[follower]["open"] = metrics[follower]["open"] or moment
+    for item in metrics.values():
+        if item["open"] is not None:
+            item["seconds"] += max(0.0, (now - item["open"]).total_seconds())
+        item["running"] = item.pop("open") is not None
+    return metrics
+
+
+def format_duration(seconds: float) -> str:
+    if seconds < 1:
+        return "—"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}sa {minutes}dk"
+    return f"{minutes}dk {secs:02d}sn" if minutes else f"{secs}sn"
+
+
 PALETTE = {
     "pending": ("#f1f5f9", "#94a3b8", "#64748b", "Sırada"),
     "running": ("#dbeafe", "#2563eb", "#1e3a8a", "Çalışıyor"),
@@ -104,7 +160,8 @@ def _node_x(index: int) -> int:
     return 15 + (index // 2) * 245 + (60 if index % 2 == 0 else 170)
 
 
-def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, object] | None = None) -> str:
+def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, object] | None = None,
+               selected: str | None = None, durations: dict[str, str] | None = None) -> str:
     """Yaşam döngüsünü tek bir SVG olarak çizer; durum verilmezse tanıtım görünümü üretir."""
     states = states or {key: "pending" for key in STAGE_KEYS}
     loop_counts = loop_counts or {}
@@ -153,13 +210,16 @@ def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, obje
         parts.append(f"<g><title>{escape(stage.agent)}: {escape(stage.description)} — {state_label}</title>")
         if state in {"running", "question"}:
             parts.append(f'<circle class="sdlc-halo" cx="{x}" cy="{y}" r="31" fill="none" stroke="{stroke}"/>')
+        if stage.key == selected:
+            parts.append(f'<circle cx="{x}" cy="{y}" r="36" fill="none" stroke="#0f172a" stroke-width="2.5"/>')
         dash = ' stroke-dasharray="4 3"' if state == "paused" else ""
         parts.append(f'<circle cx="{x}" cy="{y}" r="29" fill="{fill}" stroke="{stroke}" stroke-width="2.5"{dash}/>')
         glyph = GLYPHS.get(state, str(index + 1))
         parts.append(f'<text x="{x}" y="{y + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="{ink}">{glyph}</text>')
         parts.append(f'<text x="{x}" y="{y + 52}" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">{escape(stage.label)}</text>')
         parts.append(f'<text x="{x}" y="{y + 69}" text-anchor="middle" font-size="11" fill="#64748b">{escape(stage.artifact)}</text>')
-        parts.append(f'<text x="{x}" y="{y + 85}" text-anchor="middle" font-size="11" fill="{stroke}" font-weight="600">{state_label}</text>')
+        timing = f" · {durations[stage.key]}" if durations and durations.get(stage.key) not in {None, "—"} else ""
+        parts.append(f'<text x="{x}" y="{y + 85}" text-anchor="middle" font-size="11" fill="{stroke}" font-weight="600">{state_label}{escape(timing)}</text>')
         parts.append("</g>")
     parts.append("</svg>")
     return "".join(parts)

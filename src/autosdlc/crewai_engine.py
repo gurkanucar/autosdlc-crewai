@@ -9,7 +9,7 @@ import time
 import uuid
 from importlib.resources import files as resource_files
 from string import Template
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 from dotenv import load_dotenv
@@ -18,6 +18,30 @@ from dotenv import load_dotenv
 GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
 DEFAULT_MODEL = "glm-5.3-flash"
 RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
+
+
+def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None]) -> str:
+    """SSE akışını okur ve biriken metni her parçada on_text'e verir; sunucu akış vermezse düz JSON'a düşer."""
+    with httpx.stream("POST", url, headers=headers, json={**payload, "stream": True}, timeout=300) as response:
+        response.raise_for_status()
+        if "text/event-stream" not in response.headers.get("content-type", ""):
+            response.read()
+            content = response.json()["choices"][0]["message"]["content"]
+            on_text(content)
+            return content
+        parts: list[str] = []
+        for line in response.iter_lines():
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            choices = json.loads(data).get("choices") or [{}]
+            delta = (choices[0].get("delta") or {}).get("content") or ""
+            if delta:
+                parts.append(delta)
+                on_text("".join(parts))
+        return "".join(parts)
 
 
 class ClarificationNeeded(Exception):
@@ -71,6 +95,8 @@ class CrewAIEngine:
                 super().__init__(model=model_name, temperature=0.2)
                 inner.key = key
                 inner.session_id = session_id
+                # Tanımlıysa yanıt akış olarak alınır ve biriken metin canlı gösterim için buraya verilir.
+                inner.listener = None
 
             def call(
                 inner,
@@ -86,18 +112,16 @@ class CrewAIEngine:
                     messages = [{"role": "user", "content": messages}]
                 # Geçici ağ/hız sınırı hatalarında üstel bekleme ile üç deneme.
                 for attempt in range(3):
+                    url = f"{GO_BASE_URL}/chat/completions"
+                    headers = {"Authorization": f"Bearer {inner.key}", "x-opencode-session": inner.session_id}
+                    payload = {"model": inner.model, "messages": messages}
                     try:
-                        response = httpx.post(
-                            f"{GO_BASE_URL}/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {inner.key}",
-                                "x-opencode-session": inner.session_id,
-                            },
-                            json={"model": inner.model, "messages": messages},
-                            timeout=300,
-                        )
-                        response.raise_for_status()
-                        content = response.json()["choices"][0]["message"]["content"]
+                        if inner.listener is not None:
+                            content = _stream_completion(url, headers, payload, inner.listener)
+                        else:
+                            response = httpx.post(url, headers=headers, json=payload, timeout=300)
+                            response.raise_for_status()
+                            content = response.json()["choices"][0]["message"]["content"]
                         break
                     except httpx.HTTPStatusError as exc:
                         if exc.response.status_code in RETRY_STATUSES and attempt < 2:
@@ -132,6 +156,8 @@ class CrewAIEngine:
         self.Process = Process
         self.Task = Task
         self.current_files: dict[str, str] = {}
+        # (aşama, o ana kadarki ajan çıktısı); RunSession canlı çıktı dosyasına yazmak için ayarlar.
+        self.output_listener: Callable[[str, str], None] | None = None
         config_dir = resource_files("autosdlc").joinpath("config")
         self.agents = yaml.safe_load(config_dir.joinpath("agents.yaml").read_text(encoding="utf-8"))
         self.tasks = yaml.safe_load(config_dir.joinpath("tasks.yaml").read_text(encoding="utf-8"))
@@ -140,6 +166,8 @@ class CrewAIEngine:
         agent_config = self.agents[stage]
         task_config = self.tasks[stage]
         prompt = Template(task_config["description"]).substitute(values) + extra
+        listener = self.output_listener
+        self.llm.listener = (lambda text: listener(stage, text)) if listener else None
         prompt += (
             "\nKritik bir kullanıcı kararı eksikse varsayım yapmadan yalnızca "
             "'KULLANICI_SORUSU: <tek, açık Türkçe soru>' biçiminde yanıt ver. "

@@ -1,4 +1,5 @@
 import json
+import json as json_module
 from pathlib import Path
 
 import pytest
@@ -161,12 +162,45 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     def fake_post(url, *, headers, json, timeout):
         return Response(next(responses))
 
+    streamed = []
+
+    class StreamResponse:
+        """OpenAI uyumlu SSE akışı: yanıtı birkaç parçaya bölüp gönderir."""
+        headers = {"content-type": "text/event-stream"}
+
+        def __init__(self, content):
+            self.content = content
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_lines(self):
+            for start in range(0, len(self.content), 40):
+                yield "data: " + json_module.dumps({"choices": [{"delta": {"content": self.content[start:start + 40]}}]})
+                yield ""
+            yield "data: [DONE]"
+
+    def fake_stream(method, url, *, headers, json, timeout):
+        assert json["stream"] is True
+        streamed.append(url)
+        return StreamResponse(next(responses))
+
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
+    monkeypatch.setattr("autosdlc.crewai_engine.httpx.stream", fake_stream)
     engine = CrewAIEngine(api_key="test-key")
     result = run_project("Book tracker", workspace=tmp_path, engine=engine, decisions=BACKEND)
     assert result.status == "completed", result.error
     assert result.attempts == 1
     assert "BAŞARILI" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
+    # Ajan yanıtları akış olarak alındı ve canlı gösterim dosyalarına yazıldı.
+    assert len(streamed) == 8
+    assert "book tracker" in (result.output_dir / "live" / "planning.md").read_text(encoding="utf-8").lower()
 
 
 def test_architecture_choices_and_compose():
@@ -637,3 +671,108 @@ def test_streamlit_template_fills_the_form(monkeypatch):
     app.button(key="apply_template").click().run()
     assert app.selectbox(key="project_type_input").value == "backend"
     assert app.selectbox(key="choice_ui").value == "none"
+
+
+def test_stage_metrics_count_runs_and_exclude_waiting_time():
+    from autosdlc.lifecycle import format_duration, stage_metrics
+
+    def at(seconds):
+        return f"2026-01-01T00:{seconds // 60:02d}:{seconds % 60:02d}+00:00"
+
+    events = [
+        {"stage": "planning", "status": "started", "detail": "", "created_at": at(0)},
+        {"stage": "planning", "status": "question", "detail": "?", "created_at": at(10)},
+        {"stage": "planning", "status": "answered", "detail": "", "created_at": at(300)},
+        {"stage": "planning", "status": "completed", "detail": "", "created_at": at(320)},
+        {"stage": "testing", "status": "started", "detail": "", "created_at": at(400)},
+        {"stage": "testing", "status": "failed", "detail": "attempt 1", "created_at": at(430)},
+        {"stage": "development", "status": "repair_started", "detail": "", "created_at": at(431)},
+        {"stage": "development", "status": "repair_completed", "detail": "", "created_at": at(491)},
+        {"stage": "testing", "status": "passed", "detail": "attempt 2", "created_at": at(511)},
+    ]
+    metrics = stage_metrics(events)
+    assert metrics["planning"]["seconds"] == 30 and metrics["planning"]["runs"] == 1
+    assert metrics["testing"]["runs"] == 2 and metrics["testing"]["seconds"] == 50
+    assert metrics["development"]["runs"] == 1 and metrics["development"]["seconds"] == 60
+    assert format_duration(30) == "30sn" and format_duration(125) == "2dk 05sn"
+
+
+def test_user_notes_reach_later_agents(tmp_path, monkeypatch):
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    contexts = {}
+    run_id = "notes1234567"
+
+    class NotingEngine(StubEngine):
+        def document(self, stage, idea, context):
+            contexts[stage] = context
+            if stage == "planning":
+                History(tmp_path / "runs" / "history.sqlite3").add_note(run_id, "Arayüz koyu tema olsun")
+            return super().document(stage, idea, context)
+
+    result = run_project("Not API", workspace=tmp_path, engine=NotingEngine(), decisions=BACKEND, run_id=run_id)
+    assert result.status == "completed", result.error
+    assert "koyu tema" not in contexts["planning"]
+    assert "koyu tema" in contexts["analysis"] and "koyu tema" in contexts["maintenance"]
+
+
+def _app(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("AUTOSDLC_WORKSPACE", str(tmp_path))
+    monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
+    return AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30)
+
+
+
+def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
+    """Formdan oluştur → Projeler sayfasına geç → aşamaya tıkla → chat'ten soruyu yanıtla ve not bırak."""
+    import threading
+    import time
+
+    from autosdlc import runner
+
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    real_run = runner.run_project
+    question_asked = threading.Event()
+
+    class AskingEngine(StubEngine):
+        def document(self, stage, idea, context):
+            if stage == "planning" and "Yanıt: öğrenciler" not in context:
+                question_asked.set()
+                raise ClarificationNeeded("Hedef kullanıcı kim?")
+            return super().document(stage, idea, context)
+
+    monkeypatch.setattr("autosdlc.runner.run_project", lambda idea, **kw: real_run(
+        idea, engine=AskingEngine(), **{k: v for k, v in kw.items() if k not in {"model", "api_key"}}))
+    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
+    app = _app(tmp_path, monkeypatch).run()
+    app.selectbox(key="template_choice").select("gorev-api").run()
+    app.button(key="apply_template").click().run()
+    next(button for button in app.button if "Projeyi oluştur" in button.label).click().run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert question_asked.wait(20)
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    run_id = db.list()[0]["id"]
+    for _ in range(100):
+        if db.pending_question(run_id):
+            break
+        time.sleep(0.1)
+    app.run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("Hedef kullanıcı kim?" in w.value for w in app.warning)
+    assert "sorusunu yanıtla" in app.chat_input[0].proto.placeholder
+    app.chat_input[0].set_value("öğrenciler").run()
+    for _ in range(200):
+        if db.get(run_id)["status"] != "running":
+            break
+        time.sleep(0.1)
+    assert db.get(run_id)["status"] == "completed"
+    assert db.get(run_id)["questions"][0]["answer"] == "öğrenciler"
+    app.run()
+    assert not app.exception, [e.value for e in app.exception]
+    app.chat_input[0].set_value("Bir sonraki sürümde CSV dışa aktarım olsun").run()
+    assert db.notes(run_id)[0]["content"].startswith("Bir sonraki sürümde")
+    app.session_state[f"stage_{run_id}"] = "review"
+    app.run()
+    assert not app.exception, [e.value for e in app.exception]
+    assert any("Mimari İnceleme Ajanı" in md.value for md in app.markdown)

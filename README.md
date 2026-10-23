@@ -24,19 +24,22 @@ mühendisliği, tasarım ve doğrulama, gerçekleştirme, operasyon) gösterir. 
 düğüm canlı durumunu (sırada, çalışıyor, yanıt bekliyor, tamamlandı, başarısız)
 ve ürettiği belgeyi taşır. Turuncu oklar geri besleme döngüleridir:
 **İnceleme → Tasarım** (revizyon) ve **Test → Kodlama** (onarım); döngü
-çalıştıkça sayaçları artar. Ana sayfa yeni projeyi başlatır ve aktif çalışmayı
-canlı izletir. **Projeler** sayfasında her projenin sekmeleri vardır:
+çalıştıkça sayaçları artar.
 
-- **Yaşam döngüsü:** diyagram, metrikler (aşama, inceleme turu, test, onarım, FR kapsamı), ajan soruları, durdur/devam et.
-- **Belgeler:** tüm SDLC belgelerini okuma ve düzenleme. **Kaydet ve sonraki aşamadan yeniden üret** düzenlenmiş belgeyi girdi kabul ederek sonraki aşamaları yeniden çalıştırır (ör. gereksinimleri elle düzelt → tasarımdan itibaren yeniden üret).
-- **Kod:** üretilen dosyaları görüntüleme ve projeyi ZIP olarak indirme.
-- **Olaylar:** aşama olaylarının zaman çizelgesi ve ajan soruları.
-- **Yönet:** fikri ve kısıtları düzenleme, herhangi bir aşamadan itibaren yeniden üretme, projeyi silme.
+**Yeni proje** sayfasında formu kendin doldurabilir ya da **Örnek proje şablonu**
+seçip **Uygula** ile doldurabilirsin. Şablonlar
+[`templates.yaml`](src/autosdlc/config/templates.yaml) içindedir. Başlatınca
+**Projeler** sayfası açılır; projeler kenar çubuğunda listelenir. Çalışma alanı
+sayfayı yenilemeden kendini günceller:
 
-Bir ajan kritik karar isterse ilgili aşama duraklar, soru görünür; yanıtı yazıp
-**Yanıtla ve devam et** dersin. **Çalışmayı durdur** ile duraklatıp **Devam et**
-ile tamamlanmış aşamaları yeniden üretmeden sürdürebilirsin; durdurma o sırada
-süren ajan çağrısı bitince uygulanır. Çalışan iş her 10 saniyede bir kalp atışı
+- **Diyagram ve aşama seçici:** bir aşamaya tıklayınca o aşamanın detayı açılır. Seçim yapmazsan görünüm aktif aşamayı izler.
+- **Metrikler:** tamamlanan aşama, toplam ajan süresi, inceleme turu, test çalıştırma, onarım ve FR test kapsamı. Her aşamanın detayında o aşamanın süresi ve kaç kez çalıştığı (onarım/revizyon turları dahil) görünür. Süreye, ajanın senin yanıtını beklediği süre katılmaz.
+- **Aşama detayı:** çalışan aşamada ajanın çıktısı **canlı akar** (LLM yanıtı akış olarak alınır). Biten aşamada üretilen belge (Mermaid diyagramları çizilmiş hâlde), Kodlama'da dosya görüntüleyici ve ZIP indirme gösterilir. Belgeler **✏️ Düzenle** ile değiştirilebilir; **Kaydet ve yeniden üret** sonraki aşamaları düzenlenmiş belgeyle yeniden çalıştırır.
+- **Ajan akışı (chat):** ajanların ilerleme mesajları, soruları ve senin yanıtların. Bir ajan karar isterse soru burada görünür ve chat kutusuna yazdığın metin yanıt olarak gider. Soru yoksa yazdığın metin **yönlendirme notu** olarak kaydedilir ve sonraki aşamaların ajan bağlamına eklenir (ör. "arayüz koyu tema olsun").
+- **Üst bar:** ⏸ Durdur, ▶ Devam et ve ⚙️ Yönet (fikri/kısıtları düzenle, bir aşamadan itibaren yeniden üret, projeyi sil).
+
+Durdurma o sırada süren ajan çağrısı bitince uygulanır; devam ettirince tamamlanmış
+aşamalar yeniden üretilmez. Çalışan iş her 10 saniyede bir kalp atışı
 yazar. Arayüz kapanır ya da bilgisayar uyursa, iş kesintiye uğramış kabul edilip
 duraklatılır; kayıt kilitli kalmaz, devam ettirilebilir veya silinebilir.
 Terminal yalnızca yerel arayüz sunucusunu çalıştırır; kapatmak için `Ctrl+C`.

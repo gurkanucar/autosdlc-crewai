@@ -41,6 +41,12 @@ class History:
                     detail TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS notes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL REFERENCES runs(id),
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS questions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     run_id TEXT NOT NULL REFERENCES runs(id),
@@ -161,8 +167,23 @@ class History:
     def delete_record(self, run_id: str) -> None:
         with self._connect() as db:
             db.execute("DELETE FROM questions WHERE run_id=?", (run_id,))
+            db.execute("DELETE FROM notes WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM events WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM runs WHERE id=?", (run_id,))
+
+    def add_note(self, run_id: str, content: str) -> None:
+        """Kullanıcının chat üzerinden ajanlara verdiği yönlendirme; sonraki aşamaların bağlamına girer."""
+        text = content.strip()
+        if not text or len(text) > 2000:
+            raise ValueError("Not 1–2000 karakter olmalı")
+        with self._connect() as db:
+            db.execute("INSERT INTO notes (run_id, content, created_at) VALUES (?, ?, ?)", (run_id, text, now()))
+
+    def notes(self, run_id: str) -> list[dict]:
+        with self._connect() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT content, created_at FROM notes WHERE run_id=? ORDER BY id", (run_id,)
+            )]
 
     def ask(self, run_id: str, stage: str, prompt: str) -> int:
         with self._connect() as db:
@@ -220,6 +241,9 @@ class History:
                     "WHERE run_id=? ORDER BY id", (run_id,)
                 )
             ]
+            result["notes"] = [dict(note) for note in db.execute(
+                "SELECT content, created_at FROM notes WHERE run_id=? ORDER BY id", (run_id,)
+            )]
             result["questions"] = [
                 dict(question) for question in db.execute(
                     "SELECT * FROM questions WHERE run_id=? ORDER BY id", (run_id,)

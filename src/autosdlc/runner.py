@@ -185,6 +185,9 @@ class RunSession:
         self.test_passed = False
         self.last_test_output = ""
         self.completed_stages: set[str] = set()
+        self._live_written = 0.0
+        if hasattr(engine, "output_listener"):
+            engine.output_listener = self._live_output
         if resume:
             self._load_checkpoint(existing)
             if not self.history.resume(self.run_id):
@@ -214,6 +217,19 @@ class RunSession:
         attempt = self.output_dir / "test_attempts" / f"attempt-{self.attempts}.txt"
         if attempt.is_file():
             self.last_test_output = attempt.read_text(encoding="utf-8")
+
+    def _live_output(self, stage: str, text: str) -> None:
+        """Ajanın akan çıktısını arayüzün okuyacağı dosyaya yazar (en fazla saniyede ~3 kez)."""
+        now = time.monotonic()
+        if now - self._live_written < 0.3:
+            return
+        self._live_written = now
+        try:
+            live_dir = self.output_dir / "live"
+            live_dir.mkdir(exist_ok=True)
+            (live_dir / f"{stage}.md").write_text(text, encoding="utf-8")
+        except OSError:
+            pass  # Canlı gösterim yalnızca kolaylık; arayüz dosyayı okurken yazma çakışabilir.
 
     def _check_pause(self) -> None:
         if self.history.pause_requested(self.run_id):
@@ -309,6 +325,11 @@ class RunSession:
         if self.clarifications:
             parts.append("Kullanıcının aşama sorularına verdiği yanıtlar (kesin kararlardır):\n" + "\n".join(
                 f"- [{item['stage']}] Soru: {item['question']}\n  Yanıt: {item['answer']}" for item in self.clarifications
+            ))
+        notes = self.history.notes(self.run_id)
+        if notes:
+            parts.append("Kullanıcının chat üzerinden verdiği yönlendirmeler (dikkate al):\n" + "\n".join(
+                f"- {note['content']}" for note in notes
             ))
         if stage in {"deployment", "maintenance"}:
             parts.append(
