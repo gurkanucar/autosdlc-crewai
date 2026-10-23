@@ -1,6 +1,6 @@
 # AutoSDLC
 
-AutoSDLC, bir proje fikrini CrewAI Flow ve sekiz ajanla **Planlama → Analiz → Tasarım → İnceleme → Kodlama → Test → Dağıtım → Bakım** aşamalarından geçirir. Orkestrasyon Python ile yazılmıştır; **üretilen proje Python veya FastAPI ile sınırlı değildir**. Proje türünü ve teknoloji yığınını kullanıcı seçer (ör. Go/Gin, Node/Express, Python/Django, bir CLI veya kütüphane).
+AutoSDLC, bir proje fikrini CrewAI Flow ve sekiz ajanla **Planlama → Analiz → Tasarım → İnceleme → Kodlama → Test → Dağıtım → Bakım** aşamalarından geçirir. Orkestrasyon Python ile yazılmıştır; **üretilen proje Python veya FastAPI ile sınırlı değildir**. Proje türünü ve teknoloji yığınını kullanıcı seçer (ör. Go/Gin, Node/Express, Python/Django, bir CLI veya library). Üretilen kod İngilizcedir (değişken, fonksiyon, sınıf, dosya adları ve yorumlar); belgeler Türkçedir ama backend, fullstack, endpoint gibi yerleşik terimler çevrilmez. Bu kurallar [`tasks.yaml`](src/autosdlc/config/tasks.yaml) içindeki `language_rules` bloğundadır.
 
 ## Kurulum
 
@@ -15,9 +15,9 @@ make run
 ## Çalıştırma
 
 `make run` tarayıcı arayüzünü açar. Proje fikrini, türünü, teknoloji yığınını,
-paket yöneticisini ve diğer teknik kısıtları formda yazarsın. Arka uç/tam yığın
-için veritabanı, önbellek ve gözlemlenebilirlik; arka uç için isteğe bağlı web
-arayüzü seçilir.
+package manager'ı ve diğer teknik kısıtları formda yazarsın. Backend/fullstack
+için database, cache ve observability; backend için isteğe bağlı web
+UI seçilir.
 
 Arayüzün yaşam döngüsü diyagramı sekiz aşamayı dört evrede (gereksinim
 mühendisliği, tasarım ve doğrulama, gerçekleştirme, operasyon) gösterir. Her
@@ -108,6 +108,38 @@ CrewAI Flow sıralamayı yönetir. Ajan rolleri [`agents.yaml`](src/autosdlc/con
 - **İzlenebilirlik matrisi:** Test aşaması `traceability.md` üretir. Gereksinim kimlikleri test dosyalarındaki referanslarla (`FR-01`, `test_fr01_...`) eşleştirilir ve FR/NFR kapsama oranı test raporuna ve dağıtım/bakım ajanlarına aktarılır.
 - **Testlerin korunması:** Onarım döngüsünde Geliştirme Ajanı `tests/` ve `test/` dosyalarını değiştiremez; bu tür değişiklikler reddedilir ve olay olarak kaydedilir. Böylece testler değiştirilerek "geçirilemez".
 - **Aşamaya özgü bağlam:** Her ajan yalnızca ilgili önceki belgeleri alır (ör. Kodlama: tasarım + gereksinimler). Kullanıcı yanıtları ve gerçek test sonucu bağlamın başına konur; uzun belgeler kırpılsa bile kaybolmaz.
+- **Test kapsamı denetimi:** `project.yaml` test komutları bazı test dosyalarını çalıştırmıyorsa (ör. komut tek dosyayı hedefliyorsa) bu, test raporunda ve olaylarda uyarı olarak görünür; çalışmayan test geçmiş sayılmaz.
+
+## Değişiklik yönetimi
+
+Proje bittikten sonra da SDLC devam eder. Üç tür müdahale vardır.
+
+**1. Belgede bölüm düzeyinde müdahale.** Bir aşamanın belgesinde **🎯 Bölüm** moduna geç; bir başlık (`§`) ya da tek bir gereksinim (`📌 FR-02`) seç:
+
+| İşlem | Ne yapar |
+| --- | --- |
+| 💬 Sor | O aşamanın ajanına bölüm hakkında soru sorar; belge değişmez, yanıt ajan akışına da düşer. |
+| ✍️ Yeniden yaz | Talimata göre bölümü yeniden yazdırır (ör. "kabul kriterlerini Given/When/Then yap"). |
+| ➕ Ekle | Bölümün altına yeni içerik yazdırır (ör. yeni bir FR; numara otomatik sıradakidir). |
+| 🗑️ Sil / ✏️ Elle | Bölümü siler ya da elle düzenlersin. |
+
+Ajanın önerisi **diff** olarak gösterilir; **Kabul et** dersen kaydedilir. Belgenin önceki hâli `runs/<id>/versions/` altına yedeklenir.
+
+**2. Etki: "güncel değil".** Bir belge değişince sonraki aşamalar otomatik yeniden üretilmez; diyagramda sarı **↻ Güncel değil** olarak işaretlenir. Uyarıdaki **Etkilenenleri güncelle** iki seçenek sunar:
+- **Delta:** mevcut belgeler ve kod korunur; ajanlar yalnızca düzenlemenin etkilediği kısımları günceller (değişen yerler `[CR-xxx]` ile etiketlenir), kodda yalnızca değişen dosyalar yazılır, ardından tüm testler regresyon olarak koşar.
+- **Baştan üret:** bu aşamalar sıfırdan yazılır.
+
+Fikir/kısıt değişikliği bütün aşamaları "güncel değil" yapar.
+
+**3. Değişiklik talebi (yeni özellik / hata / değişiklik).** Üst çubukta **📝 Değişiklik**:
+1. Talep oluştur (`CR-001`, türü ve açıklaması).
+2. **Etki analizi:** Etki Analizi Ajanı izlenebilirlik zinciriyle (FR → tasarım → dosya → test) etkilenen gereksinim, tasarım, dosya ve testleri raporlar ve başlangıç aşamasını önerir (yeni/değişen gereksinim → Analiz, yalnızca tasarım → Tasarım, yalnızca kod/hata → Kodlama).
+3. **Onayla ve uygula:** başlangıç aşamasından itibaren delta iterasyonu çalışır; önceki aşamalar olduğu gibi kalır.
+   - **Yeni özellik:** yeni gereksinim `FR-0n [CR-001]` olarak eklenir, tasarım ve kod güncellenir, yeni testler mevcutlara eklenir.
+   - **Hata (TDD):** Test Ajanı önce hatayı yeniden üreten bir regresyon testi yazar ve testin **başarısız** olduğu doğrulanır; Geliştirme Ajanı bu başarısız test çıktısıyla kodu düzeltir; ardından tüm testler koşar.
+4. Sonuç `CHANGELOG.md`'ye yazılır; talep **Tamamlandı** ya da **Başarısız** olur. Diyagramda geri dönüşler (revizyon, onarım) sayaçlarıyla kalıcı olarak görünür; birden fazla çalışan aşamalar ×N rozeti taşır.
+
+Chat kutusuna yazılan notlar da sonraki aşamaların bağlamına girer (ör. "arayüz koyu tema olsun").
 
 ## Docker Compose
 

@@ -99,6 +99,41 @@ def _stop_process(process: subprocess.Popen) -> None:
         process.wait()
 
 
+PATH_RUNNERS = {"pytest", "node", "jest", "mocha", "vitest"}
+
+
+def uncovered_tests(manifest: dict, test_names: list[str]) -> list[str]:
+    """project.yaml'daki test komutlarının çalıştırmadığı test dosyaları.
+
+    Komutlar bir test dosyası/klasörü adlandırmıyorsa (ör. "npm test") kapsam bilinemez ve boş liste döner.
+    """
+    # Yalnızca dosya yolu alan çalıştırıcılar incelenir; "npm test", "go test" gibi komutlardaki "test" bir alt komuttur.
+    commands = [manifest.get(key) or [] for key in ("unit_test", "api_test", "ui_test")]
+    targets = [arg.rstrip("/") for command in commands
+               if any(Path(token).name in PATH_RUNNERS for token in command[:3])
+               for arg in command[1:] if arg.rstrip("/") in {"tests", "test"} or arg.startswith(TEST_DIRS)]
+    if not targets:
+        return []
+    return sorted(name for name in test_names
+                  if name.endswith((".py", ".js", ".ts", ".mjs", ".go", ".rs", ".java"))
+                  and not any(name == target or name.startswith(target + "/") for target in targets))
+
+
+def backup_versions(output_dir: Path, filename: str) -> None:
+    """Belgenin mevcut hâlini versions/ altına zaman damgasıyla kopyalar."""
+    source = output_dir / filename
+    if source.is_file():
+        versions = output_dir / "versions"
+        versions.mkdir(exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = versions / f"{source.stem}.{stamp}{source.suffix}"
+        counter = 1
+        while target.exists():
+            target = versions / f"{source.stem}.{stamp}-{counter}{source.suffix}"
+            counter += 1
+        shutil.copy2(source, target)
+
+
 def review_verdict(report: str) -> str | None:
     match = VERDICT.search(report)
     if match is None:
@@ -124,10 +159,14 @@ def default_project_dir(workspace: Path, idea: str, run_id: str) -> Path:
     return workspace / "projects" / f"{slug}-{run_id}"
 
 
+CHANGE_KINDS = {"feature": "Yeni özellik", "bug": "Hata", "change": "Değişiklik", "edit": "Belge düzenlemesi"}
+
+
 class StageEngine(Protocol):
     def document(self, stage: str, idea: str, context: str) -> str: ...
-    def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]: ...
-    def tests(self, idea: str, docs: str, files: dict[str, str]) -> dict[str, str]: ...
+    # change verilirse (değişiklik talebi) motor mevcut kodu/testleri koruyup yalnızca değişenleri döndürür.
+    def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]: ...
+    def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None) -> dict[str, str]: ...
 
 
 class RunSession:
@@ -179,6 +218,9 @@ class RunSession:
         self.test_files: dict[str, str] = {}
         self.traceability = ""
         self.manifest: dict = {}
+        # Değişiklik talebi uygulanırken: önceki belgeler temel alınır ve yalnızca etkilenen kısımlar güncellenir.
+        self.change: dict | None = None
+        self.previous_docs: dict[str, str] = {}
         self.setup_done = False
         self.python_executable = sys.executable
         self.attempts = 0
@@ -197,9 +239,16 @@ class RunSession:
         self.completed_stages = completed_from_events(row["events"])
         for stage, name in STAGE_FILES.items():
             path = self.output_dir / name
-            # Yeniden üretilecek aşamaların eski belgeleri bağlama karışmasın.
-            if stage in self.completed_stages and path.is_file():
-                self.docs[stage] = path.read_text(encoding="utf-8")
+            if path.is_file():
+                self.previous_docs[stage] = path.read_text(encoding="utf-8")
+                # Yeniden üretilecek aşamaların eski belgeleri bağlama karışmasın (delta modunda ayrıca verilir).
+                if stage in self.completed_stages:
+                    self.docs[stage] = self.previous_docs[stage]
+        self.change = self.history.active_change(self.run_id)
+        if self.change and not any(
+            event["status"] == "change_started" and event["detail"].startswith(self.change["id"]) for event in row["events"]
+        ):
+            self._event("workflow", "change_started", f"{self.change['id']} · {self.change['title']}")
         traceability = self.output_dir / "traceability.md"
         if traceability.is_file():
             self.traceability = traceability.read_text(encoding="utf-8")
@@ -258,7 +307,9 @@ class RunSession:
         gate_feedback = ""
         for _ in range(2):
             content = self._with_questions(
-                stage, lambda: self.engine.document(stage, self.idea, instruction + gate_feedback + self._context(stage))
+                stage, lambda: self.engine.document(
+                    stage, self.idea, self._change_instruction(stage) + instruction + gate_feedback + self._context(stage)
+                )
             )
             problem = self._quality_gate(stage, content)
             if problem is None:
@@ -299,7 +350,41 @@ class RunSession:
             return "İnceleme raporu 'KARAR: ONAY' veya 'KARAR: REVİZYON' satırını içermeli"
         return None
 
+    def _change_text(self) -> str:
+        change = self.change or {}
+        text = (
+            f"{change.get('id')} · {CHANGE_KINDS.get(change.get('kind'), change.get('kind'))}: {change.get('title')}\n"
+            f"{change.get('description', '')}"
+        )
+        if change.get("impact"):
+            text += f"\n\nEtki analizi:\n{change['impact'][:4000]}"
+        return text
+
+    def _change_instruction(self, stage: str) -> str:
+        """Delta modu: ajan mevcut belgeyi temel alır, yalnızca değişiklikten etkilenen yerleri günceller."""
+        if not self.change:
+            return ""
+        if stage == "review":
+            return (
+                f"BU İNCELEME BİR DEĞİŞİKLİK İTERASYONU İÇİNDİR ({self.change['id']}). Özellikle değişikliğin "
+                f"tasarıma doğru ve eksiksiz yansıyıp yansımadığını denetle.\n{self._change_text()}\n\n"
+            )
+        previous = self.previous_docs.get(stage)
+        if not previous:
+            return f"UYGULANAN DEĞİŞİKLİK TALEBİ:\n{self._change_text()}\n\n"
+        return (
+            f"DEĞİŞİKLİK MODU — {self._change_text()}\n\n"
+            "Aşağıdaki MEVCUT BELGEYİ temel al. Yalnızca bu değişiklikten etkilenen bölümleri güncelle ya da "
+            "yeni bölüm/gereksinim ekle; diğer bölümleri AYNEN koru. Belgenin tamamını döndür. "
+            f"Değişen veya eklenen her yerin sonuna [{self.change['id']}] etiketi koy.\n"
+            f"MEVCUT BELGE:\n{previous[:14000]}\n\n"
+        )
+
     def _write_doc(self, filename: str, content: str) -> None:
+        # Üzerine yazmadan önce eski hâli sakla (delta güncellemeleri ve bölüm düzenlemeleri geri alınabilsin).
+        target = self.output_dir / filename
+        if target.is_file() and target.read_text(encoding="utf-8") != content:
+            backup_versions(self.output_dir, filename)
         (self.output_dir / filename).write_text(content, encoding="utf-8")
         (self.project_dir / "docs" / filename).write_text(content, encoding="utf-8")
 
@@ -322,6 +407,8 @@ class RunSession:
     def _context(self, stage: str) -> str:
         """Kısa ve kritik bilgiler önce, uzun belgeler sonra; her belge bütçeyle kırpılır."""
         parts = ["Mimari kararlar ve kullanıcı kısıtları:\n" + yaml.safe_dump(self.decisions, allow_unicode=True, sort_keys=False)]
+        if self.change:
+            parts.append("UYGULANAN DEĞİŞİKLİK TALEBİ (bu iterasyonun amacı):\n" + self._change_text())
         if self.clarifications:
             parts.append("Kullanıcının aşama sorularına verdiği yanıtlar (kesin kararlardır):\n" + "\n".join(
                 f"- [{item['stage']}] Soru: {item['question']}\n  Yanıt: {item['answer']}" for item in self.clarifications
@@ -386,6 +473,8 @@ class RunSession:
 
     def development(self) -> str:
         self._event("development", "started")
+        if self.change and self.code_files:
+            return self._develop_change()
         self.code_files = self._with_questions("development", lambda: self.engine.code(self.idea, self._context("development")))
         write_generated_files(self.project_dir, self.code_files)
         self._save_code_files()
@@ -394,6 +483,67 @@ class RunSession:
         self._event("development", "completed", ", ".join(self.code_files))
         return "uygulama hazır"
 
+    def _develop_change(self) -> str:
+        """Değişiklik talebi: mevcut kod korunur; hata ise önce hatayı yeniden üreten test yazılır (TDD)."""
+        description = self._change_text()
+        feedback = None
+        if self.change["kind"] == "bug":
+            existing = self._test_files_on_disk()
+            tests = self._with_questions("testing", lambda: self.engine.tests(
+                self.idea, self._context("testing"), {**self.code_files, **existing}, change=description
+            ))
+            tests = {name: content for name, content in tests.items() if name.startswith(TEST_DIRS)}
+            if tests:
+                write_generated_files(self.project_dir, tests)
+                if hasattr(self.engine, "current_files"):
+                    self.engine.current_files.update(tests)
+            output, code = self._run_checks(self._test_env())
+            self.setup_done = False
+            missing = uncovered_tests(self.manifest, list(tests))
+            if missing:
+                self._event("testing", "tests_not_covered", ", ".join(missing))
+                output += (
+                    f"\nUYARI: Yeni test dosyaları project.yaml test komutlarınca çalıştırılmıyor: {', '.join(missing)}. "
+                    "project.yaml'daki test komutlarını tek dosya yerine test klasörünü çalıştıracak şekilde güncelle."
+                )
+            self._event("testing", "bug_reproduced" if code else "bug_not_reproduced", ", ".join(tests) or "test yok")
+            feedback = output
+        replacements = self._with_questions("development", lambda: self.engine.code(
+            self.idea, self._context("development"), feedback=feedback, change=description
+        ))
+        rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
+        replacements = {name: content for name, content in replacements.items() if name not in rejected}
+        if rejected:
+            self._event("development", "tests_protected", ", ".join(rejected))
+        if replacements:
+            write_generated_files(self.project_dir, replacements)
+            self.code_files.update(replacements)
+            self._save_code_files()
+            self.manifest = read_project_manifest(self.project_dir, self.decisions)
+            write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
+        self._event("development", "completed", ", ".join(replacements) or "değişen dosya yok")
+        return "değişiklik uygulandı"
+
+    def _test_files_on_disk(self) -> dict[str, str]:
+        files = {}
+        for folder in ("tests", "test"):
+            root = self.project_dir / folder
+            for path in sorted(root.rglob("*")) if root.is_dir() else []:
+                if path.is_file() and "__pycache__" not in path.parts and path.stat().st_size <= 50_000:
+                    try:
+                        files[path.relative_to(self.project_dir).as_posix()] = path.read_text(encoding="utf-8")
+                    except UnicodeDecodeError:
+                        continue
+        return files
+
+    def _test_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        for secret_name in ("OPENCODE_API_KEY", "OPENAI_API_KEY"):
+            env.pop(secret_name, None)
+        env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        return env
+
     def _save_code_files(self) -> None:
         (self.output_dir / "code_files.json").write_text(
             json.dumps(self.code_files, ensure_ascii=False), encoding="utf-8"
@@ -401,17 +551,34 @@ class RunSession:
 
     def testing(self) -> str:
         self._event("testing", "started")
-        tests = self._with_questions(
-            "testing", lambda: self.engine.tests(self.idea, self._context("testing"), self.code_files)
-        )
-        if not any(name.startswith(TEST_DIRS) for name in tests):
-            raise ValueError("Test ajanı tests/ veya test/ altında dosya üretmeli")
-        if any(not name.startswith(TEST_DIRS) for name in tests):
-            raise ValueError("Test ajanı yalnızca test dosyası yazabilir")
-        write_generated_files(self.project_dir, tests)
+        existing = self._test_files_on_disk() if self.change else {}
+        if existing:
+            # Değişiklik talebi: mevcut testler korunur, yalnızca yeni/güncellenen testler yazılır; sonra hepsi koşar (regresyon).
+            new_tests = self._with_questions("testing", lambda: self.engine.tests(
+                self.idea, self._context("testing"), {**self.code_files, **existing}, change=self._change_text()
+            ))
+            if any(not name.startswith(TEST_DIRS) for name in new_tests):
+                raise ValueError("Test ajanı yalnızca test dosyası yazabilir")
+            if new_tests:
+                write_generated_files(self.project_dir, new_tests)
+            tests = {**existing, **new_tests}
+            self._event("testing", "regression", f"{len(new_tests)} yeni/güncellenen, toplam {len(tests)} test dosyası")
+        else:
+            tests = self._with_questions(
+                "testing", lambda: self.engine.tests(self.idea, self._context("testing"), self.code_files)
+            )
+            if not any(name.startswith(TEST_DIRS) for name in tests):
+                raise ValueError("Test ajanı tests/ veya test/ altında dosya üretmeli")
+            if any(not name.startswith(TEST_DIRS) for name in tests):
+                raise ValueError("Test ajanı yalnızca test dosyası yazabilir")
+            write_generated_files(self.project_dir, tests)
         self.test_files = tests
         if hasattr(self.engine, "current_files"):
             self.engine.current_files.update(tests)
+        missing = uncovered_tests(self.manifest, list(tests))
+        if missing:
+            # Çalışmayan test, geçmiş gibi görünmesin: raporda ve olaylarda açıkça belirtilir.
+            self._event("testing", "tests_not_covered", ", ".join(missing))
         self.traceability, coverage = build_matrix(self.docs.get("analysis", ""), tests)
         self._write_doc("traceability.md", self.traceability)
         self._event("testing", "traceability", f"FR kapsamı %{coverage['FR'] * 100:.0f}")
@@ -420,12 +587,7 @@ class RunSession:
         reports = []
         for number in range(1, self.max_repairs + 2):
             self.attempts = number
-            env = os.environ.copy()
-            for secret_name in ("OPENCODE_API_KEY", "OPENAI_API_KEY"):
-                env.pop(secret_name, None)
-            env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-            env["PYTHONDONTWRITEBYTECODE"] = "1"
-            output, code = self._run_checks(env)
+            output, code = self._run_checks(self._test_env())
             passed = code == 0
             self.last_test_output = output
             (attempt_dir / f"attempt-{number}.txt").write_text(output, encoding="utf-8")
@@ -458,6 +620,8 @@ class RunSession:
                 self._event("development", "repair_completed", ", ".join(replacements))
         summary = "BAŞARILI" if self.test_passed else "BAŞARISIZ"
         report = f"# Test raporu\n\nSonuç: **{summary}** ({self.attempts} deneme).\n\n"
+        if missing:
+            report += f"> ⚠️ Şu test dosyaları project.yaml komutlarınca çalıştırılmadı: {', '.join(missing)}\n\n"
         report += (
             f"İzlenebilirlik: FR kapsamı %{coverage['FR'] * 100:.0f}, "
             f"NFR kapsamı %{coverage['NFR'] * 100:.0f} ([matris](traceability.md)).\n\n"
@@ -539,16 +703,34 @@ class RunSession:
 
     def result(self, error: str | None = None) -> RunResult:
         status = "failed" if error or not self.test_passed else "completed"
+        if self.change:
+            self._close_change(status, error)
         self._write_project_readme(status)
         self.history.finish(self.run_id, status, self.attempts, error)
         return RunResult(self.run_id, status, self.output_dir, self.project_dir, self.attempts, error)
+
+    def _close_change(self, status: str, error: str | None) -> None:
+        change = self.change
+        done = status == "completed"
+        self.history.update_change(self.run_id, change["id"], status="done" if done else "failed")
+        entry = (
+            f"## {change['id']} · {CHANGE_KINDS.get(change['kind'], change['kind'])} · {change['title']}\n\n"
+            f"- Tarih: {time.strftime('%Y-%m-%d %H:%M')}\n"
+            f"- Sonuç: {'Tamamlandı, testler geçti' if done else 'Başarısız' + (f' ({error[:200]})' if error else ' (testler geçmedi)')}\n"
+            f"- Başlangıç aşaması: {change.get('start_stage') or '—'}\n"
+            f"- Test denemesi: {self.attempts}\n\n{change['description']}\n"
+        )
+        path = self.output_dir / "CHANGELOG.md"
+        previous = path.read_text(encoding="utf-8") if path.is_file() else "# Değişiklik günlüğü\n"
+        self._write_doc("CHANGELOG.md", previous.rstrip() + "\n\n" + entry)
+        self._event("workflow", "change_completed" if done else "change_failed", f"{change['id']} · {change['title']}")
 
     def _write_project_readme(self, status: str) -> None:
         links = [
             ("Mimari kararlar", "decisions.yaml"), ("Proje planı", "planning.md"),
             ("Aşama soruları ve yanıtları", "clarifications.yaml"),
             ("Gereksinimler ve izlenebilirlik", "requirements.md"), ("Mimari ve diyagramlar", "architecture.md"),
-            ("Mimari inceleme raporu", "design_review.md"),
+            ("Mimari inceleme raporu", "design_review.md"), ("Değişiklik günlüğü", "CHANGELOG.md"),
             ("İzlenebilirlik matrisi", "traceability.md"),
             ("Test raporu", "test_report.md"), ("Dağıtım kılavuzu", "deployment.md"),
             ("Bakım planı", "maintenance_report.md"),

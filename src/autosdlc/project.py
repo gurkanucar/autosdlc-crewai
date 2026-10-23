@@ -24,11 +24,11 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
         raise ValueError("project.yaml port değeri 1024–65535 arasında olmalı")
     manifest["port"] = port
     if decisions["project_type"] in {"backend", "fullstack"} and not manifest.get("api_test"):
-        raise ValueError("Arka uç/tam yığın projede project.yaml api_test içermeli")
+        raise ValueError("Backend/fullstack projede project.yaml api_test içermeli")
     if decisions["ui"] == "web" and (not manifest.get("ui_test") or not manifest.get("start")):
-        raise ValueError("Web arayüzlü projede project.yaml ui_test ve start içermeli")
+        raise ValueError("Web UI'lı projede project.yaml ui_test ve start içermeli")
     if decisions["project_type"] in {"cli", "library"} and not manifest.get("unit_test"):
-        raise ValueError("Komut satırı/kütüphane projesinde project.yaml unit_test içermeli")
+        raise ValueError("CLI/library projesinde project.yaml unit_test içermeli")
     if not (project_dir / "Dockerfile").is_file():
         raise ValueError("Geliştirme ajanı seçilen teknoloji için Dockerfile üretmeli")
     return manifest

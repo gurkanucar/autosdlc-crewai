@@ -41,6 +41,19 @@ class History:
                     detail TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS changes (
+                    run_id TEXT NOT NULL REFERENCES runs(id),
+                    id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    impact TEXT,
+                    start_stage TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (run_id, id)
+                );
                 CREATE TABLE IF NOT EXISTS notes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     run_id TEXT NOT NULL REFERENCES runs(id),
@@ -168,8 +181,53 @@ class History:
         with self._connect() as db:
             db.execute("DELETE FROM questions WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM notes WHERE run_id=?", (run_id,))
+            db.execute("DELETE FROM changes WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM events WHERE run_id=?", (run_id,))
             db.execute("DELETE FROM runs WHERE id=?", (run_id,))
+
+    # Değişiklik talepleri: feature (yeni özellik), bug (hata), change (değişiklik), edit (bölüm düzenlemelerinin yayılması).
+    # Durum: draft → analyzed → in_progress → done | failed; kullanıcı rejected yapabilir.
+    def create_change(self, run_id: str, kind: str, title: str, description: str, status: str = "draft") -> str:
+        if kind not in {"feature", "bug", "change", "edit"}:
+            raise ValueError("Bilinmeyen değişiklik türü")
+        if not title.strip() or len(title) > 200 or len(description) > 4000:
+            raise ValueError("Başlık 1–200, açıklama en fazla 4000 karakter olmalı")
+        with self._connect() as db:
+            count = db.execute("SELECT COUNT(*) FROM changes WHERE run_id=?", (run_id,)).fetchone()[0]
+            change_id = f"CR-{count + 1:03d}"
+            db.execute(
+                "INSERT INTO changes (run_id, id, kind, title, description, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, change_id, kind, title.strip(), description.strip(), status, now(), now()),
+            )
+            return change_id
+
+    def update_change(self, run_id: str, change_id: str, **fields: str | None) -> None:
+        allowed = {"status", "impact", "start_stage", "description"}
+        if not fields or set(fields) - allowed:
+            raise ValueError("Geçersiz değişiklik alanı")
+        assignments = ", ".join(f"{name}=?" for name in fields)
+        with self._connect() as db:
+            db.execute(
+                f"UPDATE changes SET {assignments}, updated_at=? WHERE run_id=? AND id=?",
+                (*fields.values(), now(), run_id, change_id),
+            )
+
+    def changes(self, run_id: str) -> list[dict]:
+        with self._connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM changes WHERE run_id=? ORDER BY created_at, id", (run_id,))]
+
+    def change(self, run_id: str, change_id: str) -> dict | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM changes WHERE run_id=? AND id=?", (run_id, change_id)).fetchone()
+            return dict(row) if row else None
+
+    def active_change(self, run_id: str) -> dict | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM changes WHERE run_id=? AND status='in_progress' ORDER BY updated_at DESC LIMIT 1", (run_id,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def add_note(self, run_id: str, content: str) -> None:
         """Kullanıcının chat üzerinden ajanlara verdiği yönlendirme; sonraki aşamaların bağlamına girer."""

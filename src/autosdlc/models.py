@@ -1,4 +1,4 @@
-"""OpenCode Go modelleri: bu uygulamanın kullandığı chat/completions uç noktası."""
+"""OpenCode Go modelleri: bu uygulamanın kullandığı chat/completions endpoint'i."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from .crewai_engine import DEFAULT_MODEL
 
 
 MODELS_URL = "https://opencode.ai/inference/go/v1/models"
-# OpenCode Go'nun chat/completions uç noktasında belgelenen model kimlikleri.
+# OpenCode Go'nun chat/completions endpoint'inde belgelenen model kimlikleri.
 CHAT_MODELS = (
     "glm-5.3-flash", "glm-5.3", "glm-5.2", "kimi-k3", "kimi-k2.7-code",
     "longcat-2.0", "deepseek-v4.1-flash", "deepseek-v4-pro",

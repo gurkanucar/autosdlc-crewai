@@ -2,7 +2,7 @@ project_type:
   question: Proje türü nedir?
   options: [backend, frontend, fullstack, cli, library]
 stack:
-  question: Hangi dil ve çatılar kullanılacak? Arka uç, ön yüz ve paket yöneticisini belirt.
+  question: Hangi dil ve framework'ler kullanılacak? Backend, frontend ve package manager'ı belirt.
   free_text: true
 database:
   question: Hangi veritabanı kullanılacak?
@@ -13,11 +13,11 @@ cache:
   options: [none, redis]
   when: [backend, fullstack]
 observability:
-  question: Docker Compose hangi gözlemlenebilirlik servislerini içersin?
+  question: Docker Compose hangi observability servislerini içersin?
   options: [none, otel, openobserve]
   when: [backend, fullstack]
 ui:
-  question: Arka uç projesinde web arayüzü olsun mu?
+  question: Backend projesinde web UI olsun mu?
   options: [none, web]
   when: [backend]
 constraints:

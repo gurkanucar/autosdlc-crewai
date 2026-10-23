@@ -38,13 +38,23 @@ HANDOFFS = {("development", "repair_completed"): "testing", ("design", "revision
 
 
 def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
-    """Her aşama için pending / running / question / done / failed / paused döndürür."""
+    """Her aşama için pending / running / question / done / stale / failed / paused döndürür.
+
+    "stale": aşama tamamlanmıştı ama önceki bir aşamanın belgesi sonradan değişti; güncellenmesi gerekir.
+    """
     states = {key: "pending" for key in STAGE_KEYS}
     for event in events:
         stage, status = event["stage"], event["status"]
         if stage == "workflow" and status == "reset" and event["detail"] in states:
             for key in STAGE_KEYS[STAGE_KEYS.index(event["detail"]):]:
                 states[key] = "pending"
+            continue
+        if stage == "workflow" and status == "stale" and (event["detail"] in states or event["detail"] == "decisions"):
+            # "decisions": mimari kararlar değişti → bütün aşamalar etkilenir.
+            first = 0 if event["detail"] == "decisions" else STAGE_KEYS.index(event["detail"]) + 1
+            for key in STAGE_KEYS[first:]:
+                if states[key] == "done":
+                    states[key] = "stale"
             continue
         if stage not in states:
             continue
@@ -67,19 +77,21 @@ def stage_states(events: list[dict], run_status: str) -> dict[str, str]:
 
 
 def counters(events: list[dict]) -> dict[str, object]:
-    """Son sıfırlamadan bu yana döngü sayaçları ve izlenebilirlik kapsamı."""
+    """Projenin bütün geçmişi boyunca döngü sayaçları ve izlenebilirlik kapsamı.
+
+    Yeniden üretim sayaçları sıfırlamaz: bir kez bile geri dönüldüyse bu, sürecin parçası olarak görünür kalır.
+    Geri dönüş, başladığı anda sayılır (revision_started / repair_started).
+    """
     result: dict[str, object] = {"repairs": 0, "test_runs": 0, "review_rounds": 0, "revisions": 0, "questions": 0, "coverage": None}
     for event in events:
         stage, status = event["stage"], event["status"]
-        if stage == "workflow" and status == "reset":
-            result = {**result, "repairs": 0, "test_runs": 0, "review_rounds": 0, "revisions": 0}
-        elif stage == "development" and status == "repair_completed":
+        if stage == "development" and status == "repair_started":
             result["repairs"] += 1
         elif stage == "testing" and status in {"passed", "failed"}:
             result["test_runs"] += 1
         elif stage == "review" and status in {"approved", "changes_requested"}:
             result["review_rounds"] += 1
-        elif stage == "design" and status == "revision_completed":
+        elif stage == "design" and status == "revision_started":
             result["revisions"] += 1
         elif status == "question":
             result["questions"] += 1
@@ -151,8 +163,9 @@ PALETTE = {
     "done": ("#dcfce7", "#16a34a", "#14532d", "Tamamlandı"),
     "failed": ("#fee2e2", "#dc2626", "#7f1d1d", "Başarısız"),
     "paused": ("#fff7ed", "#ea580c", "#7c2d12", "Duraklatıldı"),
+    "stale": ("#fef9c3", "#ca8a04", "#713f12", "Güncel değil"),
 }
-GLYPHS = {"done": "✓", "failed": "✕", "question": "?", "paused": "❚❚"}
+GLYPHS = {"done": "✓", "failed": "✕", "question": "?", "paused": "❚❚", "stale": "↻"}
 
 
 def _node_x(index: int) -> int:
@@ -161,7 +174,8 @@ def _node_x(index: int) -> int:
 
 
 def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, object] | None = None,
-               selected: str | None = None, durations: dict[str, str] | None = None) -> str:
+               selected: str | None = None, durations: dict[str, str] | None = None,
+               runs: dict[str, int] | None = None) -> str:
     """Yaşam döngüsünü tek bir SVG olarak çizer; durum verilmezse tanıtım görünümü üretir."""
     states = states or {key: "pending" for key in STAGE_KEYS}
     loop_counts = loop_counts or {}
@@ -197,12 +211,19 @@ def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, obje
         active = count > 0
         color, marker = ("#ea580c", "loop-on") if active else ("#cbd5e1", "loop-off")
         dash = "" if active else ' stroke-dasharray="5 5"'
+        width = 3.5 if active else 2
         parts.append(
             f'<path d="M{sx - 8},{y - 31} C{sx - 8},{y - 92} {tx + 8},{y - 92} {tx + 8},{y - 33}" fill="none" '
-            f'stroke="{color}" stroke-width="2"{dash} marker-end="url(#{marker})"/>'
+            f'stroke="{color}" stroke-width="{width}"{dash} marker-end="url(#{marker})"/>'
         )
-        text = f"{label} ×{count}" if active else f"{label} döngüsü"
-        parts.append(f'<text x="{(sx + tx) / 2}" y="{y - 97}" text-anchor="middle" font-size="12" fill="{color}" font-weight="600">{text}</text>')
+        middle = (sx + tx) / 2
+        if active:
+            # Geri dönüş gerçekleştiyse etiket dolgulu bir rozet olur; tek bir dönüş de açıkça görünür.
+            text = f"↺ {label} ×{count}"
+            parts.append(f'<rect x="{middle - 56}" y="{y - 114}" width="112" height="22" rx="11" fill="#ea580c"/>')
+            parts.append(f'<text x="{middle}" y="{y - 99}" text-anchor="middle" font-size="12.5" fill="#ffffff" font-weight="700">{text}</text>')
+        else:
+            parts.append(f'<text x="{middle}" y="{y - 97}" text-anchor="middle" font-size="12" fill="{color}" font-weight="600">{label} döngüsü</text>')
     for index, stage in enumerate(STAGES):
         x = _node_x(index)
         state = states.get(stage.key, "pending")
@@ -214,6 +235,11 @@ def render_svg(states: dict[str, str] | None = None, loop_counts: dict[str, obje
             parts.append(f'<circle cx="{x}" cy="{y}" r="36" fill="none" stroke="#0f172a" stroke-width="2.5"/>')
         dash = ' stroke-dasharray="4 3"' if state == "paused" else ""
         parts.append(f'<circle cx="{x}" cy="{y}" r="29" fill="{fill}" stroke="{stroke}" stroke-width="2.5"{dash}/>')
+        count = (runs or {}).get(stage.key, 0)
+        if count > 1:
+            # Birden fazla çalışan aşama (revizyon, onarım, yeniden test) düğümün köşesinde ×N rozeti taşır.
+            parts.append(f'<circle cx="{x + 24}" cy="{y - 23}" r="12" fill="#ea580c" stroke="#ffffff" stroke-width="2"/>')
+            parts.append(f'<text x="{x + 24}" y="{y - 19}" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">×{count}</text>')
         glyph = GLYPHS.get(state, str(index + 1))
         parts.append(f'<text x="{x}" y="{y + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="{ink}">{glyph}</text>')
         parts.append(f'<text x="{x}" y="{y + 52}" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">{escape(stage.label)}</text>')

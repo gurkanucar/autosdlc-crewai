@@ -1,7 +1,23 @@
 # Arayüzdeki "Örnek proje şablonu" listesi. Her şablon formu doldurur; kullanıcı sonra değiştirebilir.
 # decisions anahtarları questions.yaml ile aynıdır. Fikir en fazla 1000, yığın en fazla 200 karakter olmalı.
+# İlk şablon bilerek çok küçüktür: konsepti birkaç dakikada uçtan uca görmek için (sunucu, API/UI testi, bağımlılık yok).
+- id: hizli-demo
+  title: ⚡ Hızlı demo — sıcaklık dönüştürücü (Python, library)
+  description: Konsepti birkaç dakikada görmek için en küçük örnek; iki fonksiyon, tek test dosyası, kısa belgeler.
+  idea: >-
+    Celsius ve Fahrenheit arasında dönüşüm yapan küçük bir Python library'si: celsius_to_fahrenheit
+    ve fahrenheit_to_celsius fonksiyonları. Mutlak sıfırın (-273.15 °C) altındaki değerler için
+    ValueError fırlatılsın.
+  decisions:
+    project_type: library
+    stack: Python 3.12, pytest
+    constraints: >-
+      Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü, tek test
+      dosyası, project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla
+      yarım sayfa); en fazla 3 FR ve 2 NFR yaz.
+
 - id: envanter-takip
-  title: Envanter takip uygulaması (Node.js, tam yığın)
+  title: Envanter takip uygulaması (Node.js, fullstack)
   description: Ürün adı, kategori ve konum bilgisiyle stok kaydı tutan basit bir web uygulaması.
   idea: >-
     Basit bir envanter takip uygulaması. Ürünler; ürün adı, kategori ve konum (depo/raf)
@@ -14,16 +30,16 @@
     cache: none
     observability: none
     constraints: >-
-      Ön yüzde çatı kullanma, düz HTML/CSS/JS yaz. Arayüz Türkçe olsun.
+      Frontend'de framework kullanma, düz HTML/CSS/JS yaz. Kullanıcı arayüzü metinleri Türkçe olsun.
       Native derleme gerektirmeyen bir SQLite çözümü tercih et.
 
 - id: gorev-api
-  title: Görev takip API'si (Python, arka uç)
-  description: Görev oluşturma, listeleme, tamamlama ve silme uç noktaları olan REST API.
+  title: Görev takip API'si (Python, backend)
+  description: Görev oluşturma, listeleme, tamamlama ve silme endpoint'leri olan REST API.
   idea: >-
     Küçük ekipler için görev takip API'si. Görevler başlık, açıklama, son tarih ve durum
     (yapılacak, sürüyor, bitti) alanlarına sahip olacak. Görev oluşturma, listeleme, duruma göre
-    süzme, güncelleme ve silme uç noktaları bulunacak.
+    süzme, güncelleme ve silme endpoint'leri bulunacak.
   decisions:
     project_type: backend
     stack: Python 3.12, FastAPI, pytest
@@ -34,25 +50,25 @@
     constraints: Girdi doğrulaması ve anlamlı hata kodları (400, 404) olsun.
 
 - id: birim-donusturucu-cli
-  title: Birim dönüştürücü (Python, komut satırı)
-  description: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren küçük bir komut satırı aracı.
+  title: Birim dönüştürücü (Python, CLI)
+  description: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren küçük bir CLI aracı.
   idea: >-
-    Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren komut satırı aracı. Örneğin
+    Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren CLI aracı. Örneğin
     "convert 10 km mi" komutu 10 kilometreyi mile çevirsin. Desteklenen birimleri listeleyen
     bir komut ve hatalı birim için açık hata mesajı olsun.
   decisions:
     project_type: cli
     stack: Python 3.12, argparse, pytest
-    constraints: Dış bağımlılık kullanma; yalnızca standart kütüphane.
+    constraints: Dış bağımlılık kullanma; yalnızca standard library.
 
 - id: metin-kutuphanesi
-  title: Metin yardımcıları (Python, kütüphane)
-  description: Türkçe karakterlere duyarlı slug üretme ve metin temizleme işlevleri sunan kütüphane.
+  title: Metin yardımcıları (Python, library)
+  description: Türkçe karakterlere duyarlı slug üretme ve metin temizleme işlevleri sunan library.
   idea: >-
-    Türkçe karakterlere duyarlı metin yardımcıları kütüphanesi: URL için slug üretme,
+    Türkçe karakterlere duyarlı metin yardımcıları library'si: URL için slug üretme,
     fazla boşlukları temizleme, kelime sayma ve belirli uzunlukta akıllı kısaltma.
     Her işlev belgelenmiş ve tip ipuçlu olsun.
   decisions:
     project_type: library
     stack: Python 3.12, pytest
-    constraints: Dış bağımlılık kullanma; yalnızca standart kütüphane.
+    constraints: Dış bağımlılık kullanma; yalnızca standard library.

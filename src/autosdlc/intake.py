@@ -6,11 +6,12 @@ import yaml
 
 
 CHOICE_LABELS = {
-    "project_type": {"backend": "Arka uç", "frontend": "Ön yüz", "fullstack": "Tam yığın", "cli": "Komut satırı", "library": "Kütüphane"},
+    # Yerleşik yazılım terimleri çevrilmez (backend, fullstack, CLI…).
+    "project_type": {"backend": "Backend", "frontend": "Frontend", "fullstack": "Fullstack", "cli": "CLI", "library": "Library"},
     "database": {"none": "Yok", "sqlite": "SQLite", "postgres": "PostgreSQL"},
     "cache": {"none": "Yok", "redis": "Redis"},
     "observability": {"none": "Yok", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
-    "ui": {"none": "Yok", "web": "Web arayüzü"},
+    "ui": {"none": "Yok", "web": "Web UI"},
 }
 
 

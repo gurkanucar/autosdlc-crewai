@@ -1,4 +1,17 @@
 # $ ile başlayan değişkenleri uygulama çalışma sırasında doldurur.
+
+# Her ajan isteminin sonuna eklenir (aşama görevleri, bölüm düzenleme ve etki analizi dahil).
+language_rules: |
+  DİL KURALLARI:
+  - Belgeleri Türkçe yaz; ancak yazılımda yerleşik İngilizce terimleri ÇEVİRME, olduğu gibi kullan:
+    backend, frontend, fullstack, CLI, library, framework, API, endpoint, request, response,
+    database, cache, deployment, container, pipeline, middleware, package manager, test case,
+    mock, commit, branch, repository vb. Örneğin "arka uç" değil "backend", "tam yığın" değil
+    "fullstack", "uç nokta" değil "endpoint", "çatı" değil "framework" yaz.
+  - Kod tamamen İngilizce olur: değişken, fonksiyon/metot, sınıf, modül, dosya ve klasör adları,
+    kod içi yorumlar, docstring'ler, log ve hata mesajları, test adları ve commit mesajları İngilizce.
+    Türkçe kelimeli ya da Türkçe karakter içeren tanımlayıcı kullanma (ör. urunEkle değil addProduct).
+    Yalnızca son kullanıcının gördüğü arayüz metinleri kullanıcının istediği dilde olabilir.
 planning:
   description: |
     Proje fikri: $idea
@@ -7,7 +20,7 @@ planning:
     Bütün belgeyi Türkçe yaz. Gerçekçi bir proje planı hazırla: hedefler, kapsam,
     kapsam dışı işler, paydaşlar, kilometre taşları, teslimatlar, varsayımlar,
     bağımlılıklar ve önlemleriyle birlikte risk tablosu.
-    İstenen proje türüne ve teknolojiye uy; belirli bir dil veya çatı dayatma.
+    İstenen proje türüne ve teknolojiye uy; belirli bir dil veya framework dayatma.
     Yalnızca Markdown döndür. Testlerin ya da dağıtımın yapıldığını iddia etme.
   expected_output: Türkçe ve somut bir Markdown proje planı.
 
@@ -32,7 +45,7 @@ design:
     hata yönetimini, test yaklaşımını ve dağıtımı tasarla.
     En az bir Mermaid bileşen diyagramı ve bir Mermaid sıralama diyagramı ekle.
     Veritabanı seçildiyse erDiagram ve anahtarları/indeksleriyle veri şeması ekle.
-    API varsa uç noktaları, istek/yanıt sözleşmelerini ve durum kodlarını yaz.
+    API varsa endpoint'leri, request/response sözleşmelerini ve HTTP status kodlarını yaz.
     Kararların gerekçelerini ve ödünleşimleri açıkla. Yalnızca Markdown döndür.
   expected_output: Türkçe mimari belgesi, Mermaid diyagramları ve uygun veri şeması.
 
@@ -58,15 +71,17 @@ development:
     SDLC belgeleri, mimari kararlar ve kullanıcı kısıtları:
     $context
     $feedback
-    İstenen dil, çatı, paket yöneticisi ve arayüz sadeliğine tam uy.
+    İstenen dil, framework, package manager ve UI sadeliğine tam uy. Kod İngilizce yazılır.
     YALNIZCA şu JSON biçimini döndür: {"files": {"goreli/yol": "dosyanın tam içeriği", ...}}.
     Seçilen teknolojiye uygun Dockerfile ve şu anahtarları taşıyan project.yaml üret:
       port: 1024-65535 arasında tamsayı (web hizmetinin portu)
       setup: [çalıştırılabilir, argüman, ...] (isteğe bağlı bağımlılık kurulumu)
-      unit_test: [çalıştırılabilir, argüman, ...] (CLI/kütüphane için zorunlu)
+      unit_test: [çalıştırılabilir, argüman, ...] (CLI/library için zorunlu)
       api_test: [çalıştırılabilir, argüman, ...] (backend/fullstack için zorunlu)
-      ui_test: [çalıştırılabilir, argüman, ...] (web arayüzü varsa zorunlu)
-      start: [çalıştırılabilir, argüman, ...] (web arayüzü varsa zorunlu)
+      ui_test: [çalıştırılabilir, argüman, ...] (web UI varsa zorunlu)
+      start: [çalıştırılabilir, argüman, ...] (web UI varsa zorunlu)
+    Test komutları tek bir dosyayı değil test klasörünü çalıştırsın (ör. pytest -q tests);
+    böylece sonradan eklenen testler de koşar.
     Bu komutlar proje kökünde kabuk kullanılmadan çalıştırılır. Python için
     çalıştırılabilir olarak "python" yaz; uygulama doğru yorumlayıcıyı seçer.
     API testleri gerçek HTTP davranışını sınamalı. Arayüz testleri Playwright ile
@@ -91,13 +106,13 @@ testing:
     $context
     Uygulama dosyaları:
     $files
-    Bütün açıklamaları Türkçe yaz. Seçilen dil ve çatıya uygun testleri tests/
+    Bütün açıklamaları Türkçe yaz. Seçilen dil ve framework'e uygun testleri tests/
     veya test/ altında üret. YALNIZCA {"files": {"goreli/yol": "tam içerik"}}
     biçiminde JSON döndür. Testleri FR/NFR kimlikleriyle ilişkilendir; başarılı
     ve hatalı kullanımları kapsa. Her testin adında veya açıklamasında ilgili
     kimliği (ör. FR-01) açıkça yaz; izlenebilirlik matrisi bu kimliklerden üretilir.
     Her FR en az bir testle kapsanmalı. Backend/fullstack projede gerçek API HTTP
-    uç noktalarını sına. Web arayüzü varsa Playwright ile BASE_URL adresini aç
+    endpoint'lerini sına. Web UI varsa Playwright ile BASE_URL adresini aç
     ve görünür bir etkileşimi doğrula. Test verisini yalıt ve deterministik tut.
     Test komutları uygulamanın project.yaml dosyasında belirtilmiştir.
   expected_output: Seçilen teknolojiye uygun eksiksiz test dosyalarını içeren geçerli JSON.
@@ -126,3 +141,58 @@ maintenance:
     Sorunların çözüldüğünü veya üretimde izleme yapıldığını iddia etme.
     Yalnızca Markdown döndür.
   expected_output: Türkçe ve uygulanabilir bakım planı.
+
+# Aşağıdakiler SDLC aşaması değil; kullanıcının belge ve değişiklik müdahaleleri için kullanılır.
+section_edit:
+  description: |
+    Proje fikri: $idea
+    Bağlam (kararlar ve ilgili önceki belgeler):
+    $context
+    Belgenin tamamı:
+    $document
+    Üzerinde çalışılacak bölüm:
+    $section
+    Kullanıcının talimatı: $instruction
+    İşlem: $operation
+    Türkçe yaz ve belgenin mevcut biçimine (başlık seviyesi, tablo/madde yapısı) uy.
+    Mevcut FR/NFR kimliklerini değiştirme; yeni gereksinim eklenirse belgedeki
+    en büyük numaradan sonraki numarayı kullan. Talimatın dışındaki şeyleri değiştirme.
+    Yalnızca Markdown döndür; açıklama, ön söz veya kod bloğu çiti ekleme.
+  expected_output: Yalnızca bölümün yeni hâli ya da eklenecek yeni içerik (Markdown).
+
+section_question:
+  description: |
+    Proje fikri: $idea
+    Bağlam (kararlar ve ilgili önceki belgeler):
+    $context
+    Belgenin tamamı:
+    $document
+    Kullanıcının sorduğu bölüm:
+    $section
+    Soru: $instruction
+    İşlem: $operation
+    Türkçe, kısa ve somut yanıt ver. Gerekçeni belgeye ve kararlara dayandır;
+    belgede olmayan bir şeyi varmış gibi anlatma. Gerekirse bölümün nasıl
+    iyileştirilebileceğini öner ama belgeyi yeniden yazma.
+  expected_output: Türkçe, kısa ve gerekçeli bir yanıt.
+
+impact:
+  description: |
+    Proje fikri: $idea
+    Mevcut SDLC belgeleri, izlenebilirlik matrisi ve dosya listesi:
+    $context
+    Değişiklik talebi:
+    $change
+    Türkçe bir etki analizi raporu yaz:
+    1. Talebin özeti ve türü (yeni özellik / hata / değişiklik).
+    2. Etkilenen gereksinimler: değişecek FR/NFR kimlikleri ve eklenecek yeni gereksinimler.
+    3. Etkilenen tasarım bölümleri ve API/veri şeması değişiklikleri.
+    4. Değişmesi muhtemel kaynak dosyalar ve eklenecek/güncellenecek testler.
+    5. Riskler ve regresyon riski taşıyan alanlar.
+    Hata taleplerinde önce hatayı yeniden üreten bir test yazılacağını varsay.
+    Raporun son satırı tam olarak şu biçimde olsun ve değişikliğin ilk dokunması
+    gereken aşamayı göstersin: "BAŞLANGIÇ: analysis" (yeni/değişen gereksinim),
+    "BAŞLANGIÇ: design" (gereksinim aynı, tasarım değişiyor) veya
+    "BAŞLANGIÇ: development" (yalnızca kod/hata düzeltmesi).
+    Yalnızca Markdown döndür.
+  expected_output: Etkilenen öğeleri listeleyen ve BAŞLANGIÇ satırıyla biten Türkçe etki analizi.

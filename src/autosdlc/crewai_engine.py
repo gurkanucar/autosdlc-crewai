@@ -23,6 +23,8 @@ RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None]) -> str:
     """SSE akışını okur ve biriken metni her parçada on_text'e verir; sunucu akış vermezse düz JSON'a düşer."""
     with httpx.stream("POST", url, headers=headers, json={**payload, "stream": True}, timeout=300) as response:
+        if response.status_code >= 400:
+            response.read()  # Hata gövdesi (sunucunun gerekçesi) mesajda gösterilebilsin.
         response.raise_for_status()
         if "text/event-stream" not in response.headers.get("content-type", ""):
             response.read()
@@ -124,11 +126,17 @@ class CrewAIEngine:
                             content = response.json()["choices"][0]["message"]["content"]
                         break
                     except httpx.HTTPStatusError as exc:
-                        if exc.response.status_code in RETRY_STATUSES and attempt < 2:
+                        # 400 normalde kalıcıdır; ama ağ geçidi geçici olarak da 400 dönebildiği için bir kez yeniden denenir.
+                        status_code = exc.response.status_code
+                        if (status_code in RETRY_STATUSES or (status_code == 400 and attempt == 0)) and attempt < 2:
                             time.sleep(2 ** (attempt + 1))
                             continue
+                        try:
+                            reason = exc.response.text.strip()[:400]
+                        except httpx.ResponseNotRead:
+                            reason = ""
                         raise RuntimeError(
-                            f"OpenCode Go HTTP {exc.response.status_code} döndürdü"
+                            f"OpenCode Go HTTP {exc.response.status_code} döndürdü" + (f": {reason}" if reason else "")
                         ) from exc
                     except httpx.TransportError as exc:
                         if attempt < 2:
@@ -162,17 +170,20 @@ class CrewAIEngine:
         self.agents = yaml.safe_load(config_dir.joinpath("agents.yaml").read_text(encoding="utf-8"))
         self.tasks = yaml.safe_load(config_dir.joinpath("tasks.yaml").read_text(encoding="utf-8"))
 
-    def _ask(self, stage: str, extra: str = "", **values: str) -> str:
+    def _ask(self, stage: str, extra: str = "", task: str | None = None, ask_user: bool = True, **values: str) -> str:
+        """stage ajanın kimliğini (agents.yaml), task görev şablonunu (tasks.yaml; varsayılan stage) belirler."""
         agent_config = self.agents[stage]
-        task_config = self.tasks[stage]
+        task_config = self.tasks[task or stage]
         prompt = Template(task_config["description"]).substitute(values) + extra
+        prompt += "\n" + self.tasks.get("language_rules", "")
         listener = self.output_listener
         self.llm.listener = (lambda text: listener(stage, text)) if listener else None
-        prompt += (
-            "\nKritik bir kullanıcı kararı eksikse varsayım yapmadan yalnızca "
-            "'KULLANICI_SORUSU: <tek, açık Türkçe soru>' biçiminde yanıt ver. "
-            "Yeterli bilgi varsa bu biçimi kullanma; görevin normal çıktısını üret."
-        )
+        if ask_user:
+            prompt += (
+                "\nKritik bir kullanıcı kararı eksikse varsayım yapmadan yalnızca "
+                "'KULLANICI_SORUSU: <tek, açık Türkçe soru>' biçiminde yanıt ver. "
+                "Yeterli bilgi varsa bu biçimi kullanma; görevin normal çıktısını üret."
+            )
         agent = self.Agent(
             role=agent_config["role"],
             goal=agent_config["goal"],
@@ -196,12 +207,12 @@ class CrewAIEngine:
             raise ClarificationNeeded(match.group(1).strip())
         return raw
 
-    def _ask_files(self, stage: str, **values: str) -> dict[str, str]:
+    def _ask_files(self, stage: str, extra: str = "", **values: str) -> dict[str, str]:
         """Dosya paketi ister; JSON bozuksa ajana hatayı söyleyip bir kez daha sorar."""
         try:
-            return _parse_file_bundle(self._ask(stage, **values))
+            return _parse_file_bundle(self._ask(stage, extra=extra, **values))
         except ValueError as exc:
-            return _parse_file_bundle(self._ask(stage, extra=(
+            return _parse_file_bundle(self._ask(stage, extra=extra + (
                 f"\nÖNCEKİ YANITIN REDDEDİLDİ: {exc}. Açıklama veya Markdown ekleme; "
                 'yalnızca {"files": {...}} biçiminde geçerli JSON döndür.'
             ), **values))
@@ -209,23 +220,55 @@ class CrewAIEngine:
     def document(self, stage: str, idea: str, context: str) -> str:
         return self._ask(stage, idea=idea, context=context[:24000])
 
-    def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]:
-        repair = (
-            # Hata özeti genellikle çıktının sonundadır; bu yüzden sondan alınır.
-            f"Bu test çıktısına göre uygulamayı düzelt:\n{feedback[-8000:]}\n"
-            "tests/ ve test/ altındaki dosyalar Test Ajanı'na aittir ve değiştirilmez; "
-            "uygulama kodunu testlere uyacak şekilde düzelt. Yalnızca değişen dosyaları döndür.\n"
+    def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]:
+        current = (
+            "tests/ ve test/ altındaki dosyalar Test Ajanı'na aittir ve değiştirilmez. Yalnızca değişen veya yeni dosyaları döndür.\n"
             "Mevcut dosyalar (testler dahil):\n"
             f"{json.dumps(self.current_files, ensure_ascii=False)[:30000]}\n"
-            if feedback else "İlk uygulamayı oluştur.\n"
         )
-        files = self._ask_files("development", idea=idea, context=docs[:20000], feedback=repair)
+        if change:
+            # Değişiklik talebi: mevcut uygulama korunur, yalnızca talebin gerektirdiği dosyalar değişir.
+            instruction = f"MEVCUT UYGULAMAYI BU DEĞİŞİKLİĞE GÖRE GÜNCELLE:\n{change[:6000]}\n"
+            if feedback:
+                instruction += f"Hatayı yeniden üreten test çıktısı:\n{feedback[-6000:]}\n"
+            instruction += current
+        elif feedback:
+            # Hata özeti genellikle çıktının sonundadır; bu yüzden sondan alınır.
+            instruction = f"Bu test çıktısına göre uygulamayı düzelt:\n{feedback[-8000:]}\n" + current
+        else:
+            instruction = "İlk uygulamayı oluştur.\n"
+        files = self._ask_files("development", idea=idea, context=docs[:20000], feedback=instruction)
         self.current_files.update(files)
         return files
 
-    def tests(self, idea: str, docs: str, files: dict[str, str]) -> dict[str, str]:
+    def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None) -> dict[str, str]:
+        extra = ""
+        if change:
+            extra = (
+                f"\nDEĞİŞİKLİK TALEBİ İÇİN TEST YAZIYORSUN:\n{change[:6000]}\n"
+                "Mevcut test dosyaları uygulama dosyalarıyla birlikte yukarıda; onları koru. "
+                "Yalnızca yeni veya güncellenmesi gereken test dosyalarını döndür. Yeni/değişen gereksinimlerin "
+                "kimliklerini (ör. FR-07) test adlarına yaz. Talep bir hataysa, hatayı yeniden üreten ve "
+                "şu anki kodla BAŞARISIZ olması beklenen bir regresyon testi yaz."
+            )
         return self._ask_files(
-            "testing", idea=idea, context=docs[:16000],
+            "testing", extra=extra, idea=idea, context=docs[:16000],
             files=json.dumps(files, ensure_ascii=False)[:30000],
         )
 
+    def section(self, stage: str, idea: str, context: str, document: str, section: str,
+                instruction: str, mode: str) -> str:
+        """Belgenin tek bölümü için: mode 'question' ise yanıt, 'rewrite'/'add' ise yeni Markdown döndürür."""
+        task = "section_question" if mode == "question" else "section_edit"
+        operation = {
+            "rewrite": "Bölümü talimata göre YENİDEN YAZ ve bölümün yeni hâlini (başlığıyla birlikte) döndür.",
+            "add": "Bölümün HEMEN ALTINA eklenecek YENİ içeriği yaz; mevcut bölümü tekrar etme.",
+            "question": "Soruyu yanıtla; belgeyi değiştirme.",
+        }[mode]
+        return self._ask(
+            stage, task=task, ask_user=False, idea=idea, context=context[:12000], document=document[:14000],
+            section=section[:6000], instruction=instruction[:2000], operation=operation,
+        )
+
+    def impact(self, idea: str, context: str, change: str) -> str:
+        return self._ask("impact", ask_user=False, idea=idea, context=context[:24000], change=change[:6000])
