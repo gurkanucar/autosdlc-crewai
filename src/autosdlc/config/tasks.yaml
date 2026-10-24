@@ -83,6 +83,8 @@ development:
       api_test: [executable, argument, ...] (required for backend/fullstack)
       ui_test: [executable, argument, ...] (required if there is a web UI)
       start: [executable, argument, ...] (required if there is a web UI)
+    For a CLI or library project without a web UI write only setup and unit_test: there is no server to start,
+    so leave api_test, ui_test and start out.
     Do not write test files: the Test Agent writes the tests under the tests/ folder.
     The test commands must run the tests folder, not a single file (e.g. pytest -q tests),
     so tests added later run too.

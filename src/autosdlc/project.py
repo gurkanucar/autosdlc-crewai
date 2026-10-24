@@ -27,6 +27,11 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
             command = manifest[key] = shlex.split(command)
         if not isinstance(command, list) or len(command) > 20 or not all(isinstance(arg, str) and 0 < len(arg) < 300 for arg in command):
             raise ValueError(f"{key} in project.yaml must be a list of command arguments (e.g. [python, -m, pytest, -q, tests])")
+    if decisions["project_type"] in {"cli", "library"} and decisions["ui"] != "web":
+        # Models sometimes fill every key; a CLI has no server to start and no HTTP API to test, and launching it as a
+        # "server" exits at once. unit_test is the whole contract for these project types.
+        for key in ("api_test", "ui_test", "start"):
+            manifest.pop(key, None)
     port = manifest.get("port", 8000)
     if not isinstance(port, int) or not 1024 <= port <= 65535:
         raise ValueError("The project.yaml port must be between 1024 and 65535")
