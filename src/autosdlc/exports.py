@@ -9,6 +9,23 @@ from pathlib import Path
 
 SKIPPED_DIRS = {".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__",
                 ".pytest_cache", "test-results", "dist", "build", "target"}
+# Mach-O magic numbers (32/64 bit, both byte orders); 0xCAFEBABE is left out because Java class files share it.
+MACH_O = {b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe"}
+
+
+def is_compiled_binary(path: Path) -> bool:
+    """ELF, Windows PE or Mach-O executable: a build output (e.g. `go build -o calc`), never source."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(64)
+            if head[:4] == b"\x7fELF" or head[:4] in MACH_O:
+                return True
+            if head[:2] != b"MZ" or len(head) < 64:
+                return False
+            handle.seek(int.from_bytes(head[60:64], "little"))
+            return handle.read(4) == b"PE\0\0"
+    except OSError:
+        return False
 
 
 def export_files(root: Path) -> list[Path]:
@@ -20,7 +37,7 @@ def export_files(root: Path) -> list[Path]:
         for name in sorted(names):
             path = Path(directory) / name
             secret = name == ".env" or (name.startswith(".env.") and name not in {".env.example", ".env.sample", ".env.template"})
-            if not secret and not path.is_symlink() and path.is_file():
+            if not secret and not path.is_symlink() and path.is_file() and not is_compiled_binary(path):
                 files.append(path.relative_to(root))
     return files
 

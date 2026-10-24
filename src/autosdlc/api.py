@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from .intake import questions, validate_decisions
+from .intake import questions, validate_decisions, with_default_delivery
 from .runner import run_project
 from .storage import History
 
@@ -36,7 +36,7 @@ def architecture_questions() -> dict:
 @app.post("/runs")
 async def create_run(request: RunRequest) -> dict:
     try:
-        decisions = validate_decisions(request.decisions)
+        decisions = validate_decisions(with_default_delivery(request.decisions))
         result = await asyncio.to_thread(
             run_project,
             request.idea,

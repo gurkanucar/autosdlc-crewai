@@ -60,7 +60,8 @@ class OutputTruncated(ValueError):
 PLAN_INSTRUCTION = (
     "\nDO NOT WRITE CODE IN THIS STEP. Instead of the JSON format above, return ONLY the file plan: "
     '{"plan": [{"path": "relative/path", "purpose": "one-sentence purpose"}]}. '
-    "List every file needed, including project.yaml and the Dockerfile; at most 30 files, no lock files."
+    "List every file needed, including project.yaml and the packaging files the delivery decision asks for; "
+    "at most 30 files, no lock files."
 )
 
 

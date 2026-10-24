@@ -25,9 +25,9 @@ STAGES = (
     Stage("analysis", "Analysis", "Analysis Agent", "requirements.md", "FR/NFR, user stories, acceptance criteria", "Requirements engineering"),
     Stage("design", "Design", "Design Agent", "architecture.md", "Component/sequence diagrams, API contract, data schema", "Design and verification"),
     Stage("review", "Review", "Architecture Review Agent", "design_review.md", "Independent audit of the design against the requirements", "Design and verification"),
-    Stage("development", "Development", "Development Agent", "source code", "Working code with the chosen technology, Dockerfile, project.yaml", "Implementation"),
+    Stage("development", "Development", "Development Agent", "source code", "Working code with the chosen technology, packaging, project.yaml", "Implementation"),
     Stage("testing", "Testing", "Test Agent", "test_report.md", "Unit/API/UI tests, traceability matrix", "Implementation"),
-    Stage("deployment", "Deployment", "Deployment Agent", "deployment.md", "Compose, environment variables, health checks and rollback", "Operations"),
+    Stage("deployment", "Deployment", "Deployment Agent", "deployment.md", "How to run it: Docker, executables or scripts", "Operations"),
     Stage("maintenance", "Maintenance", "Maintenance Agent", "maintenance_report.md", "Monitoring, incident response, improvement list", "Operations"),
 )
 STAGE_KEYS = tuple(stage.key for stage in STAGES)

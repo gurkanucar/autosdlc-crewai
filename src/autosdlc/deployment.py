@@ -70,6 +70,9 @@ def render_compose(decisions: dict[str, str], port: int = 8000) -> dict:
 
 
 def write_deployment_files(project_dir: Path, decisions: dict[str, str], port: int = 8000) -> None:
+    """Container files only for a Docker delivery; executables and scripts need no compose stack."""
+    if decisions.get("delivery", "docker") != "docker":
+        return
     (project_dir / ".dockerignore").write_text(
         ".env\n.git\n.venv\n.autosdlc-venv\nnode_modules\n__pycache__\n.pytest_cache\n"
         "test-results\nplaywright-report\ntests\ntest\n",

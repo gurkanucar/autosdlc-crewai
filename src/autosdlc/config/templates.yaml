@@ -11,12 +11,13 @@
     scale: small
     project_type: library
     stack: Python 3.12, pytest
-    constraints: 'Use no external dependencies; no setup command is needed. Fewest files: one source module, a single
-      test file under tests/, project.yaml and a Dockerfile. Keep every SDLC document short (at most half a page
-      each); write at most 3 FRs and 2 NFRs.'
+    delivery: none
+    constraints: 'Use no external dependencies; no setup command is needed. Fewest files: one source module and a
+      single test file under tests/. Keep every SDLC document short (at most half a page each); write at most 3 FRs
+      and 2 NFRs.'
 - id: calculator-cli
   title: Calculator (Python, CLI)
-  description: A command-line calculator for the four basic operations; one module, one test file, short documents.
+  description: A command-line calculator for the four basic operations; one module, run.sh/run.bat launchers, short documents.
   idea: 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication
     and division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
     code.'
@@ -24,12 +25,12 @@
     scale: small
     project_type: cli
     stack: Python 3.12, argparse, pytest
-    constraints: 'Use no external dependencies; standard library only. Fewest files: one source module, a single
-      test file under tests/, project.yaml and a Dockerfile. Keep every SDLC document short (at most half a page
-      each); write at most 3 FRs and 2 NFRs.'
+    delivery: script
+    constraints: 'Use no external dependencies; standard library only. Fewest files: one source module and a single
+      test file under tests/. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: calculator-cli-go
   title: Calculator (Go, CLI)
-  description: A lightweight command-line calculator for the four basic operations; no dependencies, builds and tests in seconds.
+  description: A lightweight command-line calculator; ready-to-run executables for Windows (.exe), Linux and macOS.
   idea: 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication
     and division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
     code.'
@@ -37,9 +38,37 @@
     scale: small
     project_type: cli
     stack: Go 1.24, standard library, go test
-    constraints: 'Use the Go standard library only (no go get); go.mod declares no dependencies and no setup command
-      is needed. Fewest files: main.go, calc.go with the pure calculation functions, calc_test.go, project.yaml and
-      a Dockerfile. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+    delivery: binary
+    constraints: 'Use the Go standard library only (no go get); go.mod declares no dependencies. Fewest files: main.go
+      and calc.go with the pure calculation functions. Keep every SDLC document short (at most half a page each); write
+      at most 3 FRs and 2 NFRs.'
+- id: word-counter-rust
+  title: Word counter (Rust, CLI)
+  description: A wc-like tool that counts lines, words and characters; executables for Windows (.exe) and Linux.
+  idea: 'A command-line tool like wc: it counts the lines, words and characters of the given files, or of standard
+    input when no file is given, and prints one row per file plus a total row when there is more than one file.
+    A missing file prints a clear error message and exits with a non-zero code.'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: Rust (stable), cargo, standard library
+    delivery: binary
+    constraints: 'Use the Rust standard library only (no external crates). Fewest files: Cargo.toml, src/main.rs and
+      src/lib.rs with the counting logic. Keep every SDLC document short (at most half a page each); write at most 3 FRs
+      and 2 NFRs.'
+- id: json-tool-node
+  title: JSON formatter (Node.js, CLI)
+  description: Pretty-prints and validates JSON files; run.sh/run.bat launchers, no dependencies.
+  idea: 'A command-line JSON tool: "jsonfmt file.json" prints the file pretty-printed with two-space indentation and
+    "jsonfmt --check file.json" only validates it. Invalid JSON prints the error position (line and column) and exits
+    with a non-zero code.'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: Node.js 22, ES modules, node:test
+    delivery: script
+    constraints: 'Use only Node.js built-in modules (no npm dependencies). Fewest files: package.json, src/cli.js and
+      src/format.js. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: inventory-tracker
   title: Inventory tracker (Node.js, fullstack)
   description: A simple web application that keeps stock records with product name, category and location.
@@ -52,6 +81,7 @@
     database: sqlite
     cache: none
     observability: none
+    delivery: docker
     constraints: Do not use a framework in the frontend, write plain HTML/CSS/JS. The user interface texts should
       be in Turkish. Prefer a SQLite solution that needs no native compilation.
 - id: task-api
@@ -66,6 +96,7 @@
     cache: none
     observability: none
     ui: none
+    delivery: docker
     constraints: Include input validation and meaningful error codes (400, 404).
 - id: unit-converter-cli
   title: Unit converter (Python, CLI)
@@ -77,6 +108,7 @@
     scale: small
     project_type: cli
     stack: Python 3.12, argparse, pytest
+    delivery: script
     constraints: Use no external dependencies; standard library only.
 - id: text-helpers
   title: Text helpers (Python, library)
@@ -88,4 +120,5 @@
     scale: small
     project_type: library
     stack: Python 3.12, pytest
+    delivery: none
     constraints: Use no external dependencies; standard library only.

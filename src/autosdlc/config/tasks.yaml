@@ -76,13 +76,29 @@ development:
     $feedback
     Follow the requested language, framework, package manager and UI simplicity exactly. Code is written in English.
     Return ONLY this JSON format: {"files": {"relative/path": "complete file content", ...}}.
-    Produce a Dockerfile suited to the chosen technology and a project.yaml with these keys:
-      port: integer between 1024 and 65535 (the web service port)
+    Package the project according to the `delivery` decision:
+      docker: a Dockerfile suited to the chosen technology.
+      binary: a POSIX sh script build.sh that builds standalone executables into dist/ for every target the
+        toolchain can cross-compile from Linux, named <app>-<os>-<arch> (with .exe for Windows). Go:
+        CGO_ENABLED=0 with GOOS/GOARCH for windows/amd64, linux/amd64, linux/arm64, darwin/amd64, darwin/arm64.
+        Rust: cargo build --release for x86_64-unknown-linux-gnu and x86_64-pc-windows-gnu (no macOS).
+        Add package: [sh, build.sh] to project.yaml. If the stack cannot build standalone executables from
+        Linux (Python, Node.js, ...), do not fake it: write run.sh and run.bat launchers instead, leave package
+        out and say so in the README. No Dockerfile.
+      script: run.sh (POSIX sh) and run.bat launchers that run the application from source and pass the
+        arguments through. No Dockerfile.
+      none: no Dockerfile, no launchers.
+    Match the effort to the project: a small CLI or library needs no infrastructure files beyond these.
+    Build outputs go only to dist/ or bin/: never write a compiled binary to the project root
+    (e.g. go build -o dist/calc, not -o calc).
+    Write a project.yaml with these keys:
+      port: integer between 1024 and 65535 (only for a web service)
       setup: [executable, argument, ...] (optional dependency installation)
       unit_test: [executable, argument, ...] (required for CLI/library)
       api_test: [executable, argument, ...] (required for backend/fullstack)
       ui_test: [executable, argument, ...] (required if there is a web UI)
       start: [executable, argument, ...] (required if there is a web UI)
+      package: [executable, argument, ...] (only for the binary delivery, e.g. [sh, build.sh])
     For a CLI or library project without a web UI write only setup and unit_test: there is no server to start,
     so leave api_test, ui_test and start out.
     Do not write test files: the Test Agent writes the tests under the tests/ folder.
@@ -115,7 +131,7 @@ development:
     pnpm-lock.yaml, go.sum, etc.); the setup command creates them.
     Do not write a .env file; use .env.example if needed.
     Do not return a Markdown code block. When fixing, give complete file contents, not patches.
-  expected_output: Valid JSON containing the Dockerfile, project.yaml and complete source files.
+  expected_output: Valid JSON containing project.yaml, the packaging files the delivery decision asks for and complete source files.
 
 testing:
   description: |
@@ -143,11 +159,18 @@ deployment:
     Project idea: $idea
     Earlier SDLC documents and the actual test result:
     $context
-    Write the whole document in $language. Prepare a deployment guide for the chosen technology with the
-    prerequisites, environment variables, docker compose build/up steps, health checks,
-    and rollback and backup steps.
-    The Dockerfile and compose.yaml are already prepared; do not claim that the image was built or
-    the application was deployed. If the tests failed, say so clearly.
+    Write the whole document in $language. Prepare a deployment guide that matches the `delivery` decision:
+      docker: prerequisites, environment variables, docker compose build/up steps, health checks, rollback
+        and backup. The Dockerfile and compose.yaml are already prepared; do not claim that the image was
+        built or the application was deployed.
+      binary: which file in dist/ to use on each operating system and how to run it (chmod +x on
+        Linux/macOS), based only on the packaging result in the context; if no executables were built, say
+        so and explain how to run the project from source or with the launcher scripts.
+      script: prerequisites and how to run run.sh / run.bat.
+      none: how to install and use the project from source.
+    Describe only what the project has: no Docker, health checks, rollback or infrastructure that the
+    delivery does not include. Keep it proportional to the project; a small CLI needs a short guide.
+    If the tests failed, say so clearly.
     Do not write secrets. Return Markdown only.
   expected_output: A deployment guide that reflects the real situation, in the project's document language.
 

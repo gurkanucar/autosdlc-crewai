@@ -14,10 +14,16 @@ CHOICE_LABELS = {
     "cache": {"none": "None", "redis": "Redis"},
     "observability": {"none": "None", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
     "ui": {"none": "None", "web": "Web UI"},
+    "delivery": {"docker": "Docker", "binary": "Executables", "script": "Scripts", "none": "None"},
     "scale": {"normal": "Normal", "small": "Small"},
     # Language names are always written in their own language.
     "language": {"en": "English", "tr": "Türkçe"},
 }
+
+
+def default_delivery(project_type: str) -> str:
+    """What the form preselects: services ship as containers, CLIs as executables, libraries as source."""
+    return {"cli": "binary", "library": "none"}.get(project_type, "docker")
 
 
 def choice_label(name: str, value: str) -> str:
@@ -52,6 +58,15 @@ def templates() -> list[dict]:
         translated.append({**item, "title": t(item["title"]), "description": t(item["description"]),
                            "idea": t(item["idea"]), "decisions": decisions})
     return translated
+
+
+def with_default_delivery(decisions: dict[str, str] | None) -> dict[str, str]:
+    """A new project without a delivery choice gets its type's default; validate_decisions alone would pick
+    Docker, which is kept for projects created before the decision existed."""
+    selected = dict(decisions or {})
+    if not selected.get("delivery") and selected.get("project_type"):
+        selected["delivery"] = default_delivery(selected["project_type"])
+    return selected
 
 
 def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:

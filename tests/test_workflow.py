@@ -254,7 +254,7 @@ def test_yaml_request_passes_stack_and_output_to_runner(tmp_path, monkeypatch):
 
 
 def test_plain_make_run_prompts_for_idea_and_decisions(tmp_path, monkeypatch):
-    answers = iter(["A tiny CLI", "cli", "Rust", "", "", ""])
+    answers = iter(["A tiny CLI", "cli", "Rust", "", "", "", ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     captured = {}
 
@@ -268,6 +268,8 @@ def test_plain_make_run_prompts_for_idea_and_decisions(tmp_path, monkeypatch):
     assert captured["decisions"]["project_type"] == "cli"
     assert captured["decisions"]["stack"] == "Rust"
     assert captured["decisions"]["scale"] == "normal"
+    # A blank delivery answer takes the project type's default, not Docker.
+    assert captured["decisions"]["delivery"] == "binary"
 
 
 def test_ui_choice_runs_playwright_against_live_app(tmp_path, monkeypatch):

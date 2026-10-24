@@ -1,72 +1,100 @@
 # Turkish translations of the example templates and the decision questions (English source -> Turkish).
 ⚡ Quick demo — temperature converter (Python, library): ⚡ Hızlı demo — sıcaklık dönüştürücü (Python, library)
-The smallest example to see the concept in a few minutes; two functions, one test file, short documents.: Konsepti
-  birkaç dakikada görmek için en küçük örnek; iki fonksiyon, tek test dosyası, kısa belgeler.
-? 'A small Python library that converts between Celsius and Fahrenheit: celsius_to_fahrenheit and fahrenheit_to_celsius
-  functions. Raise a ValueError for values below absolute zero (-273.15 °C).'
+The smallest example to see the concept in a few minutes; two functions, one test file, short documents.: Konsepti birkaç
+  dakikada görmek için en küçük örnek; iki fonksiyon, tek test dosyası, kısa belgeler.
+? 'A small Python library that converts between Celsius and Fahrenheit: celsius_to_fahrenheit and fahrenheit_to_celsius functions.
+  Raise a ValueError for values below absolute zero (-273.15 °C).'
 : 'Celsius ve Fahrenheit arasında dönüşüm yapan küçük bir Python library''si: celsius_to_fahrenheit ve fahrenheit_to_celsius
   fonksiyonları. Mutlak sıfırın (-273.15 °C) altındaki değerler için ValueError fırlatılsın.'
 Python 3.12, pytest: Python 3.12, pytest
-? 'Use no external dependencies; no setup command is needed. Fewest files: one source module, a single test file
-  under tests/, project.yaml and a Dockerfile. Keep every SDLC document short (at most half a page each); write
-  at most 3 FRs and 2 NFRs.'
-: 'Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü, tests/ altında tek test dosyası,
-  project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve
-  2 NFR yaz.'
+? 'Use no external dependencies; no setup command is needed. Fewest files: one source module and a single test file under
+  tests/. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü ve tests/ altında tek test dosyası. Bütün
+  SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Calculator (Python, CLI): Hesap makinesi (Python, CLI)
-A command-line calculator for the four basic operations; one module, one test file, short documents.: Dört işlem
-  yapan komut satırı hesap makinesi; tek modül, tek test dosyası, kısa belgeler.
-? 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication and
-  division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
-  code.'
-: 'Dört işlem yapan komut satırı hesap makinesi: toplama, çıkarma, çarpma ve bölme. Kullanım: calc 6 / 3 çıktısı
-  2 olsun. Sıfıra bölme açık bir hata mesajı yazsın ve sıfırdan farklı bir çıkış koduyla bitsin.'
+A command-line calculator for the four basic operations; one module, run.sh/run.bat launchers, short documents.: Dört işlem
+  yapan komut satırı hesap makinesi; tek modül, run.sh/run.bat başlatıcıları, kısa belgeler.
+? 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication and division.
+  Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero code.'
+: 'Dört işlem yapan komut satırı hesap makinesi: toplama, çıkarma, çarpma ve bölme. Kullanım: calc 6 / 3 çıktısı 2 olsun.
+  Sıfıra bölme açık bir hata mesajı yazsın ve sıfırdan farklı bir çıkış koduyla bitsin.'
 Python 3.12, argparse, pytest: Python 3.12, argparse, pytest
-? 'Use no external dependencies; standard library only. Fewest files: one source module, a single test file under
-  tests/, project.yaml and a Dockerfile. Keep every SDLC document short (at most half a page each); write at most
-  3 FRs and 2 NFRs.'
-: 'Dış bağımlılık kullanma; yalnızca standard library. En az dosya: tek kaynak modülü, tests/ altında tek test dosyası,
-  project.yaml ve Dockerfile. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve
-  2 NFR yaz.'
+? 'Use no external dependencies; standard library only. Fewest files: one source module and a single test file under tests/.
+  Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Dış bağımlılık kullanma; yalnızca standard library. En az dosya: tek kaynak modülü ve tests/ altında tek test dosyası.
+  Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Calculator (Go, CLI): Hesap makinesi (Go, CLI)
+A lightweight command-line calculator; ready-to-run executables for Windows (.exe), Linux and macOS.: Hafif bir komut satırı
+  hesap makinesi; Windows (.exe), Linux ve macOS için hazır çalıştırılabilir dosyalar.
+Go 1.24, standard library, go test: Go 1.24, standard library, go test
+? 'Use the Go standard library only (no go get); go.mod declares no dependencies. Fewest files: main.go and calc.go with the
+  pure calculation functions. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca Go standard library kullan (go get yok); go.mod hiçbir bağımlılık bildirmez. En az dosya: main.go ve saf hesaplama
+  fonksiyonlarını içeren calc.go. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR
+  yaz.'
+Word counter (Rust, CLI): Kelime sayacı (Rust, CLI)
+A wc-like tool that counts lines, words and characters; executables for Windows (.exe) and Linux.: Satır, kelime ve karakter
+  sayan wc benzeri bir araç; Windows (.exe) ve Linux için çalıştırılabilir dosyalar.
+? 'A command-line tool like wc: it counts the lines, words and characters of the given files, or of standard input when no
+  file is given, and prints one row per file plus a total row when there is more than one file. A missing file prints a clear
+  error message and exits with a non-zero code.'
+: 'wc benzeri bir komut satırı aracı: verilen dosyaların, dosya verilmezse standart girdinin satır, kelime ve karakter sayılarını
+  sayar; her dosya için bir satır, birden fazla dosya varsa bir de toplam satırı yazar. Bulunamayan dosya açık bir hata mesajı
+  yazar ve sıfırdan farklı bir çıkış koduyla biter.'
+Rust (stable), cargo, standard library: Rust (stable), cargo, standard library
+? 'Use the Rust standard library only (no external crates). Fewest files: Cargo.toml, src/main.rs and src/lib.rs with the
+  counting logic. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca Rust standard library kullan (harici crate yok). En az dosya: Cargo.toml, src/main.rs ve sayma mantığını içeren
+  src/lib.rs. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+JSON formatter (Node.js, CLI): JSON biçimlendirici (Node.js, CLI)
+Pretty-prints and validates JSON files; run.sh/run.bat launchers, no dependencies.: JSON dosyalarını biçimlendirir ve doğrular;
+  run.sh/run.bat başlatıcıları, bağımlılık yok.
+? 'A command-line JSON tool: "jsonfmt file.json" prints the file pretty-printed with two-space indentation and "jsonfmt --check
+  file.json" only validates it. Invalid JSON prints the error position (line and column) and exits with a non-zero code.'
+: 'Komut satırı JSON aracı: "jsonfmt file.json" dosyayı iki boşluk girintiyle biçimlendirip yazar, "jsonfmt --check file.json"
+  yalnızca doğrular. Geçersiz JSON hatanın konumunu (satır ve sütun) yazar ve sıfırdan farklı bir çıkış koduyla biter.'
+Node.js 22, ES modules, node:test: Node.js 22, ES modules, node:test
+? 'Use only Node.js built-in modules (no npm dependencies). Fewest files: package.json, src/cli.js and src/format.js. Keep
+  every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca Node.js yerleşik modüllerini kullan (npm bağımlılığı yok). En az dosya: package.json, src/cli.js ve src/format.js.
+  Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Inventory tracker (Node.js, fullstack): Envanter takip uygulaması (Node.js, fullstack)
-A simple web application that keeps stock records with product name, category and location.: Ürün adı, kategori
-  ve konum bilgisiyle stok kaydı tutan basit bir web uygulaması.
+A simple web application that keeps stock records with product name, category and location.: Ürün adı, kategori ve konum bilgisiyle
+  stok kaydı tutan basit bir web uygulaması.
 ? A simple inventory tracking application. Products are stored with product name, category and location (warehouse/shelf).
-  It supports adding, editing, deleting and listing products; the list can be searched by product name and filtered
-  by category and location.
-: Basit bir envanter takip uygulaması. Ürünler; ürün adı, kategori ve konum (depo/raf) bilgisiyle saklanacak. Ürün
-  ekleme, düzenleme, silme ve listeleme olacak; liste ürün adına göre aranabilecek, kategoriye ve konuma göre süzülebilecek.
+  It supports adding, editing, deleting and listing products; the list can be searched by product name and filtered by category
+  and location.
+: Basit bir envanter takip uygulaması. Ürünler; ürün adı, kategori ve konum (depo/raf) bilgisiyle saklanacak. Ürün ekleme,
+  düzenleme, silme ve listeleme olacak; liste ürün adına göre aranabilecek, kategoriye ve konuma göre süzülebilecek.
 Node.js (Express), pnpm, plain HTML/CSS/JS interface: Node.js (Express), pnpm, sade HTML/CSS/JS arayüz
-? Do not use a framework in the frontend, write plain HTML/CSS/JS. The user interface texts should be in Turkish.
-  Prefer a SQLite solution that needs no native compilation.
-: Frontend'de framework kullanma, düz HTML/CSS/JS yaz. Kullanıcı arayüzü metinleri Türkçe olsun. Native derleme
-  gerektirmeyen bir SQLite çözümü tercih et.
+? Do not use a framework in the frontend, write plain HTML/CSS/JS. The user interface texts should be in Turkish. Prefer a
+  SQLite solution that needs no native compilation.
+: Frontend'de framework kullanma, düz HTML/CSS/JS yaz. Kullanıcı arayüzü metinleri Türkçe olsun. Native derleme gerektirmeyen
+  bir SQLite çözümü tercih et.
 Task tracking API (Python, backend): Görev takip API'si (Python, backend)
-A REST API with endpoints to create, list, complete and delete tasks.: Görev oluşturma, listeleme, tamamlama ve
-  silme endpoint'leri olan REST API.
-? A task tracking API for small teams. Tasks have a title, description, due date and status (todo, in progress,
-  done). It has endpoints to create, list, filter by status, update and delete tasks.
-: Küçük ekipler için görev takip API'si. Görevler başlık, açıklama, son tarih ve durum (yapılacak, sürüyor, bitti)
-  alanlarına sahip olacak. Görev oluşturma, listeleme, duruma göre süzme, güncelleme ve silme endpoint'leri bulunacak.
+A REST API with endpoints to create, list, complete and delete tasks.: Görev oluşturma, listeleme, tamamlama ve silme endpoint'leri
+  olan REST API.
+? A task tracking API for small teams. Tasks have a title, description, due date and status (todo, in progress, done). It
+  has endpoints to create, list, filter by status, update and delete tasks.
+: Küçük ekipler için görev takip API'si. Görevler başlık, açıklama, son tarih ve durum (yapılacak, sürüyor, bitti) alanlarına
+  sahip olacak. Görev oluşturma, listeleme, duruma göre süzme, güncelleme ve silme endpoint'leri bulunacak.
 Python 3.12, FastAPI, pytest: Python 3.12, FastAPI, pytest
-Include input validation and meaningful error codes (400, 404).: Girdi doğrulaması ve anlamlı hata kodları (400,
-  404) olsun.
+Include input validation and meaningful error codes (400, 404).: Girdi doğrulaması ve anlamlı hata kodları (400, 404) olsun.
 Unit converter (Python, CLI): Birim dönüştürücü (Python, CLI)
 A small CLI tool that converts length, weight and temperature units.: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren
   küçük bir CLI aracı.
-? A CLI tool that converts length, weight and temperature units. For example the command "convert 10 km mi" converts
-  10 kilometers to miles. It has a command that lists the supported units and a clear error message for an invalid
-  unit.
-: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren CLI aracı. Örneğin "convert 10 km mi" komutu 10 kilometreyi
-  mile çevirsin. Desteklenen birimleri listeleyen bir komut ve hatalı birim için açık hata mesajı olsun.
+? A CLI tool that converts length, weight and temperature units. For example the command "convert 10 km mi" converts 10 kilometers
+  to miles. It has a command that lists the supported units and a clear error message for an invalid unit.
+: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren CLI aracı. Örneğin "convert 10 km mi" komutu 10 kilometreyi mile çevirsin.
+  Desteklenen birimleri listeleyen bir komut ve hatalı birim için açık hata mesajı olsun.
 Use no external dependencies; standard library only.: Dış bağımlılık kullanma; yalnızca standard library.
 Text helpers (Python, library): Metin yardımcıları (Python, library)
-A library offering slug generation and text cleanup functions that handle Turkish characters correctly.: Türkçe
-  karakterlere duyarlı slug üretme ve metin temizleme işlevleri sunan library.
-? 'A text helpers library that handles Turkish characters correctly: slug generation for URLs, collapsing extra
-  whitespace, word counting and smart truncation to a given length. Every function should be documented and type-hinted.'
-: 'Türkçe karakterlere duyarlı metin yardımcıları library''si: URL için slug üretme, fazla boşlukları temizleme,
-  kelime sayma ve belirli uzunlukta akıllı kısaltma. Her işlev belgelenmiş ve tip ipuçlu olsun.'
+A library offering slug generation and text cleanup functions that handle Turkish characters correctly.: Türkçe karakterlere
+  duyarlı slug üretme ve metin temizleme işlevleri sunan library.
+? 'A text helpers library that handles Turkish characters correctly: slug generation for URLs, collapsing extra whitespace,
+  word counting and smart truncation to a given length. Every function should be documented and type-hinted.'
+: 'Türkçe karakterlere duyarlı metin yardımcıları library''si: URL için slug üretme, fazla boşlukları temizleme, kelime sayma
+  ve belirli uzunlukta akıllı kısaltma. Her işlev belgelenmiş ve tip ipuçlu olsun.'
 What is the project type?: Proje türü nedir?
 Which languages and frameworks will be used? State the backend, frontend and package manager.: Hangi dil ve framework'ler
   kullanılacak? Backend, frontend ve package manager'ı belirt.
@@ -74,17 +102,13 @@ Which database will be used?: Hangi veritabanı kullanılacak?
 Will a cache be used?: Önbellek kullanılacak mı?
 Which observability services should Docker Compose include?: Docker Compose hangi observability servislerini içersin?
 Should the backend project have a web UI?: Backend projesinde web UI olsun mu?
-? What is the project scale? In a small project documents are kept short and the review only sends the design back
-  on a critical finding.
+? 'How will the project be delivered? Docker: a container image; Executables: files built for every operating system the toolchain
+  allows (Windows .exe, Linux, macOS); Scripts: run.sh/run.bat launchers; None: source code only.'
+: 'Proje nasıl teslim edilecek? Docker: container imajı; Çalıştırılabilir dosya: araç zincirinin izin verdiği her işletim
+  sistemi için derlenmiş dosyalar (Windows .exe, Linux, macOS); Script: run.sh/run.bat başlatıcıları; Yok: yalnızca kaynak
+  kod.'
+? What is the project scale? In a small project documents are kept short and the review only sends the design back on a critical
+  finding.
 : Proje ölçeği nedir? Küçük projede belgeler kısa tutulur ve inceleme yalnızca kritik bulguda tasarımı geri gönderir.
 In which language should the agents write the documents?: Ajanlar belgeleri hangi dilde yazsın?
 Are there any other technical or product constraints?: Başka teknik veya ürün kısıtları var mı?
-Calculator (Go, CLI): Hesap makinesi (Go, CLI)
-"A lightweight command-line calculator for the four basic operations; no dependencies, builds and tests in seconds.": "Dört işlem yapan hafif bir komut satırı hesap makinesi; bağımlılık yok, saniyeler içinde derlenir ve test edilir."
-Go 1.24, standard library, go test: Go 1.24, standard library, go test
-? 'Use the Go standard library only (no go get); go.mod declares no dependencies and no setup command is needed. Fewest
-  files: main.go, calc.go with the pure calculation functions, calc_test.go, project.yaml and a Dockerfile. Keep every
-  SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-: 'Yalnızca Go standard library kullan (go get yok); go.mod hiçbir bağımlılık bildirmez ve setup komutu gerekmez. En az
-  dosya: main.go, saf hesaplama fonksiyonlarını içeren calc.go, calc_test.go, project.yaml ve bir Dockerfile. Bütün SDLC
-  belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'

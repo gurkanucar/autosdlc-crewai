@@ -45,6 +45,7 @@ Her aşama okuyabileceğiniz, düzenleyebileceğiniz ve indirebileceğiniz bir M
 - Ajan sorularını yanıtlamanıza, belge değişikliklerini incelemenize ve kararlarınızla akışı sürdürmenize olanak verir.
 - Projeyi, kaynak kodu veya SDLC belgelerini ZIP olarak indirir.
 - İhtiyaca göre API ve browser testleri oluşturur; database, cache ve observability servisleri için Docker Compose hazırlayabilir.
+- Her projeyi seçtiğiniz şekilde teslim eder: Docker imajı, hazır çalıştırılabilir dosyalar (Go için Windows `.exe`, Linux ve macOS; Rust için Windows ve Linux), `run.sh`/`run.bat` başlatıcıları ya da yalnızca kaynak kod. CLI'lar varsayılan olarak çalıştırılabilir dosya, library'ler yalnızca kaynak kod olarak gelir.
 
 ## Başlarken
 
@@ -88,7 +89,7 @@ Oluşturulan projenin araçları ve servisleri projeye göre seçilir. AI taraf�
 
 ## Docker ile yayınlama (Dokploy / herhangi bir VPS)
 
-Depoda bir `Dockerfile` ve bir `docker-compose.yml` vardır. İmajda uygulama, Playwright Chromium ve üretilen projelerin ihtiyaç duyduğu araçlar bulunur (Python 3.12, npm ve pnpm ile Node.js 22, Go 1.24, Rust, git ve C derleyicisi); imaj büyüktür (diskte yaklaşık 6–7 GB). Diğer stack'ler (Java vb.) kurulu değildir. Projeler ve çalıştırma geçmişi `/data` volume'unda tutulur.
+Depoda bir `Dockerfile` ve bir `docker-compose.yml` vardır. İmajda uygulama, Playwright Chromium ve üretilen projelerin ihtiyaç duyduğu araçlar bulunur (Python 3.12, npm ve pnpm ile Node.js 22, Go 1.24, Windows hedefiyle Rust, mingw-w64, git ve C derleyicisi); imaj büyüktür (diskte yaklaşık 7–8 GB). Diğer stack'ler (Java vb.) kurulu değildir. Projeler ve çalıştırma geçmişi `/data` volume'unda tutulur.
 
 | Değişken | Amaç |
 |----------|------|

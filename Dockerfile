@@ -18,8 +18,9 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/usr/local/go/bin:/usr/local/cargo/bin:/data/.go/bin:/data/.pnpm:$PATH
 
 # git and a C compiler: Go modules fetched from git, native npm addons and cgo (e.g. go-sqlite3).
+# mingw-w64 is the linker Rust needs to cross-compile Windows .exe files (Go needs nothing extra).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git build-essential ca-certificates \
+    && apt-get install -y --no-install-recommends git build-essential ca-certificates gcc-mingw-w64-x86-64 \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js, npm and pnpm. Only node and npm are copied: /usr/local also holds Python in this image.
@@ -34,6 +35,7 @@ COPY --from=go /usr/local/go /usr/local/go
 # Rust toolchain (rustup proxies + toolchain). CARGO_HOME points into /data so the non-root user can cache crates there.
 COPY --from=rust /usr/local/cargo /usr/local/cargo
 COPY --from=rust /usr/local/rustup /usr/local/rustup
+RUN rustup target add x86_64-pc-windows-gnu
 
 WORKDIR /app
 

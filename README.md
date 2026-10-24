@@ -45,6 +45,7 @@ Every stage writes a Markdown document that you can read, edit and download. The
 - Lets you answer an agent, review document changes, and continue the workflow with your decisions.
 - Exports the project, source code, or SDLC documents as ZIP files.
 - Generates API and browser tests when the selected project needs them, and can include Docker Compose services for databases, caches, and observability.
+- Delivers each project the way you choose: a Docker image, ready-to-run executables (Windows `.exe`, Linux and macOS builds for Go; Windows and Linux for Rust), `run.sh`/`run.bat` launchers, or source only. CLIs default to executables, libraries to source only.
 
 ## Get started
 
@@ -88,7 +89,7 @@ The generated project's tools and services are chosen per project. Review AI-gen
 
 ## Deploy with Docker (Dokploy / any VPS)
 
-The repository ships a `Dockerfile` and a `docker-compose.yml`. The image contains the app, Playwright Chromium and the toolchains generated projects need (Python 3.12, Node.js 22 with npm and pnpm, Go 1.24, Rust, git and a C compiler); it is large (about 6–7 GB on disk). Other stacks (Java, …) are not installed. Projects and run history are kept in the `/data` volume.
+The repository ships a `Dockerfile` and a `docker-compose.yml`. The image contains the app, Playwright Chromium and the toolchains generated projects need (Python 3.12, Node.js 22 with npm and pnpm, Go 1.24, Rust with the Windows target, mingw-w64, git and a C compiler); it is large (about 7–8 GB on disk). Other stacks (Java, …) are not installed. Projects and run history are kept in the `/data` volume.
 
 | Variable | Purpose |
 |----------|---------|

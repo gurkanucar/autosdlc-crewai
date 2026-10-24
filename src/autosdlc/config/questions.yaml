@@ -42,6 +42,17 @@ ui:
   - web
   when:
   - backend
+delivery:
+  question: 'How will the project be delivered? Docker: a container image; Executables: files built for every operating
+    system the toolchain allows (Windows .exe, Linux, macOS); Scripts: run.sh/run.bat launchers; None: source code only.'
+  options:
+  - docker
+  - binary
+  - script
+  - none
+  optional: true
+  # Projects created before this decision existed were all delivered with Docker. The form preselects per project type.
+  default: docker
 scale:
   question: What is the project scale? In a small project documents are kept short and the review only sends the design back
     on a critical finding.

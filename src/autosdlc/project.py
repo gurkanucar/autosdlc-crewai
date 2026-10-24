@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 
 
-COMMANDS = {"setup", "unit_test", "api_test", "ui_test", "start"}
+COMMANDS = {"setup", "unit_test", "api_test", "ui_test", "start", "package"}
 
 
 def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
@@ -42,6 +42,6 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
         raise ValueError("project.yaml must contain ui_test and start in a project with a web UI")
     if decisions["project_type"] in {"cli", "library"} and not manifest.get("unit_test"):
         raise ValueError("project.yaml must contain unit_test in a CLI/library project")
-    if not (project_dir / "Dockerfile").is_file():
+    if decisions.get("delivery", "docker") == "docker" and not (project_dir / "Dockerfile").is_file():
         raise ValueError("The development agent must produce a Dockerfile for the chosen technology")
     return manifest

@@ -21,7 +21,7 @@ from autosdlc.crewai_engine import CrewAIEngine
 from autosdlc.exports import export_files, export_zip, project_zip
 from autosdlc.desktop import open_folder
 from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
-from autosdlc.intake import choice_label, question_text, templates, questions, validate_decisions
+from autosdlc.intake import choice_label, default_delivery, question_text, templates, questions, validate_decisions
 from autosdlc.lifecycle import (
     STAGE_KEYS, STAGES, counters, format_duration, render_svg, stage_description, stage_label, stage_metrics, stage_states,
 )
@@ -108,6 +108,8 @@ EVENT_NAMES = {
     "change_failed": "Change failed", "bug_reproduced": "Bug reproduced by a test",
     "bug_not_reproduced": "Bug not reproduced", "regression": "Regression test", "tests_not_covered": "Test not executed",
     "delta": "Section patch", "skipped": "Stage skipped", "revision_skipped": "Revision not needed",
+    "packaged": "Executables built", "package_failed": "Packaging failed", "package_unavailable": "No executables",
+    "package_skipped": "Packaging skipped",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
@@ -132,7 +134,7 @@ MERMAID_SCRIPT = (
 )
 FORM_FIELDS = {"project_type", "stack", "constraints"}
 FORM_LABELS = {"database": "Database", "cache": "Cache", "observability": "Monitoring", "ui": "Web UI",
-               "scale": "Scale", "language": "Document language"}
+               "delivery": "Delivery", "scale": "Scale", "language": "Document language"}
 
 st.html("""<style>
 .block-container {padding-top:4.5rem; padding-bottom:5rem; max-width:1600px;}
@@ -343,6 +345,10 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "bug_not_reproduced": t("⚠️ My regression test could not reproduce the bug; trying the fix anyway."),
             "regression": t("🔁 Regression: {detail}.", detail=detail),
             "tests_not_covered": t("⚠️ Test files not executed by the project.yaml commands: {detail}", detail=detail),
+            "packaged": t("📦 Executables built: {detail}", detail=detail),
+            "package_failed": t("⚠️ The executables could not be built ({detail}); the tests are not affected.", detail=detail),
+            "package_unavailable": t("ℹ️ This stack cannot be built into executables; launcher scripts are delivered instead."),
+            "package_skipped": t("↷ No executables were built because the tests did not pass."),
         }.get(status)
         if text:
             messages.append((event["created_at"], agent, text))
@@ -1004,6 +1010,15 @@ def header(db: History, row: dict) -> None:
             if readme_path.is_file():
                 st.download_button("README.md", lambda: readme_path.read_bytes(), file_name="README.md", mime="text/markdown",
                                    key=f"readme_download_{run_id}", width="stretch", on_click="ignore")
+            dist = Path(row["project_dir"]) / "dist"
+            executables = sorted(path for path in dist.iterdir() if path.is_file()) if dist.is_dir() else []
+            if executables:
+                st.markdown("**" + t("Executables") + "**")
+                st.caption(t("Built for each operating system; pick yours (.exe is for Windows)."))
+                for item in executables:
+                    st.download_button(item.name, lambda item=item: item.read_bytes(), file_name=item.name,
+                                       mime="application/octet-stream", icon=":material/terminal:",
+                                       key=f"dist_{run_id}_{item.name}", width="stretch", on_click="ignore")
         if row["status"] == "running":
             if primary.button(t("⏸ Stop"), key=f"pause_{run_id}", width="stretch", disabled=bool(row["pause_requested"])):
                 db.request_pause(run_id)
@@ -1156,6 +1171,8 @@ def apply_template(template_id: str | None) -> None:
     for name, item in questions().items():
         if name not in FORM_FIELDS and name != "language":
             st.session_state[f"choice_{name}"] = chosen.get(name, item["options"][0])
+    st.session_state["choice_delivery"] = chosen.get("delivery", default_delivery(chosen["project_type"]))
+    st.session_state["delivery_for"] = chosen["project_type"]
 
 
 def template_picker() -> None:
@@ -1226,6 +1243,11 @@ def home_page() -> None:
         stack = stack_col.text_input(t("Language and technologies"), help=question_text("stack"),
                                      key="stack_input", placeholder=t("E.g. Node.js/Express, pnpm, plain HTML/CSS/JS"))
         decisions = {"project_type": project_type, "stack": stack}
+        # The delivery follows the project type (CLI -> executables, library -> none, services -> Docker) until the user
+        # picks one; changing the type again resets it to that type's default.
+        if st.session_state.get("delivery_for") != project_type:
+            st.session_state["choice_delivery"] = default_delivery(project_type)
+            st.session_state["delivery_for"] = project_type
         options = [(name, item) for name, item in catalog.items()
                    if name not in FORM_FIELDS and (not item.get("when") or project_type in item["when"])]
         if options:

@@ -23,6 +23,7 @@ import yaml
 from .crewai_engine import ClarificationNeeded, CrewAIEngine
 from .i18n import normalize, t
 from .deployment import write_deployment_files
+from .exports import is_compiled_binary
 from .files import write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
@@ -218,6 +219,14 @@ def default_project_dir(workspace: Path, idea: str, run_id: str) -> Path:
 # Folders left out of a version snapshot because they can be recreated or are large.
 SNAPSHOT_SKIP = (".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__", ".pytest_cache",
                  "test-results", "playwright-report", "dist", "build", "target")
+
+
+def _snapshot_ignore(directory: str, names: list[str]) -> set[str]:
+    """Rebuildable folders and compiled binaries (e.g. a `go build` output at the root) stay out of a snapshot."""
+    skipped = set(shutil.ignore_patterns(*SNAPSHOT_SKIP)(directory, names))
+    return skipped | {name for name in names if is_compiled_binary(Path(directory, name))}
+
+
 # English source labels; translate with t() when displaying.
 CHANGE_KINDS = {"feature": "New feature", "bug": "Bug", "change": "Change", "edit": "Document edit"}
 
@@ -291,6 +300,8 @@ class RunSession:
         self.attempts = 0
         self.test_passed = False
         self.last_test_output = ""
+        # Outcome of building the executables of a binary delivery; the deployment agent documents it.
+        self.package_report = ""
         self.completed_stages: set[str] = set()
         self._live_written = 0.0
         if hasattr(engine, "output_listener"):
@@ -368,6 +379,7 @@ class RunSession:
         content = self.previous_docs[stage]
         if stage == "deployment":
             write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
+            self._package()
         if stage in {"deployment", "maintenance"}:
             content = self._with_test_header(content)
             self._write_doc(STAGE_FILES[stage], content)
@@ -551,6 +563,8 @@ class RunSession:
             )
             if self.traceability:
                 parts.append(self.traceability[:3000])
+            if self.package_report:
+                parts.append("Packaging result (the executables actually built):\n" + self.package_report)
         for name in STAGE_INPUTS[stage]:
             if name in self.docs:
                 doc = self.docs[name]
@@ -856,8 +870,44 @@ class RunSession:
 
     def deployment(self) -> str:
         write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
+        self._package()
         report = self._document("deployment", "deployment.md")
         return report
+
+    def _package(self) -> None:
+        """Binary delivery: runs the manifest's package command once the tests pass and lists what landed in dist/.
+
+        A failure is reported, not fatal: the tests decide whether the project succeeded.
+        """
+        if self.decisions["delivery"] != "binary":
+            return
+        if not self.test_passed:
+            self.package_report = "Packaging skipped: the tests did not pass, so no executables were built."
+            self._event("deployment", "package_skipped", "tests did not pass")
+            return
+        command = self.manifest.get("package")
+        if not command:
+            self.package_report = ("No executables were built: project.yaml has no package command (the stack cannot "
+                                   "produce standalone executables from Linux, so launcher scripts are delivered instead).")
+            self._event("deployment", "package_unavailable", "no package command in project.yaml")
+            return
+        dist = self.project_dir / "dist"
+        # dist/ only ever holds build outputs; executables of an older version must not be offered as current.
+        shutil.rmtree(dist, ignore_errors=True)
+        env = self._test_env()
+        try:
+            process = subprocess.run(self._command(command, env), cwd=self.project_dir, env=env, capture_output=True,
+                                     text=True, timeout=600, check=False)
+            output, code = (process.stdout + process.stderr)[-3000:], process.returncode
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            output, code = str(exc), -1
+        artifacts = sorted(path.relative_to(dist).as_posix() for path in dist.rglob("*") if path.is_file()) if dist.is_dir() else []
+        if code == 0 and artifacts:
+            self.package_report = "Executables built into dist/: " + ", ".join(artifacts)
+            self._event("deployment", "packaged", ", ".join(artifacts))
+        else:
+            self.package_report = f"Packaging failed (exit {code}); no executables are available.\n{output}"
+            self._event("deployment", "package_failed", f"exit {code}: {output[-300:]}")
 
     def maintenance(self) -> str:
         return self._document("maintenance", "maintenance_report.md")
@@ -886,7 +936,7 @@ class RunSession:
                     shutil.copy2(path, docs / path.name)
             if self.project_dir.is_dir():
                 shutil.copytree(self.project_dir, target / "project", dirs_exist_ok=True,
-                                ignore=shutil.ignore_patterns(*SNAPSHOT_SKIP))
+                                ignore=_snapshot_ignore)
         except OSError as exc:
             self._event("workflow", "snapshot_failed", str(exc))
         if self.change:
@@ -931,11 +981,27 @@ class RunSession:
             + self._t("SDLC status: **{status}**. Test attempts: {attempts}.",
                       status=self._t("completed") if status == "completed" else self._t("failed"), attempts=self.attempts)
             + f"\n\n## {self._t('Documents')}\n\n{docs}\n\n"
-            + f"## {self._t('Running with Docker Compose')}\n\n"
-            + self._t("Copy `.env.example` to `.env` and fill in the required values, then run `docker compose up --build`.") + "\n"
-            + self._t("See the [deployment guide](docs/deployment.md) for checks and rollback.") + "\n"
+            + self._delivery_section()
         )
         (self.project_dir / "README.md").write_text(content, encoding="utf-8")
+
+    def _delivery_section(self) -> str:
+        """The README's how-to-run part, matching the delivery decision."""
+        delivery = self.decisions["delivery"]
+        if delivery == "docker":
+            return (f"## {self._t('Running with Docker Compose')}\n\n"
+                    + self._t("Copy `.env.example` to `.env` and fill in the required values, then run `docker compose up --build`.") + "\n"
+                    + self._t("See the [deployment guide](docs/deployment.md) for checks and rollback.") + "\n")
+        guide = self._t("Details are in the [deployment guide](docs/deployment.md).") + "\n"
+        if delivery == "binary":
+            dist = self.project_dir / "dist"
+            files = sorted(path.name for path in dist.iterdir() if path.is_file()) if dist.is_dir() else []
+            body = (self._t("Ready-to-run executables are in `dist/`; pick the one for your operating system:") + "\n\n"
+                    + "\n".join(f"- `dist/{name}`" for name in files)) if files else self._t("No executables were built.")
+            return f"## {self._t('Executables')}\n\n{body}\n\n{guide}"
+        if delivery == "script":
+            return f"## {self._t('How to run')}\n\n" + self._t("Run `./run.sh` on Linux/macOS or `run.bat` on Windows.") + f"\n\n{guide}"
+        return guide
 
 
 def _run_crew_flow(session: RunSession) -> None:

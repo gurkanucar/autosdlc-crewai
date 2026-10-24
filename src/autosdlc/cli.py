@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from .i18n import set_language, t
-from .intake import choice_label, parse_choice, question_text, questions, validate_decisions
+from .intake import choice_label, parse_choice, question_text, questions, validate_decisions, with_default_delivery
 from .runner import run_project
 from .storage import History
 
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
                                 selected[name] = choice
                                 break
                             print(t("Enter one of the options: {options}", options=", ".join(choice_label(name, value) for value in item.get("options", []))) if "options" in item else t("Enter a value"))
-            selected = validate_decisions(selected)
+            selected = validate_decisions(with_default_delivery(selected))
             result = run_project(
                 idea,
                 workspace=workspace,
