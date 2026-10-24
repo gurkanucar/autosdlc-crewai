@@ -127,3 +127,14 @@ def test_script_delivery_runs_no_package_step(tmp_path, monkeypatch):
     assert not (result.project_dir / "dist").exists()
     assert "run.bat" in (result.project_dir / "README.md").read_text(encoding="utf-8")
     assert yaml.safe_load((result.output_dir / "decisions.yaml").read_text(encoding="utf-8"))["delivery"] == "script"
+
+
+def test_a_file_in_the_reserved_docs_folder_is_skipped_not_fatal(tmp_path, monkeypatch):
+    class DocsEngine(CliEngine):
+        def code(self, idea, docs, feedback=None):
+            return {**super().code(idea, docs, feedback), "docs/NOTES.md": "# my own notes\n"}
+
+    result, events = _run(tmp_path, monkeypatch, DocsEngine(), "binary")
+    assert result.status == "completed", result.error
+    assert events[("development", "files_skipped")] == "docs/NOTES.md"
+    assert not (result.project_dir / "docs" / "NOTES.md").exists()

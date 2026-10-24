@@ -69,6 +69,69 @@
     delivery: script
     constraints: 'Use only Node.js built-in modules (no npm dependencies). Fewest files: package.json, src/cli.js and
       src/format.js. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: calculator-desktop-python
+  title: Calculator desktop app (Python, window)
+  description: A small desktop calculator with a real window and buttons; run.bat / run.sh launchers, logic tested without a display.
+  idea: 'A desktop calculator app with a window: a display, the digit buttons, the four basic operations, a clear button and
+    an equals button. Division by zero shows "Error" on the display instead of crashing. It runs on Windows with a double
+    click on run.bat.'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: Python 3.12, tkinter, pytest
+    delivery: script
+    constraints: 'Use tkinter and the standard library only. Keep all calculation and input-handling logic in a module
+      that does not import tkinter; the window code only draws the buttons and calls that module, and creates the window
+      inside a function (never at import time), because the tests run without a display. Fewest files: calculator.py
+      (logic), app.py (window), run.bat, run.sh. Keep every SDLC document short (at most half a page each); write at most
+      3 FRs and 2 NFRs.'
+- id: calculator-desktop-go
+  title: Calculator desktop app (Go, single .exe)
+  description: A calculator that opens in its own browser window from one self-contained executable (Windows .exe, Linux, macOS); no installation.
+  idea: 'A calculator app delivered as ONE executable file. When started it serves a small calculator page (display, digit
+    buttons, the four basic operations, clear and equals) on a free port of 127.0.0.1 and opens it in the default browser;
+    if the browser cannot be opened it prints the address. Division by zero shows "Error" instead of crashing.'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: Go 1.24, standard library (net/http, embed), go test
+    delivery: binary
+    constraints: 'Use the Go standard library only; embed the HTML/CSS/JS in the executable with the embed package so no
+      other file is needed next to it. Put the calculation and the HTTP handler in an importable package (internal/...);
+      main.go only starts the server and opens the browser. Test the handler with net/http/httptest. Keep every SDLC
+      document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: backup-helper-script
+  title: Folder backup helper (sh + bat)
+  description: Helper scripts that copy a folder into a timestamped backup and keep only the newest backups; the same behaviour as backup.sh and backup.bat.
+  idea: 'Helper scripts that back up a folder: "backup <source> <backup-root> [keep]" copies the source folder into
+    <backup-root>/<source-name>-YYYYMMDD-HHMMSS and then deletes the oldest backups of that source so that only the newest
+    N remain (default 5). A missing source folder prints a clear error and exits with a non-zero code. Provide the same
+    behaviour for Linux/macOS (backup.sh) and Windows (backup.bat).'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: POSIX sh and Windows batch (.bat), no dependencies
+    delivery: script
+    constraints: 'Only standard tools of each system (cp, rm, date / xcopy, robocopy). The tests run in a Linux container:
+      write a shell test script under tests/ that exercises backup.sh with temporary folders and run it with
+      [sh, tests/test_backup.sh] as unit_test; backup.bat cannot run there, so describe how to check it by hand in the
+      README. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: file-organizer-script
+  title: Downloads organizer (sh + bat)
+  description: Helper scripts that sort the files of a folder into subfolders by type, with a dry-run mode.
+  idea: 'Helper scripts that tidy a folder: "organize <folder> [--dry-run]" moves every file into a subfolder named after
+    its type (images, documents, archives, other) chosen from the file extension; --dry-run only prints what would be moved.
+    Existing files are never overwritten (a counter is added to the name). A missing folder prints a clear error and exits
+    with a non-zero code. Provide the same behaviour for Linux/macOS (organize.sh) and Windows (organize.bat).'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: POSIX sh and Windows batch (.bat), no dependencies
+    delivery: script
+    constraints: 'Only standard tools of each system. The tests run in a Linux container: write a shell test script under
+      tests/ that exercises organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as unit_test;
+      organize.bat cannot run there, so describe how to check it by hand in the README. Keep every SDLC document short
+      (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: inventory-tracker
   title: Inventory tracker (Node.js, fullstack)
   description: A simple web application that keeps stock records with product name, category and location.

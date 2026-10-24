@@ -87,19 +87,54 @@ def _parse_plan(raw: str) -> list[dict]:
     return plan[:40]
 
 
+# A backslash that does not start a JSON escape: `dist\\calc.exe` written with a single backslash in a .bat file or a path.
+_BAD_ESCAPE = re.compile(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})')
+
+
+def _loads_lenient(text: str):
+    """json.loads that also accepts what models get wrong most when code sits inside JSON strings: raw newlines/tabs
+    (strict=False) and unescaped backslashes (common in Windows paths and .bat files). Raises JSONDecodeError."""
+    try:
+        return json.loads(text, strict=False)
+    except json.JSONDecodeError:
+        return json.loads(_BAD_ESCAPE.sub(r"\\\\", text), strict=False)
+
+
+_BUNDLE_START = re.compile(r'\{\s*"(?:files|plan)"\s*:')
+
+
+def _first_bundle(text: str):
+    """The first complete {"files": ...} / {"plan": ...} object, ignoring what comes before and after it.
+
+    Models sometimes answer with the JSON, then explanations, a second attempt or a question; the whole text is then
+    not JSON although the first object is perfectly usable.
+    """
+    decoder = json.JSONDecoder(strict=False)
+    for candidate in (text, _BAD_ESCAPE.sub(r"\\\\", text)):
+        for start in _BUNDLE_START.finditer(candidate):
+            try:
+                value, _end = decoder.raw_decode(candidate, start.start())
+            except json.JSONDecodeError:
+                continue
+            return value
+    return None
+
+
 def _extract_json(raw: str):
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
     try:
-        value = json.loads(text)
+        return _loads_lenient(text)
     except json.JSONDecodeError:
         # Models may add explanations before/after the JSON; try the outermost object.
         start, end = text.find("{"), text.rfind("}")
         try:
-            value = json.loads(text[start:end + 1]) if 0 <= start < end else None
+            value = _loads_lenient(text[start:end + 1]) if 0 <= start < end else None
         except json.JSONDecodeError:
             value = None
+        if value is None:
+            value = _first_bundle(text)
         if value is None:
             raise ValueError("The agent did not return valid JSON files")
     return value
@@ -259,11 +294,14 @@ class CrewAIEngine:
 
     def _ask_files(self, stage: str, extra: str = "", **values: str) -> dict[str, str]:
         """Asks for a file bundle; if the JSON is broken, tells the agent the error and asks once more."""
+        raw = ""
         try:
-            return _parse_file_bundle(self._ask(stage, extra=extra, **values))
+            raw = self._ask(stage, extra=extra, **values)
+            return _parse_file_bundle(raw)
         except ValueError as exc:
-            shorter = (" This time return fewer and shorter files; write only what is needed."
-                       if isinstance(exc, OutputTruncated) else "")
+            # A response that stops mid-string was cut off even when the provider did not report a length stop.
+            cut = isinstance(exc, OutputTruncated) or (bool(raw) and not raw.rstrip().rstrip("`").rstrip().endswith("}"))
+            shorter = " This time return fewer and shorter files; write only what is needed." if cut else ""
             return _parse_file_bundle(self._ask(stage, extra=extra + (
                 f"\nYOUR PREVIOUS RESPONSE WAS REJECTED: {exc}.{shorter} Do not add explanations or Markdown; "
                 'return only valid JSON in the form {"files": {...}}.'
@@ -281,8 +319,8 @@ class CrewAIEngine:
             return self._ask_files(stage, **values)
         plan_text = "\n".join(f"- {item['path']}: {item.get('purpose', '')}" for item in plan)
         files: dict[str, str] = {}
-        for start in range(0, len(plan), batch_size):
-            batch = [item["path"] for item in plan[start:start + batch_size]]
+
+        def write(batch: list[str]) -> None:
             extra = (
                 f"\nFILE PLAN (the whole project):\n{plan_text}\n"
                 f"Files already written (stay consistent with them, do not write them again):\n"
@@ -290,7 +328,19 @@ class CrewAIEngine:
                 f"NOW WRITE ONLY these files, completely: {', '.join(batch)}. "
                 'Return only JSON of the form {"files": {"relative/path": "full content"}}.'
             )
-            files.update(self._ask_files(stage, extra=extra, **values))
+            try:
+                files.update(self._ask_files(stage, extra=extra, **values))
+            except ValueError:
+                # A group the model cannot finish in one response (cut off or broken JSON) is split in two and retried;
+                # only a single file that still fails ends the stage.
+                if len(batch) == 1:
+                    raise
+                middle = len(batch) // 2
+                write(batch[:middle])
+                write(batch[middle:])
+
+        for start in range(0, len(plan), batch_size):
+            write([item["path"] for item in plan[start:start + batch_size]])
         return files
 
     def document(self, stage: str, idea: str, context: str) -> str:
@@ -319,8 +369,16 @@ class CrewAIEngine:
         self.current_files.update(files)
         return files
 
-    def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None) -> dict[str, str]:
+    def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None,
+              feedback: str | None = None) -> dict[str, str]:
         extra = ""
+        if feedback:
+            # The developer cannot edit tests, so a test that does not even compile is repaired by its author.
+            extra = (
+                "\nYOUR TESTS DO NOT COMPILE OR LOAD. Fix ONLY the test files named in this output; the application "
+                "files above are correct and cannot be changed by you. Do not call anything that is not in the "
+                f"application files. Return only the corrected test files, complete:\n{feedback[-6000:]}\n"
+            )
         if change:
             extra = (
                 f"\nYOU ARE WRITING TESTS FOR A CHANGE REQUEST:\n{change[:6000]}\n"

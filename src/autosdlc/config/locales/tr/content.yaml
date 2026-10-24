@@ -58,6 +58,83 @@ Node.js 22, ES modules, node:test: Node.js 22, ES modules, node:test
   every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 : 'Yalnızca Node.js yerleşik modüllerini kullan (npm bağımlılığı yok). En az dosya: package.json, src/cli.js ve src/format.js.
   Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Calculator desktop app (Python, window): Hesap makinesi masaüstü uygulaması (Python, pencere)
+A small desktop calculator with a real window and buttons; run.bat / run.sh launchers, logic tested without a display.: Gerçek
+  bir pencere ve düğmeleri olan küçük masaüstü hesap makinesi; run.bat / run.sh başlatıcıları, mantık ekransız test edilir.
+? 'A desktop calculator app with a window: a display, the digit buttons, the four basic operations, a clear button and an
+  equals button. Division by zero shows "Error" on the display instead of crashing. It runs on Windows with a double click
+  on run.bat.'
+: 'Pencereli bir masaüstü hesap makinesi uygulaması: bir ekran, rakam düğmeleri, dört işlem, temizle ve eşittir düğmesi. Sıfıra
+  bölme uygulamayı çökertmek yerine ekranda "Error" gösterir. Windows''ta run.bat''a çift tıklayarak çalışır.'
+Python 3.12, tkinter, pytest: Python 3.12, tkinter, pytest
+? 'Use tkinter and the standard library only. Keep all calculation and input-handling logic in a module that does not import
+  tkinter; the window code only draws the buttons and calls that module, and creates the window inside a function (never at
+  import time), because the tests run without a display. Fewest files: calculator.py (logic), app.py (window), run.bat, run.sh.
+  Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca tkinter ve standard library kullan. Bütün hesaplama ve girdi işleme mantığını tkinter import etmeyen bir modülde
+  tut; pencere kodu yalnızca düğmeleri çizer ve bu modülü çağırır, pencereyi de import anında değil bir fonksiyonun içinde
+  oluşturur, çünkü testler ekransız çalışır. En az dosya: calculator.py (mantık), app.py (pencere), run.bat, run.sh. Bütün
+  SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Calculator desktop app (Go, single .exe): Hesap makinesi masaüstü uygulaması (Go, tek .exe)
+? A calculator that opens in its own browser window from one self-contained executable (Windows .exe, Linux, macOS); no installation.
+: Tek başına çalışan bir dosyadan kendi tarayıcı penceresinde açılan hesap makinesi (Windows .exe, Linux, macOS); kurulum
+  gerekmez.
+? A calculator app delivered as ONE executable file. When started it serves a small calculator page (display, digit buttons,
+  the four basic operations, clear and equals) on a free port of 127.0.0.1 and opens it in the default browser; if the browser
+  cannot be opened it prints the address. Division by zero shows "Error" instead of crashing.
+: TEK bir çalıştırılabilir dosya olarak teslim edilen hesap makinesi uygulaması. Başlatılınca 127.0.0.1'in boş bir portunda
+  küçük bir hesap makinesi sayfası (ekran, rakam düğmeleri, dört işlem, temizle ve eşittir) sunar ve varsayılan tarayıcıda
+  açar; tarayıcı açılamazsa adresi yazdırır. Sıfıra bölme çökmek yerine "Error" gösterir.
+Go 1.24, standard library (net/http, embed), go test: Go 1.24, standard library (net/http, embed), go test
+? Use the Go standard library only; embed the HTML/CSS/JS in the executable with the embed package so no other file is needed
+  next to it. Put the calculation and the HTTP handler in an importable package (internal/...); main.go only starts the server
+  and opens the browser. Test the handler with net/http/httptest. Keep every SDLC document short (at most half a page each);
+  write at most 3 FRs and 2 NFRs.
+: Yalnızca Go standard library kullan; HTML/CSS/JS'i embed paketiyle çalıştırılabilir dosyanın içine göm, yanında başka dosya
+  gerekmesin. Hesaplamayı ve HTTP handler'ı içe aktarılabilir bir pakette (internal/...) tut; main.go yalnızca sunucuyu başlatır
+  ve tarayıcıyı açar. Handler'ı net/http/httptest ile test et. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa);
+  en fazla 3 FR ve 2 NFR yaz.
+Folder backup helper (sh + bat): Klasör yedekleme yardımcısı (sh + bat)
+? Helper scripts that copy a folder into a timestamped backup and keep only the newest backups; the same behaviour as backup.sh
+  and backup.bat.
+: Bir klasörü zaman damgalı yedeğe kopyalayan ve yalnızca en yeni yedekleri tutan yardımcı script'ler; backup.sh ve backup.bat
+  aynı davranışı sunar.
+? 'Helper scripts that back up a folder: "backup <source> <backup-root> [keep]" copies the source folder into <backup-root>/<source-name>-YYYYMMDD-HHMMSS
+  and then deletes the oldest backups of that source so that only the newest N remain (default 5). A missing source folder
+  prints a clear error and exits with a non-zero code. Provide the same behaviour for Linux/macOS (backup.sh) and Windows
+  (backup.bat).'
+: 'Bir klasörü yedekleyen yardımcı script''ler: "backup <kaynak> <yedek-kökü> [adet]" kaynak klasörü <yedek-kökü>/<kaynak-adı>-YYYYAAGG-SSDDSS
+  klasörüne kopyalar, ardından o kaynağın en eski yedeklerini siler ve yalnızca en yeni N tanesini (varsayılan 5) bırakır.
+  Bulunamayan kaynak klasör açık bir hata yazar ve sıfırdan farklı bir çıkış koduyla biter. Aynı davranışı Linux/macOS (backup.sh)
+  ve Windows (backup.bat) için sağla.'
+POSIX sh and Windows batch (.bat), no dependencies: POSIX sh and Windows batch (.bat), no dependencies
+? 'Only standard tools of each system (cp, rm, date / xcopy, robocopy). The tests run in a Linux container: write a shell
+  test script under tests/ that exercises backup.sh with temporary folders and run it with [sh, tests/test_backup.sh] as unit_test;
+  backup.bat cannot run there, so describe how to check it by hand in the README. Keep every SDLC document short (at most
+  half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Her sistemin yalnızca standart araçlarını kullan (cp, rm, date / xcopy, robocopy). Testler Linux container''ında çalışır:
+  tests/ altında backup.sh''yi geçici klasörlerle çalıştıran bir shell test script''i yaz ve unit_test olarak [sh, tests/test_backup.sh]
+  ile çalıştır; backup.bat orada çalışamaz, bu yüzden elle nasıl kontrol edileceğini README''de anlat. Bütün SDLC belgeleri
+  kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Downloads organizer (sh + bat): İndirilenler düzenleyici (sh + bat)
+Helper scripts that sort the files of a folder into subfolders by type, with a dry-run mode.: Bir klasördeki dosyaları türüne
+  göre alt klasörlere ayıran, kuru çalıştırma (dry-run) modlu yardımcı script'ler.
+? 'Helper scripts that tidy a folder: "organize <folder> [--dry-run]" moves every file into a subfolder named after its type
+  (images, documents, archives, other) chosen from the file extension; --dry-run only prints what would be moved. Existing
+  files are never overwritten (a counter is added to the name). A missing folder prints a clear error and exits with a non-zero
+  code. Provide the same behaviour for Linux/macOS (organize.sh) and Windows (organize.bat).'
+: 'Bir klasörü toparlayan yardımcı script''ler: "organize <klasör> [--dry-run]" her dosyayı uzantısına göre seçilen, türünün
+  adını taşıyan bir alt klasöre (images, documents, archives, other) taşır; --dry-run yalnızca nelerin taşınacağını yazar.
+  Var olan dosyaların üzerine hiç yazılmaz (ada bir sayaç eklenir). Bulunamayan klasör açık bir hata yazar ve sıfırdan farklı
+  bir çıkış koduyla biter. Aynı davranışı Linux/macOS (organize.sh) ve Windows (organize.bat) için sağla.'
+? 'Only standard tools of each system. The tests run in a Linux container: write a shell test script under tests/ that exercises
+  organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as unit_test; organize.bat cannot run there,
+  so describe how to check it by hand in the README. Keep every SDLC document short (at most half a page each); write at most
+  3 FRs and 2 NFRs.'
+: 'Her sistemin yalnızca standart araçlarını kullan. Testler Linux container''ında çalışır: tests/ altında organize.sh''yi
+  geçici klasörlerle çalıştıran bir shell test script''i yaz ve unit_test olarak [sh, tests/test_organize.sh] ile çalıştır;
+  organize.bat orada çalışamaz, bu yüzden elle nasıl kontrol edileceğini README''de anlat. Bütün SDLC belgeleri kısa olsun
+  (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Inventory tracker (Node.js, fullstack): Envanter takip uygulaması (Node.js, fullstack)
 A simple web application that keeps stock records with product name, category and location.: Ürün adı, kategori ve konum bilgisiyle
   stok kaydı tutan basit bir web uygulaması.

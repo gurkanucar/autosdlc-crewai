@@ -216,6 +216,37 @@ def default_project_dir(workspace: Path, idea: str, run_id: str) -> Path:
     return workspace / "projects" / f"{slug}-{run_id}"
 
 
+# A test run that stopped before any test ran because the test files themselves could not be built or loaded:
+# Go "[build failed]", Rust "could not compile", a Python/Node SyntaxError.
+_TEST_BUILD_FAILED = re.compile(
+    r"\[(?:build|setup) failed\]|error: could not compile|^\s*(?:E\s+)?(?:Syntax|Indentation)Error\b", re.MULTILINE)
+# Where an error is reported: go/gcc/tsc "file:line:col: msg", rust "--> file:line:col", a python traceback
+# `File "x", line N`, node's bare "file:line" header.
+_ERROR_LOCATION = re.compile(
+    r"^\s*([^\s:\"]+\.\w+):\d+(?::\d+)?: "
+    r"|^\s*--> ([^\s:]+\.\w+):\d+:\d+"
+    r"|^\s*(?:E\s+)?File \"([^\"]+)\", line \d+"
+    r"|^\s*(/?[^\s:\"]+\.\w+):\d+\s*$",
+    re.MULTILINE,
+)
+
+
+def _in_tests(name: str) -> bool:
+    name = name.replace("\\", "/")
+    return name.startswith(TEST_DIRS) or any("/" + folder in name for folder in TEST_DIRS)
+
+
+def failure_is_in_tests(output: str) -> bool:
+    """True when the tests could not even be built or loaded and every reported error location is inside tests/.
+
+    Such a failure cannot be fixed by the developer (tests are protected), so the Test Agent repairs its own files.
+    """
+    if not _TEST_BUILD_FAILED.search(output):
+        return False
+    locations = [name for groups in _ERROR_LOCATION.findall(output) for name in groups if name]
+    return bool(locations) and all(_in_tests(name) for name in locations)
+
+
 # Folders left out of a version snapshot because they can be recreated or are large.
 SNAPSHOT_SKIP = (".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__", ".pytest_cache",
                  "test-results", "playwright-report", "dist", "build", "target")
@@ -235,7 +266,8 @@ class StageEngine(Protocol):
     def document(self, stage: str, idea: str, context: str) -> str: ...
     # With change (a change request) the engine keeps the existing code/tests and returns only what changed.
     def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]: ...
-    def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None) -> dict[str, str]: ...
+    def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None,
+              feedback: str | None = None) -> dict[str, str]: ...
 
 
 class RunSession:
@@ -618,7 +650,8 @@ class RunSession:
         self._event("development", "started")
         if self.change and self.code_files:
             return self._develop_change()
-        self.code_files = self._with_questions("development", lambda: self.engine.code(self.idea, self._context("development")))
+        self.code_files = self._without_docs(self._with_questions(
+            "development", lambda: self.engine.code(self.idea, self._context("development"))))
         write_generated_files(self.project_dir, self.code_files)
         self._save_code_files()
         self._load_manifest()
@@ -655,7 +688,7 @@ class RunSession:
             self.idea, self._context("development"), feedback=feedback, change=description
         ))
         rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
-        replacements = {name: content for name, content in replacements.items() if name not in rejected}
+        replacements = self._without_docs({name: content for name, content in replacements.items() if name not in rejected})
         if rejected:
             self._event("development", "tests_protected", ", ".join(rejected))
         if replacements:
@@ -666,6 +699,13 @@ class RunSession:
             write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
         self._event("development", "completed", ", ".join(replacements) or "no changed files")
         return "change applied"
+
+    def _without_docs(self, files: dict[str, str]) -> dict[str, str]:
+        """docs/ holds the SDLC documents the system writes; a model that adds its own file there must not fail the run."""
+        skipped = sorted(name for name in files if name.split("/", 1)[0] == "docs")
+        if skipped:
+            self._event("development", "files_skipped", ", ".join(skipped))
+        return {name: content for name, content in files.items() if name not in skipped}
 
     def _test_files_on_disk(self) -> dict[str, str]:
         files = {}
@@ -703,7 +743,7 @@ class RunSession:
             self.idea, self._context("development"),
             feedback=f"THE PROJECT CONFIGURATION COULD NOT BE VALIDATED: {problem}\nReturn project.yaml (and the Dockerfile if needed) fixed.",
         ))
-        fixes = {name: content for name, content in fixes.items() if not name.startswith(TEST_DIRS)}
+        fixes = self._without_docs({name: content for name, content in fixes.items() if not name.startswith(TEST_DIRS)})
         if fixes:
             write_generated_files(self.project_dir, fixes)
             self.code_files.update(fixes)
@@ -773,6 +813,21 @@ class RunSession:
             if passed:
                 self.test_passed = True
                 break
+            if number <= self.max_repairs and failure_is_in_tests(output):
+                # The error is in the Test Agent's own files; the developer is not allowed to touch them, so the author repairs them.
+                self._event("testing", "tests_repair_started", f"from test attempt {number}")
+                fixed = self._with_questions("testing", lambda: self.engine.tests(
+                    self.idea, self._context("testing"), {**self.code_files, **self._test_files_on_disk()}, feedback=output
+                ))
+                fixed = {name: content for name, content in fixed.items() if name.startswith(TEST_DIRS)}
+                if fixed:
+                    write_generated_files(self.project_dir, fixed)
+                    tests = {**tests, **fixed}
+                    self.test_files = tests
+                    if hasattr(self.engine, "current_files"):
+                        self.engine.current_files.update(fixed)
+                    self._event("testing", "tests_repaired", ", ".join(fixed))
+                    continue
             if number <= self.max_repairs:
                 self._event("development", "repair_started", f"from test attempt {number}")
                 replacements = self._with_questions("development", lambda: self.engine.code(
@@ -780,7 +835,7 @@ class RunSession:
                 ))
                 # The tests belong to the Test Agent; the developer cannot make them pass by changing them.
                 rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
-                replacements = {name: content for name, content in replacements.items() if name not in rejected}
+                replacements = self._without_docs({name: content for name, content in replacements.items() if name not in rejected})
                 if hasattr(self.engine, "current_files"):
                     self.engine.current_files.update(tests)
                 if rejected:

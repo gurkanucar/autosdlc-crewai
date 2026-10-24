@@ -129,6 +129,23 @@ development:
     include native build tools in the build stage when the chosen package requires them.
     At most 40 files, at most 50 KB per file. Do not produce lock files (package-lock.json,
     pnpm-lock.yaml, go.sum, etc.); the setup command creates them.
+    The tests live in a separate tests/ folder and cannot import the program's entry point, so ALL logic (loading
+    data, selecting, formatting, calculating, business rules) must sit in importable modules and the entry point only
+    wires them together:
+      Go: packages such as internal/<name> with exported names; main.go only wires them and starts the program.
+      Rust: src/lib.rs (and modules) is a library crate; src/main.rs only calls it; tests/ use the crate by name.
+      Node.js: exported functions in src/ modules; the CLI entry file only reads arguments and calls them, and
+        importing a module must have no side effects.
+      Python: importable modules; guard the entry point with if __name__ == "__main__".
+    Never pin dependency versions from memory (an invented version breaks the build). Let the package manager
+    resolve them in the setup command: Go [go, mod, tidy] with a go.mod that has no require lines; Rust
+    [cargo, add, <crate>]; Node.js [npm, install, <package>]; Python [python, -m, pip, install, <package>].
+    A program with a desktop window keeps every decision out of the window code: the test container has no display,
+    so tests cover the window-free logic only and nothing may open a window at import time or in a test. Go: put
+    window code in files with a `//go:build windows` constraint plus a stub file for other systems, so that Linux
+    builds and tests still compile; use a library that needs no cgo (CGO_ENABLED=0 builds). Rust: a pure-Rust GUI crate
+    such as eframe/egui. Python: tkinter (ships with Python on Windows), created only inside a function that main calls.
+    A simple local web page served by the program and opened in the default browser is an acceptable "window".
     Do not write a .env file; use .env.example if needed.
     Do not return a Markdown code block. When fixing, give complete file contents, not patches.
   expected_output: Valid JSON containing project.yaml, the packaging files the delivery decision asks for and complete source files.
@@ -151,6 +168,16 @@ testing:
     For Node.js ESM TypeScript projects using tsx, use `node --import tsx --test tests/*.test.ts`;
     `node --test tests/` is not a valid directory invocation. Check that every imported helper and
     exported function exists in the supplied application files before returning tests.
+    Use ONLY functions, types and constants that appear in the application files above; never call a helper
+    that is not there. If a test needs a helper, define it inside the test file itself. The developer cannot
+    edit tests, so a test that references something missing can never pass. Go tests under tests/ form a
+    separate package: they can only use exported (capitalised) identifiers of the application's packages, and
+    every file in tests/ shares one package namespace, so never declare a package-level name that equals an
+    imported package name (e.g. a function called exec while another file imports os/exec).
+    Rust tests in tests/ are integration tests: they use the library crate by name and only its public items.
+    Node.js and Python tests import the application's modules; they never start a window or a real GUI.
+    Double-check that every file you return is complete, valid source (imports first, balanced braces, no "..."
+    placeholders) before you answer.
     The test commands are specified in the application's project.yaml.
   expected_output: Valid JSON containing complete test files suited to the chosen technology.
 

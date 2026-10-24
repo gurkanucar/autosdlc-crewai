@@ -109,7 +109,8 @@ EVENT_NAMES = {
     "bug_not_reproduced": "Bug not reproduced", "regression": "Regression test", "tests_not_covered": "Test not executed",
     "delta": "Section patch", "skipped": "Stage skipped", "revision_skipped": "Revision not needed",
     "packaged": "Executables built", "package_failed": "Packaging failed", "package_unavailable": "No executables",
-    "package_skipped": "Packaging skipped",
+    "package_skipped": "Packaging skipped", "files_skipped": "Files skipped",
+    "tests_repair_started": "Test repair started", "tests_repaired": "Tests repaired",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
@@ -349,6 +350,9 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "package_failed": t("⚠️ The executables could not be built ({detail}); the tests are not affected.", detail=detail),
             "package_unavailable": t("ℹ️ This stack cannot be built into executables; launcher scripts are delivered instead."),
             "package_skipped": t("↷ No executables were built because the tests did not pass."),
+            "files_skipped": t("ℹ️ Files in the reserved docs/ folder were not written: {detail}", detail=detail),
+            "tests_repair_started": t("🛠️ The tests themselves do not compile; I am fixing my own test files."),
+            "tests_repaired": t("✅ Test files fixed: {detail}", detail=detail),
         }.get(status)
         if text:
             messages.append((event["created_at"], agent, text))
