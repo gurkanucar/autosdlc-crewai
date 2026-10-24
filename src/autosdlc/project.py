@@ -7,6 +7,8 @@ import yaml
 
 
 COMMANDS = {"setup", "unit_test", "api_test", "ui_test", "start", "package"}
+# Project types that run on the user's own machine: no server, tested through unit tests only.
+LOCAL_TYPES = {"cli", "desktop", "library"}
 
 
 def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
@@ -27,9 +29,9 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
             command = manifest[key] = shlex.split(command)
         if not isinstance(command, list) or len(command) > 20 or not all(isinstance(arg, str) and 0 < len(arg) < 300 for arg in command):
             raise ValueError(f"{key} in project.yaml must be a list of command arguments (e.g. [python, -m, pytest, -q, tests])")
-    if decisions["project_type"] in {"cli", "library"} and decisions["ui"] != "web":
-        # Models sometimes fill every key; a CLI has no server to start and no HTTP API to test, and launching it as a
-        # "server" exits at once. unit_test is the whole contract for these project types.
+    if decisions["project_type"] in LOCAL_TYPES and decisions["ui"] != "web":
+        # Models sometimes fill every key; a CLI or desktop app has no server to start and no HTTP API to test, and
+        # launching it as a "server" exits at once (or opens a window). unit_test is the whole contract for these types.
         for key in ("api_test", "ui_test", "start"):
             manifest.pop(key, None)
     port = manifest.get("port", 8000)
@@ -40,8 +42,8 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
         raise ValueError("project.yaml must contain api_test in a backend/fullstack project")
     if decisions["ui"] == "web" and (not manifest.get("ui_test") or not manifest.get("start")):
         raise ValueError("project.yaml must contain ui_test and start in a project with a web UI")
-    if decisions["project_type"] in {"cli", "library"} and not manifest.get("unit_test"):
-        raise ValueError("project.yaml must contain unit_test in a CLI/library project")
+    if decisions["project_type"] in LOCAL_TYPES and not manifest.get("unit_test"):
+        raise ValueError("project.yaml must contain unit_test in a CLI/desktop/library project")
     if decisions.get("delivery", "docker") == "docker" and not (project_dir / "Dockerfile").is_file():
         raise ValueError("The development agent must produce a Dockerfile for the chosen technology")
     return manifest

@@ -9,7 +9,8 @@ from .i18n import t
 
 CHOICE_LABELS = {
     # Established software terms are not translated (backend, fullstack, CLI…).
-    "project_type": {"backend": "Backend", "frontend": "Frontend", "fullstack": "Fullstack", "cli": "CLI", "library": "Library"},
+    "project_type": {"backend": "Backend", "frontend": "Frontend", "fullstack": "Fullstack", "cli": "CLI", "desktop": "Desktop app",
+                     "library": "Library"},
     "database": {"none": "None", "sqlite": "SQLite", "postgres": "PostgreSQL"},
     "cache": {"none": "None", "redis": "Redis"},
     "observability": {"none": "None", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
@@ -22,8 +23,8 @@ CHOICE_LABELS = {
 
 
 def default_delivery(project_type: str) -> str:
-    """What the form preselects: services ship as containers, CLIs as executables, libraries as source."""
-    return {"cli": "binary", "library": "none"}.get(project_type, "docker")
+    """What the form preselects: services ship as containers, CLIs and desktop apps as executables, libraries as source."""
+    return {"cli": "binary", "desktop": "binary", "library": "none"}.get(project_type, "docker")
 
 
 def choice_label(name: str, value: str) -> str:

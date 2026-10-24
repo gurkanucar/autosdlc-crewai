@@ -39,32 +39,42 @@ Go 1.24, standard library, go test: Go 1.24, standard library, go test
 : 'Yalnızca Go standard library kullan; rastgele sayıları math/rand değil crypto/rand''dan al. En az dosya: main.go ve üreticiyi
   içeren internal/ altında tek paket. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2
   NFR yaz.'
-Word counter (Rust, CLI): Kelime sayacı (Rust, CLI)
-A wc-like tool that counts lines, words and characters; executables for Windows (.exe) and Linux.: Satır, kelime ve karakter
-  sayan wc benzeri bir araç; Windows (.exe) ve Linux için çalıştırılabilir dosyalar.
-? 'A command-line tool like wc: it counts the lines, words and characters of the given files, or of standard input when no
-  file is given, and prints one row per file plus a total row when there is more than one file. A missing file prints a clear
-  error message and exits with a non-zero code.'
-: 'wc benzeri bir komut satırı aracı: verilen dosyaların, dosya verilmezse standart girdinin satır, kelime ve karakter sayılarını
-  sayar; her dosya için bir satır, birden fazla dosya varsa bir de toplam satırı yazar. Bulunamayan dosya açık bir hata mesajı
-  yazar ve sıfırdan farklı bir çıkış koduyla biter.'
-Rust (stable), cargo, standard library: Rust (stable), cargo, standard library
-? 'Use the Rust standard library only (no external crates). Fewest files: Cargo.toml, src/main.rs and src/lib.rs with the
-  counting logic. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-: 'Yalnızca Rust standard library kullan (harici crate yok). En az dosya: Cargo.toml, src/main.rs ve sayma mantığını içeren
-  src/lib.rs. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-JSON formatter (Node.js, CLI): JSON biçimlendirici (Node.js, CLI)
-Pretty-prints and validates JSON files; run.sh/run.bat launchers, no dependencies.: JSON dosyalarını biçimlendirir ve doğrular;
-  run.sh/run.bat başlatıcıları, bağımlılık yok.
-? 'A command-line JSON tool: "jsonfmt file.json" prints the file pretty-printed with two-space indentation and "jsonfmt --check
-  file.json" only validates it. Invalid JSON prints the error position (line and column) and exits with a non-zero code.'
-: 'Komut satırı JSON aracı: "jsonfmt file.json" dosyayı iki boşluk girintiyle biçimlendirip yazar, "jsonfmt --check file.json"
-  yalnızca doğrular. Geçersiz JSON hatanın konumunu (satır ve sütun) yazar ve sıfırdan farklı bir çıkış koduyla biter.'
-Node.js 22, ES modules, node:test: Node.js 22, ES modules, node:test
-? 'Use only Node.js built-in modules (no npm dependencies). Fewest files: package.json, src/cli.js and src/format.js. Keep
-  every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-: 'Yalnızca Node.js yerleşik modüllerini kullan (npm bağımlılığı yok). En az dosya: package.json, src/cli.js ve src/format.js.
-  Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+To-do list (Rust, desktop window): Yapılacaklar listesi (Rust, masaüstü penceresi)
+? 'A small to-do list app with its own window: add, tick off and delete tasks; saved to a JSONL file. Windows .exe and Linux
+  builds.'
+: 'Kendi penceresi olan küçük bir yapılacaklar uygulaması: görev ekle, işaretle, sil; JSONL dosyasına kaydedilir. Windows
+  .exe ve Linux sürümleri.'
+? A simple to-do list desktop app. You can add a task, mark it as done or not done, and delete it. The list is saved, so it
+  is still there after a restart.
+: Basit bir yapılacaklar listesi masaüstü uygulaması. Görev ekleyebilir, görevi yapıldı ya da yapılmadı olarak işaretleyebilir
+  ve silebilirsin. Liste kaydedilir, yeniden başlatınca da yerinde durur.
+Rust (stable), eframe/egui, serde_json: Rust (stable), eframe/egui, serde_json
+? 'Save the tasks to a JSONL file (one task per line with id, text and done) next to the program. Keep the task list and the
+  JSONL load/save logic in src/lib.rs without any egui code; src/main.rs only draws the window and calls the library. Tests
+  use temporary files and never open a window. Fewest files: Cargo.toml, src/lib.rs, src/main.rs. Keep every SDLC document
+  short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Görevleri programın yanındaki bir JSONL dosyasına kaydet (her satırda bir görev: id, text ve done). Görev listesini ve
+  JSONL okuma/yazma mantığını egui kodu olmadan src/lib.rs içinde tut; src/main.rs yalnızca pencereyi çizer ve library''yi
+  çağırır. Testler geçici dosyalar kullanır ve hiç pencere açmaz. En az dosya: Cargo.toml, src/lib.rs, src/main.rs. Bütün
+  SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Focus timer (Python, desktop window): Odak zamanlayıcı (Python, masaüstü penceresi)
+A small Pomodoro-style timer window with start, pause and reset; starts with a double click on run.bat.: Başlat, duraklat
+  ve sıfırla düğmeli küçük bir Pomodoro tarzı zamanlayıcı penceresi; run.bat'a çift tıklayarak açılır.
+? 'A small focus timer desktop app: a window shows a 25-minute countdown with start, pause and reset buttons. When the time
+  is up the window says so and plays a short sound. The length can be changed between 1 and 60 minutes.'
+: 'Küçük bir odak zamanlayıcı masaüstü uygulaması: pencerede başlat, duraklat ve sıfırla düğmeleriyle 25 dakikalık bir geri
+  sayım görünür. Süre dolunca pencere bunu söyler ve kısa bir ses çalar. Süre 1 ile 60 dakika arasında değiştirilebilir.'
+Python 3.12, tkinter, pytest: Python 3.12, tkinter, pytest
+? 'Use tkinter and the standard library only. Keep the timer logic (remaining time, start, pause, reset, length limits) in
+  a module that does not import tkinter and takes the current time as an argument, so tests need no waiting; the window code
+  only draws and calls it, and creates the window inside a function (never at import time), because the tests run without
+  a display. Fewest files: timer.py (logic), app.py (window), run.bat, run.sh. Keep every SDLC document short (at most half
+  a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca tkinter ve standard library kullan. Zamanlayıcı mantığını (kalan süre, başlat, duraklat, sıfırla, süre sınırları)
+  tkinter import etmeyen ve şu anki zamanı argüman olarak alan bir modülde tut, böylece testler beklemeden çalışır; pencere
+  kodu yalnızca çizer ve bu modülü çağırır, pencereyi de import anında değil bir fonksiyonun içinde oluşturur, çünkü testler
+  ekransız çalışır. En az dosya: timer.py (mantık), app.py (pencere), run.bat, run.sh. Bütün SDLC belgeleri kısa olsun (her
+  biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Calculator app (Python, desktop window): Hesap makinesi uygulaması (Python, masaüstü penceresi)
 A small desktop calculator with a window and buttons; starts with a double click on run.bat.: Pencereli ve düğmeli küçük masaüstü
   hesap makinesi; run.bat'a çift tıklayarak açılır.
@@ -72,7 +82,6 @@ A small desktop calculator with a window and buttons; starts with a double click
   button and an equals button. Dividing by zero shows "Error" on the display instead of crashing.'
 : 'Pencereli bir masaüstü hesap makinesi uygulaması: bir ekran, rakam düğmeleri, artı, eksi, çarpı ve bölü düğmeleri, bir
   temizle düğmesi ve bir eşittir düğmesi. Sıfıra bölme uygulamayı çökertmek yerine ekranda "Error" gösterir.'
-Python 3.12, tkinter, pytest: Python 3.12, tkinter, pytest
 ? 'Use tkinter and the standard library only. Keep all calculation and input-handling logic in a module that does not import
   tkinter; the window code only draws the buttons and calls that module, and creates the window inside a function (never at
   import time), because the tests run without a display. Fewest files: calculator.py (logic), app.py (window), run.bat, run.sh.

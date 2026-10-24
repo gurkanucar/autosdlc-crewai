@@ -1,6 +1,6 @@
 # Example project templates shown in the UI. Each one fills the form; the user can change it afterwards.
 # The decisions keys are the same as in questions.yaml. Idea at most 1000, stack at most 200 characters.
-# Keep the catalog small: one tiny, sensible example per language and kind (CLI, desktop app, web, script).
+# Keep the catalog small: tiny, sensible examples; desktop apps first, only a couple of CLIs, one web app, one API, scripts.
 # The idea is written the way a user would say it; technical hints belong to stack and constraints.
 # Texts are English source strings; other languages are in locales/<code>/content.yaml.
 - id: quick-demo
@@ -16,6 +16,66 @@
     constraints: 'Use no external dependencies; no setup command is needed. Fewest files: one source module and a
       single test file under tests/. Keep every SDLC document short (at most half a page each); write at most 3 FRs
       and 2 NFRs.'
+- id: todo-desktop-rust
+  title: To-do list (Rust, desktop window)
+  description: 'A small to-do list app with its own window: add, tick off and delete tasks; saved to a JSONL file. Windows .exe and Linux builds.'
+  idea: 'A simple to-do list desktop app. You can add a task, mark it as done or not done, and delete it. The list is
+    saved, so it is still there after a restart.'
+  decisions:
+    scale: small
+    project_type: desktop
+    stack: Rust (stable), eframe/egui, serde_json
+    delivery: binary
+    constraints: 'Save the tasks to a JSONL file (one task per line with id, text and done) next to the program. Keep
+      the task list and the JSONL load/save logic in src/lib.rs without any egui code; src/main.rs only draws the window
+      and calls the library. Tests use temporary files and never open a window. Fewest files: Cargo.toml, src/lib.rs,
+      src/main.rs. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: calculator-desktop-python
+  title: Calculator app (Python, desktop window)
+  description: A small desktop calculator with a window and buttons; starts with a double click on run.bat.
+  idea: 'A desktop calculator app with a window: a display, the digit buttons, plus, minus, multiply and divide buttons,
+    a clear button and an equals button. Dividing by zero shows "Error" on the display instead of crashing.'
+  decisions:
+    scale: small
+    project_type: desktop
+    stack: Python 3.12, tkinter, pytest
+    delivery: script
+    constraints: 'Use tkinter and the standard library only. Keep all calculation and input-handling logic in a module
+      that does not import tkinter; the window code only draws the buttons and calls that module, and creates the window
+      inside a function (never at import time), because the tests run without a display. Fewest files: calculator.py
+      (logic), app.py (window), run.bat, run.sh. Keep every SDLC document short (at most half a page each); write at most
+      3 FRs and 2 NFRs.'
+- id: calculator-desktop-go
+  title: Calculator app (Go, one .exe)
+  description: A calculator in a single file you double-click; opens in its own browser tab. Windows .exe, Linux and macOS builds.
+  idea: 'A calculator app in a single file: double-click it and a calculator opens, with a display, the digit buttons,
+    plus, minus, multiply and divide buttons, a clear button and an equals button. Dividing by zero shows "Error"
+    instead of crashing.'
+  decisions:
+    scale: small
+    project_type: desktop
+    stack: Go 1.24, standard library; the interface is a small web page built into the program
+    delivery: binary
+    constraints: 'Use the Go standard library only. The HTML/CSS/JS is embedded in the program (embed package), so no
+      other file is needed next to it. The program starts a tiny local web server that only this computer can reach and
+      opens the page in the default browser; if that fails it prints the address. Put the calculation and the HTTP
+      handler in an importable package under internal/; main.go only starts the server. Test the handler with
+      net/http/httptest. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: timer-desktop-python
+  title: Focus timer (Python, desktop window)
+  description: A small Pomodoro-style timer window with start, pause and reset; starts with a double click on run.bat.
+  idea: 'A small focus timer desktop app: a window shows a 25-minute countdown with start, pause and reset buttons. When
+    the time is up the window says so and plays a short sound. The length can be changed between 1 and 60 minutes.'
+  decisions:
+    scale: small
+    project_type: desktop
+    stack: Python 3.12, tkinter, pytest
+    delivery: script
+    constraints: 'Use tkinter and the standard library only. Keep the timer logic (remaining time, start, pause, reset,
+      length limits) in a module that does not import tkinter and takes the current time as an argument, so tests need no
+      waiting; the window code only draws and calls it, and creates the window inside a function (never at import time),
+      because the tests run without a display. Fewest files: timer.py (logic), app.py (window), run.bat, run.sh. Keep
+      every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: calculator-cli
   title: Calculator (Python, CLI)
   description: A command-line calculator for the four basic operations; run.sh/run.bat launchers, short documents.
@@ -44,64 +104,6 @@
     constraints: 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Fewest files:
       main.go and one package under internal/ with the generator. Keep every SDLC document short (at most half a page
       each); write at most 3 FRs and 2 NFRs.'
-- id: word-counter-rust
-  title: Word counter (Rust, CLI)
-  description: A wc-like tool that counts lines, words and characters; executables for Windows (.exe) and Linux.
-  idea: 'A command-line tool like wc: it counts the lines, words and characters of the given files, or of standard
-    input when no file is given, and prints one row per file plus a total row when there is more than one file.
-    A missing file prints a clear error message and exits with a non-zero code.'
-  decisions:
-    scale: small
-    project_type: cli
-    stack: Rust (stable), cargo, standard library
-    delivery: binary
-    constraints: 'Use the Rust standard library only (no external crates). Fewest files: Cargo.toml, src/main.rs and
-      src/lib.rs with the counting logic. Keep every SDLC document short (at most half a page each); write at most 3 FRs
-      and 2 NFRs.'
-- id: json-formatter-node
-  title: JSON formatter (Node.js, CLI)
-  description: Pretty-prints and validates JSON files; run.sh/run.bat launchers, no dependencies.
-  idea: 'A command-line JSON tool: "jsonfmt file.json" prints the file pretty-printed with two-space indentation and
-    "jsonfmt --check file.json" only validates it. Invalid JSON prints the error position (line and column) and exits
-    with a non-zero code.'
-  decisions:
-    scale: small
-    project_type: cli
-    stack: Node.js 22, ES modules, node:test
-    delivery: script
-    constraints: 'Use only Node.js built-in modules (no npm dependencies). Fewest files: package.json, src/cli.js and
-      src/format.js. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-- id: calculator-desktop-python
-  title: Calculator app (Python, desktop window)
-  description: A small desktop calculator with a window and buttons; starts with a double click on run.bat.
-  idea: 'A desktop calculator app with a window: a display, the digit buttons, plus, minus, multiply and divide buttons,
-    a clear button and an equals button. Dividing by zero shows "Error" on the display instead of crashing.'
-  decisions:
-    scale: small
-    project_type: cli
-    stack: Python 3.12, tkinter, pytest
-    delivery: script
-    constraints: 'Use tkinter and the standard library only. Keep all calculation and input-handling logic in a module
-      that does not import tkinter; the window code only draws the buttons and calls that module, and creates the window
-      inside a function (never at import time), because the tests run without a display. Fewest files: calculator.py
-      (logic), app.py (window), run.bat, run.sh. Keep every SDLC document short (at most half a page each); write at most
-      3 FRs and 2 NFRs.'
-- id: calculator-desktop-go
-  title: Calculator app (Go, one .exe)
-  description: A calculator in a single file you double-click; opens in its own browser tab. Windows .exe, Linux and macOS builds.
-  idea: 'A calculator app in a single file: double-click it and a calculator opens, with a display, the digit buttons,
-    plus, minus, multiply and divide buttons, a clear button and an equals button. Dividing by zero shows "Error"
-    instead of crashing.'
-  decisions:
-    scale: small
-    project_type: cli
-    stack: Go 1.24, standard library; the interface is a small web page built into the program
-    delivery: binary
-    constraints: 'Use the Go standard library only. The HTML/CSS/JS is embedded in the program (embed package), so no
-      other file is needed next to it. The program starts a tiny local web server that only this computer can reach and
-      opens the page in the default browser; if that fails it prints the address. Put the calculation and the HTTP
-      handler in an importable package under internal/; main.go only starts the server. Test the handler with
-      net/http/httptest. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: todo-web-node
   title: To-do list (Node.js, web app)
   description: 'A simple to-do list web page: add tasks, tick them off and delete them; runs in Docker.'

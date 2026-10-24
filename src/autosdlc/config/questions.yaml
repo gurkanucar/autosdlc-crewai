@@ -5,6 +5,7 @@ project_type:
   - frontend
   - fullstack
   - cli
+  - desktop
   - library
 stack:
   question: Which languages and frameworks will be used? State the backend, frontend and package manager.

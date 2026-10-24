@@ -24,6 +24,10 @@ planning:
     out-of-scope work, stakeholders, milestones, deliverables, assumptions,
     dependencies and a risk table with mitigations.
     Follow the requested project type and technology; do not impose a specific language or framework.
+    The project idea is the user's own words: everything it explicitly asks for (a desktop window, a web page, a
+    storage format, a feature) is in scope; never list it as out of scope and never replace it with something
+    simpler (e.g. a console program instead of the desktop app that was asked for). Project type desktop means a
+    program with its own window that runs on the user's computer.
     Return Markdown only. Do not claim that tests or deployment have been done.
   expected_output: A concrete Markdown project plan in the project's document language.
 
@@ -35,7 +39,8 @@ analysis:
     Write the whole document in $language. Prepare numbered functional requirements such as FR-01,
     user stories and acceptance criteria, non-functional requirements such as NFR-01, and a
     traceability table linking the requirements to the planned tests. Describe data and API behavior
-    only if the project has them. Follow the chosen technology and all decisions. Return Markdown only.
+    only if the project has them. Follow the chosen technology and all decisions. Everything the project idea
+    explicitly asks for gets a requirement. Return Markdown only.
   expected_output: Testable requirements and a traceability table in the project's document language.
 
 design:
@@ -88,19 +93,19 @@ development:
       script: run.sh (POSIX sh) and run.bat launchers that run the application from source and pass the
         arguments through. No Dockerfile.
       none: no Dockerfile, no launchers.
-    Match the effort to the project: a small CLI or library needs no infrastructure files beyond these.
+    Match the effort to the project: a small CLI, desktop app or library needs no infrastructure files beyond these.
     Build outputs go only to dist/ or bin/: never write a compiled binary to the project root
     (e.g. go build -o dist/calc, not -o calc).
     Write a project.yaml with these keys:
       port: integer between 1024 and 65535 (only for a web service)
       setup: [executable, argument, ...] (optional dependency installation)
-      unit_test: [executable, argument, ...] (required for CLI/library)
+      unit_test: [executable, argument, ...] (required for CLI/desktop/library)
       api_test: [executable, argument, ...] (required for backend/fullstack)
       ui_test: [executable, argument, ...] (required if there is a web UI)
       start: [executable, argument, ...] (required if there is a web UI)
       package: [executable, argument, ...] (only for the binary delivery, e.g. [sh, build.sh])
-    For a CLI or library project without a web UI write only setup and unit_test: there is no server to start,
-    so leave api_test, ui_test and start out.
+    For a CLI, desktop or library project without a web UI write only setup, unit_test and (for binary delivery)
+    package: there is no server to start, so leave api_test, ui_test and start out.
     Do not write test files: the Test Agent writes the tests under the tests/ folder.
     The test commands must run the tests folder, not a single file (e.g. pytest -q tests),
     so tests added later run too.
@@ -140,7 +145,8 @@ development:
     Never pin dependency versions from memory (an invented version breaks the build). Let the package manager
     resolve them in the setup command: Go [go, mod, tidy] with a go.mod that has no require lines; Rust
     [cargo, add, <crate>]; Node.js [npm, install, <package>]; Python [python, -m, pip, install, <package>].
-    A program with a desktop window keeps every decision out of the window code: the test container has no display,
+    A desktop project (project type desktop, or an idea that asks for a window) must have a real window; never
+    replace it with a console program. It keeps every decision out of the window code: the test container has no display,
     so tests cover the window-free logic only and nothing may open a window at import time or in a test. Go: put
     window code in files with a `//go:build windows` constraint plus a stub file for other systems, so that Linux
     builds and tests still compile; use a library that needs no cgo (CGO_ENABLED=0 builds). Rust: a pure-Rust GUI crate
