@@ -88,6 +88,8 @@ def test_application_compile_error_is_fixed_before_the_tests(tmp_path, monkeypat
     assert result.attempts == 1
     assert engine.code_feedback[0] is None and "calc.py" in engine.code_feedback[1]
     assert ("development", "build_failed") in events and ("development", "build_fixed") in events
+    # The full compile output is kept for the failure report, not only the end stored in the event.
+    assert "calc.py" in (result.output_dir / "build_checks" / "check-01-development.txt").read_text(encoding="utf-8")
     # The developer fixed it before the Test Agent saw the code.
     assert events.index(("development", "build_fixed")) < events.index(("testing", "started"))
 

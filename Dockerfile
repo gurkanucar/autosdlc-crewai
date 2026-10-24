@@ -29,11 +29,13 @@ RUN apt-get update \
        xvfb xauth fonts-dejavu-core zip unzip postgresql-15 redis-server \
     && rm -rf /var/lib/apt/lists/*
 
-# Node.js, npm and pnpm. Only node and npm are copied: /usr/local also holds Python in this image.
+# Node.js, npm, corepack and pnpm. Only node and its global modules are copied: /usr/local also holds Python in this
+# image. Generated setup scripts often start with `corepack enable`.
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -s ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
     && npm install -g pnpm
 
 COPY --from=go /usr/local/go /usr/local/go

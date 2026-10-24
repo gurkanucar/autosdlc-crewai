@@ -85,6 +85,10 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
         assert "abcdefghijkl" not in log and "error: boom" in log
         assert {"run.json", "timeline.txt", "project_files.txt"} <= set(names)
         assert not any("sk-secret-key-123456" in archive.read(name).decode() for name in names)
+    from autosdlc.exports import redact
+    assert redact("PGPASSWORD=hunter22 x") == "PGPASSWORD=*** x"
+    assert redact("postgresql://app:hunter22@127.0.0.1/db") == "postgresql://app:***@127.0.0.1/db"
+    assert redact("export const TOKEN_KEY = 'token';") == "export const TOKEN_KEY = 'token';"
     target = tmp_path / "report.zip"
     assert cli_main(["--workspace", str(tmp_path), "diagnose", result.id, "--out", str(target)]) == 0
     assert zipfile.is_zipfile(target)

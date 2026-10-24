@@ -484,6 +484,17 @@ class RunSession:
         except OSError:
             pass
 
+    def _keep_build_output(self, stage: str, output: str) -> None:
+        """The event keeps only the end of a build error, where a stack trace often hides the message; the failure
+        report needs all of it."""
+        try:
+            folder = self.output_dir / "build_checks"
+            folder.mkdir(exist_ok=True)
+            number = len(list(folder.glob("check-*.txt"))) + 1
+            (folder / f"check-{number:02d}-{stage}.txt").write_text(f"{now()}\n{output}", encoding="utf-8")
+        except OSError:
+            pass
+
     def record_failure(self, exc: BaseException) -> None:
         """Keeps the full traceback next to the run; the history only stores the one-line message."""
         try:
@@ -1001,6 +1012,7 @@ class RunSession:
                 return
             failed = True
             self._event(stage, "build_failed", output[-300:])
+            self._keep_build_output(stage, output)
             if round_number == BUILD_FIXES:
                 return
             reason = "from the compile check"

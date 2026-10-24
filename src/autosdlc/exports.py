@@ -88,7 +88,9 @@ def project_zip(root: Path, files: list[Path]) -> bytes:
 DIAGNOSTIC_FILE_LIMIT = 2_000_000
 SECRET_PATTERNS = [
     (re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}"), r"\1***"),
-    (re.compile(r"((?:API_KEY|SECRET|TOKEN|PASSWORD)[A-Z_]*\s*[=:]\s*)\S+", re.IGNORECASE), r"\1***"),
+    # Only environment-style assignments (PGPASSWORD=x, export API_KEY=x), not code such as `const TOKEN_KEY = 'token'`.
+    (re.compile(r"\b([A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD)[A-Z0-9_]*=)[^\s'\"]+"), r"\1***"),
+    (re.compile(r"(://[^\s:/@]+:)[^\s@/]+(@)"), r"\1***\2"),
     (re.compile(r"(sk-)[A-Za-z0-9_-]{8,}"), r"\1***"),
 ]
 
@@ -118,7 +120,7 @@ def diagnostic_files(output: Path) -> dict[str, Path]:
     for path in sorted(output.iterdir()):
         if path.is_file() and path.suffix in {".txt", ".jsonl", ".yaml", ".md"}:
             files[path.name] = path
-    for folder in ("test_attempts", "live"):
+    for folder in ("build_checks", "test_attempts", "live"):
         for path in sorted((output / folder).glob("*")) if (output / folder).is_dir() else []:
             if path.is_file():
                 files[f"{folder}/{path.name}"] = path
@@ -166,6 +168,7 @@ def diagnostics_summary(row: dict, files: dict[str, Path]) -> str:
               "- `failure.txt`: the full traceback of every failure (which function raised the error).",
               "- `llm_calls.jsonl`: one line per model request (stage, outcome, HTTP status, finish_reason, sizes, duration).",
               "- `timeline.txt`: every event in order, with full details.",
+              "- `build_checks/`: the full output of every failed compile check (the event keeps only its end).",
               "- `tmp/*.log`, `test_attempts/`: compile, test, server and packaging output.",
               "- `live/`: the last streamed output of each agent.",
               "", "## Included files", ""]
