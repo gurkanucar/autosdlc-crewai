@@ -95,6 +95,7 @@ The repository ships a `Dockerfile` and a `docker-compose.yml`. The image contai
 |----------|---------|
 | `OPENCODE_API_KEY` | OpenCode Go key shared by every user of the instance |
 | `AUTOSDLC_MODEL` | Default model (optional) |
+| `AUTOSDLC_TIMEZONE` | Time zone the UI and reports show times in, as an IANA name (default `Europe/Istanbul`; e.g. `UTC`, `Europe/Berlin`) |
 | `APP_PASSWORD` | Shared password for the web UI. Leave it empty and the UI is open to anyone who can reach it (a warning is logged) |
 
 ```bash

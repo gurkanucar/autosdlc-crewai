@@ -5,6 +5,7 @@ services:
     environment:
       OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
       AUTOSDLC_MODEL: ${AUTOSDLC_MODEL:-glm-5.3-flash}
+      AUTOSDLC_TIMEZONE: ${AUTOSDLC_TIMEZONE:-Europe/Istanbul}
       # Leave empty to keep the UI open; set it to require a shared password.
       APP_PASSWORD: ${APP_PASSWORD:-}
     volumes:

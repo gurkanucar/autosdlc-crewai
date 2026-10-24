@@ -70,6 +70,10 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
                  "observability": "none", "ui": "none"}
     result = run_project("Book tracker", workspace=tmp_path, engine=engine, decisions=decisions)
     assert result.status == "failed" and "empty response" in result.error
+    # The live activity view shows the last model call and how it ended.
+    activity = json.loads((result.output_dir / "live" / "activity.json").read_text(encoding="utf-8"))
+    assert activity["kind"] == "model" and activity["stage"] == "planning" and activity["phase"] == "failed"
+    assert activity["outcome"] == "empty" and activity["reasoning_chars"] > 0
     (result.output_dir / "tmp").mkdir(exist_ok=True)
     (result.output_dir / "tmp" / "compile.log").write_text("Authorization: Bearer abcdefghijkl\nerror: boom", encoding="utf-8")
     db = History(tmp_path / "runs" / "history.sqlite3")
@@ -98,3 +102,14 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
     target = tmp_path / "report.zip"
     assert cli_main(["--workspace", str(tmp_path), "diagnose", result.id, "--out", str(target)]) == 0
     assert zipfile.is_zipfile(target)
+
+
+def test_times_are_shown_in_the_configured_time_zone(monkeypatch):
+    from autosdlc.storage import clock
+
+    monkeypatch.delenv("AUTOSDLC_TIMEZONE", raising=False)
+    assert clock("2026-10-24T17:28:21+00:00") == "20:28:21"  # Europe/Istanbul by default
+    monkeypatch.setenv("AUTOSDLC_TIMEZONE", "Europe/Berlin")
+    assert clock("2026-10-24T17:28:21+00:00", with_date=True) == "2026-10-24 19:28:21"
+    monkeypatch.setenv("AUTOSDLC_TIMEZONE", "Not/AZone")
+    assert clock("2026-10-24T17:28:21+00:00") == "17:28:21"  # an unknown name falls back to UTC

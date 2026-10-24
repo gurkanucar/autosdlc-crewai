@@ -17,6 +17,8 @@ dependencies = [
   "pytest-playwright>=0.7,<1",
   "python-dotenv>=1,<2",
   "streamlit>=1.40,<2",
+  # IANA time zone data for AUTOSDLC_TIMEZONE; slim images and Windows do not ship it.
+  "tzdata>=2024.1",
   "uvicorn>=0.30,<1",
 ]
 

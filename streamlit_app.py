@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 from autosdlc.auth import auth_enabled, password_matches
 from autosdlc.crewai_engine import CrewAIEngine
-from autosdlc.exports import diagnostics_text, diagnostics_zip, export_files, export_zip, project_zip
+from autosdlc.exports import ANSI_ESCAPE, diagnostics_text, diagnostics_zip, export_files, export_zip, project_zip
 from autosdlc.desktop import open_folder
 from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
 from autosdlc.intake import applies, choice_label, default_delivery, question_text, templates, questions, validate_decisions
@@ -35,7 +35,7 @@ from autosdlc.runner import (
 from autosdlc.sections import (
     delete_section, insert_after, replace_section, split_sections, strip_fences, unified_diff,
 )
-from autosdlc.storage import TITLE_LIMIT, History, project_title, suggested_title
+from autosdlc.storage import TITLE_LIMIT, History, clock, local_time, project_title, suggested_title
 from autosdlc.ui_jobs import WORKER_ERRORS
 
 
@@ -392,7 +392,7 @@ def chat_feed(run_id: str) -> None:
             user = role == "user"
             with st.chat_message("user" if user else "assistant", avatar="🧑" if user else "🤖"):
                 who = t("You") if user else escape(role)
-                st.markdown(f"<small><b>{who}</b> · {moment[11:19]}</small>  \n{text}", unsafe_allow_html=True)
+                st.markdown(f"<small><b>{who}</b> · {clock(moment)}</small>  \n{text}", unsafe_allow_html=True)
 
 
 def chat_placeholder(db: History, row: dict) -> tuple[dict | None, str]:
@@ -623,6 +623,78 @@ def live_output(row: dict, stage: str) -> None:
             st.markdown(text[-6000:])
 
 
+def seconds_since(value: str | None) -> float:
+    return (local_time() - local_time(value)).total_seconds() if value else 0.0
+
+
+def activity_panel(row: dict) -> None:
+    """What the run is doing right now, behind the stage view: the model call in flight (still reasoning or already
+    writing, for how long) or the command running and its latest output, the latest model calls and whether the
+    worker process is still alive."""
+    output = Path(row["output_dir"])
+    raw = read_text(output / "live" / "activity.json")
+    running = row["status"] == "running"
+    if not raw and not running:
+        return
+    with st.expander(t("🔍 What is happening in the background")):
+        if running:
+            beat = seconds_since(row.get("heartbeat_at"))
+            if beat > 45:
+                st.warning(t("No signal from the worker process for {duration}; it may have stopped.", duration=format_duration(beat)))
+            else:
+                st.caption(t("🟢 The worker process is alive (last signal {duration} ago).", duration=format_duration(beat) if beat >= 1 else t("{seconds}s", seconds=0)))
+        try:
+            activity = json.loads(raw) if raw else {}
+        except ValueError:
+            activity = {}  # Caught while being replaced; the next refresh reads it.
+        phase = activity.get("phase")
+        finished = phase in {"done", "failed"}
+        elapsed = format_duration(seconds_since(activity.get("updated_at" if finished else "started_at")))
+        if activity.get("kind") == "model":
+            stage = stage_label(activity.get("stage", ""))
+            text = {
+                "waiting": t("📡 The {stage} agent sent its request to the model ({model}); waiting for the first reply for {elapsed}."),
+                "reasoning": t("🧠 The model ({model}) is reasoning for the {stage} agent; no answer text yet. Running for {elapsed}."),
+                "writing": t("✍️ The model ({model}) is writing the {stage} agent's answer. Running for {elapsed}."),
+                "done": t("✅ The last model call of the {stage} agent finished {elapsed} ago."),
+                "failed": t("⚠️ The last model call of the {stage} agent failed {elapsed} ago: {error}"),
+            }.get(phase, "")
+            st.markdown(text.format(stage=stage, model=activity.get("model", ""), elapsed=elapsed,
+                                    error=translate_stored(str(activity.get("error") or activity.get("outcome", "")))[:300]))
+            columns = st.columns(4)
+            columns[0].metric(t("Attempt"), f"{activity.get('attempt', 1)}/3")
+            columns[1].metric(t("Prompt"), f"{activity.get('prompt_chars', 0):,}")
+            columns[2].metric(t("Reasoning"), f"{activity.get('reasoning_chars', 0):,}",
+                              help=t("Characters the model has thought so far; it writes no answer while reasoning."))
+            columns[3].metric(t("Answer"), f"{activity.get('content_chars', 0):,}")
+            if activity.get("reasoning_tail") and not finished:
+                st.caption(t("The model's latest reasoning:"))
+                st.code(activity["reasoning_tail"][-1500:], language=None, wrap_lines=True, height=180)
+        elif activity.get("kind") == "command":
+            if finished:
+                st.markdown(t("⚙️ The last command (`{command}`) ended {elapsed} ago with exit code {code}.",
+                              command=activity.get("command", ""), elapsed=elapsed, code=activity.get("exit")))
+            else:
+                st.markdown(t("⚙️ Running {label}: `{command}` for {elapsed}.", label=activity.get("label", ""),
+                              command=activity.get("command", ""), elapsed=elapsed))
+            log = read_text(output / activity.get("log", "")) if activity.get("log") else None
+            if log:
+                st.caption(t("Latest output:"))
+                st.code(ANSI_ESCAPE.sub("", log)[-3000:], language=None, wrap_lines=True, height=220)
+        calls = []
+        for line in (read_text(output / "llm_calls.jsonl") or "").splitlines()[-8:]:
+            try:
+                calls.append(json.loads(line))
+            except ValueError:
+                continue
+        if calls:
+            st.caption(t("Latest model calls"))
+            st.dataframe([{t("Time"): clock(call["time"]), t("Stage"): stage_label(call.get("stage", "")),
+                           t("Result"): call.get("outcome"), t("Duration"): format_duration(call.get("seconds", 0)),
+                           t("Reasoning"): call.get("reasoning_chars"), t("Answer"): call.get("response_chars")}
+                          for call in reversed(calls)], hide_index=True, width="stretch")
+
+
 def document_view(db: History, row: dict, stage: str) -> None:
     output = Path(row["output_dir"])
     available = [item for item in STAGE_DOCUMENTS.get(stage, []) if (output / item[0]).is_file()]
@@ -700,10 +772,11 @@ def stage_detail(db: History, row: dict, stage_key: str, states: dict[str, str],
         code_view(row)
     else:
         document_view(db, row, stage_key)
+    activity_panel(row)
     events = [event for event in row["events"] if event["stage"] == stage_key]
     if events:
         with st.expander(t("Events of this stage ({count})", count=len(events))):
-            st.dataframe([{t("Time"): event["created_at"][11:19], t("Event"): event_name(event["status"]),
+            st.dataframe([{t("Time"): clock(event["created_at"]), t("Event"): event_name(event["status"]),
                            t("Detail"): translate_stored(event["detail"])} for event in reversed(events)], hide_index=True, width="stretch")
 
 
@@ -923,7 +996,7 @@ def iterations_dialog(run_id: str) -> None:
     by_number = {item["number"]: item for item in items}
     number = st.selectbox(t("Version"), list(reversed(by_number)), key=f"iteration_{run_id}",
                           format_func=lambda n: f"{ITERATION_ICONS.get(by_number[n]['status'], '⚪')} {iteration_label(db, run_id, by_number[n])}"
-                                                f" · {by_number[n]['created_at'][:16].replace('T', ' ')}")
+                                                f" · {clock(by_number[n]['created_at'], with_date=True)[:16]}")
     item = by_number[number]
     until = [event for event in row["events"] if event["id"] <= item["last_event_id"]]
     within = [event for event in until if event["id"] >= item["first_event_id"]]

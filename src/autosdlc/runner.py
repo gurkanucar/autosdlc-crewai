@@ -30,7 +30,7 @@ from .files import write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
 from .sections import NO_CHANGE, NO_CHANGE_TOKENS, apply_patch
-from .storage import History, now
+from .storage import History, local_time, now
 from .traceability import build_matrix
 
 
@@ -230,7 +230,7 @@ def backup_versions(output_dir: Path, filename: str) -> None:
     if source.is_file():
         versions = output_dir / "versions"
         versions.mkdir(exist_ok=True)
-        stamp = time.strftime("%Y%m%d-%H%M%S")
+        stamp = local_time().strftime("%Y%m%d-%H%M%S")
         target = versions / f"{source.stem}.{stamp}{source.suffix}"
         counter = 1
         while target.exists():
@@ -418,10 +418,12 @@ class RunSession:
         self.package_report = ""
         self.completed_stages: set[str] = set()
         self._live_written = 0.0
+        self._activity_written = 0.0
         if hasattr(engine, "output_listener"):
             engine.output_listener = self._live_output
         if hasattr(getattr(engine, "llm", None), "call_log"):
             engine.llm.call_log = self._log_call
+            engine.llm.activity = self._activity
         if resume:
             self._load_checkpoint(existing)
             if not self.history.resume(self.run_id):
@@ -475,6 +477,33 @@ class RunSession:
             (live_dir / f"{stage}.md").write_text(text, encoding="utf-8")
         except OSError:
             pass  # The live view is only a convenience; a write can collide while the UI reads the file.
+
+    def _activity(self, record: dict) -> None:
+        """What the run is doing right now (a model call or a command), for the live activity view in the UI.
+
+        Progress of a streaming call is written at most once a second; every phase change is written at once.
+        """
+        moment = time.monotonic()
+        if record.get("phase") in {"reasoning", "writing"} and moment - self._activity_written < 1:
+            return
+        self._activity_written = moment
+        try:
+            live_dir = self.output_dir / "live"
+            live_dir.mkdir(exist_ok=True)
+            temporary = live_dir / "activity.json.tmp"
+            temporary.write_text(json.dumps({**record, "updated_at": now()}, ensure_ascii=False), encoding="utf-8")
+            os.replace(temporary, live_dir / "activity.json")
+        except OSError:
+            pass  # Only a convenience; the UI may be reading the file at that moment.
+
+    def _run_reported(self, label: str, command: list[str], env: dict[str, str], log: Path, timeout: int) -> tuple[str, int | None]:
+        """_run_logged, with the command shown in the live activity view while it runs."""
+        current = {"kind": "command", "label": label, "command": " ".join(command), "started_at": now(),
+                   "log": log.relative_to(self.output_dir).as_posix()}
+        self._activity({**current, "phase": "running"})
+        output, code = _run_logged(command, self.project_dir, env, log, timeout=timeout)
+        self._activity({**current, "phase": "done" if code == 0 else "failed", "exit": code})
+        return output, code
 
     def _log_call(self, record: dict) -> None:
         """One line per model request attempt, so a failure report shows which call failed and how."""
@@ -1030,7 +1059,7 @@ class RunSession:
             return output, code
         log = self.output_dir / "tmp" / "compile.log"
         for command in compile_commands(self.project_dir):
-            output, code = _run_logged(self._command(command, env), self.project_dir, env, log, timeout=600)
+            output, code = self._run_reported("Compile", self._command(command, env), env, log, timeout=600)
             if code is None:
                 continue  # the toolchain is missing or too slow here; the test commands report it themselves
             if code:
@@ -1083,12 +1112,15 @@ class RunSession:
                 resolved = self._command(command, env)
                 if label != "Setup":
                     resolved = with_display(resolved, env)
-                process = subprocess.run(resolved, cwd=self.project_dir, env=env, capture_output=True, text=True, timeout=300, check=False)
-                logs.append(plain(f"### {label} tests (exit {process.returncode})\n{process.stdout}\n{process.stderr}")[-20_000:])
-                if process.returncode:
+                # Into a log file rather than a pipe, so the live activity view can show the output while it runs.
+                output, code = self._run_reported(label, resolved, env, temp_dir / f"{label.lower()}.log", timeout=300)
+                if code is None:
+                    return "\n".join(logs + [f"The {label} command failed: {output}"]), -1
+                logs.append(f"### {label} tests (exit {code})\n{output}"[-20_000:])
+                if code:
                     if server is not None:
                         logs.append("### Application server log\n" + _tail(server_log))
-                    return "\n".join(logs), process.returncode
+                    return "\n".join(logs), code
                 if label == "Setup":
                     self.setup_done = True
             except (subprocess.TimeoutExpired, OSError) as exc:
@@ -1141,8 +1173,8 @@ class RunSession:
             env = self._test_env()
             command = self.manifest.get("package") or command
             self._event("deployment", "package_started", " ".join(command))
-            output, code = _run_logged(self._command(command, env), self.project_dir, env,
-                                       self.output_dir / "tmp" / "package.log", timeout=PACKAGE_TIMEOUT)
+            output, code = self._run_reported("Package", self._command(command, env), env,
+                                              self.output_dir / "tmp" / "package.log", timeout=PACKAGE_TIMEOUT)
             timed_out = code is None
             output, code = output[-3000:], -1 if timed_out else code
             artifacts = sorted(path.relative_to(dist).as_posix() for path in dist.rglob("*") if path.is_file()) if dist.is_dir() else []
@@ -1214,7 +1246,7 @@ class RunSession:
         self.history.update_change(self.run_id, change["id"], status="done" if done else "failed")
         entry = (
             f"## {change['id']} · {self._t(CHANGE_KINDS.get(change['kind'], change['kind']))} · {change['title']}\n\n"
-            f"- {self._t('Date')}: {time.strftime('%Y-%m-%d %H:%M')}\n"
+            f"- {self._t('Date')}: {local_time().strftime('%Y-%m-%d %H:%M')}\n"
             f"- {self._t('Result')}: "
             + (self._t("Completed, tests passed") if done else self._t("Failed") + (f" ({error[:200]})" if error else " (" + self._t("tests did not pass") + ")"))
             + f"\n- {self._t('Starting stage')}: {change.get('start_stage') or '—'}\n"

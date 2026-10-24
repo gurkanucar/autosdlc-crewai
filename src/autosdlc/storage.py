@@ -2,13 +2,38 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+DEFAULT_TIMEZONE = "Europe/Istanbul"
 
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def display_zone() -> tzinfo:
+    """The time zone times are shown in (AUTOSDLC_TIMEZONE, an IANA name); stored times stay UTC.
+    An unknown name falls back to UTC, so a typo shows obviously shifted times instead of failing."""
+    try:
+        return ZoneInfo(os.getenv("AUTOSDLC_TIMEZONE") or DEFAULT_TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        return timezone.utc
+
+
+def local_time(value: str | None = None) -> datetime:
+    """A stored UTC timestamp (or now, without one) in the display time zone."""
+    moment = datetime.fromisoformat(value) if value else datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(display_zone())
+
+
+def clock(value: str, with_date: bool = False) -> str:
+    return local_time(value).strftime("%Y-%m-%d %H:%M:%S" if with_date else "%H:%M:%S")
 
 
 TITLE_LIMIT = 120

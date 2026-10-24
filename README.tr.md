@@ -95,6 +95,7 @@ Depoda bir `Dockerfile` ve bir `docker-compose.yml` vardır. İmajda uygulama, P
 |----------|------|
 | `OPENCODE_API_KEY` | Örneği kullanan herkesin paylaştığı OpenCode Go anahtarı |
 | `AUTOSDLC_MODEL` | Varsayılan model (isteğe bağlı) |
+| `AUTOSDLC_TIMEZONE` | Arayüz ve raporlardaki saatlerin saat dilimi, IANA adıyla (varsayılan `Europe/Istanbul`; ör. `UTC`, `Europe/Berlin`) |
 | `APP_PASSWORD` | Web arayüzü için ortak parola. Boş bırakılırsa arayüze erişebilen herkes kullanır (logda uyarı yazılır) |
 
 ```bash

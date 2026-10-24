@@ -15,6 +15,7 @@ import httpx
 from dotenv import load_dotenv
 
 from .i18n import jargon_rule, prompt_language
+from .storage import now
 
 
 GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
@@ -23,14 +24,15 @@ RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
 def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None],
-                       stats: dict | None = None) -> tuple[str, str | None]:
+                       stats: dict | None = None, on_progress: Callable[[dict], None] | None = None) -> tuple[str, str | None]:
     """Reads the SSE stream and passes the accumulated text to on_text on every chunk; falls back to plain JSON if the server does not stream.
 
-    Returns (text, finish_reason). stats, if given, receives the number of reasoning characters the model streamed:
-    a reasoning model can spend its whole output on reasoning and return no content.
+    Returns (text, finish_reason). stats, if given, receives how many reasoning and answer characters the model
+    streamed and the end of its reasoning: a reasoning model can think for many minutes before the first answer word,
+    or spend its whole output on reasoning and return no content. on_progress gets stats after every chunk.
     """
     stats = {} if stats is None else stats
-    stats["reasoning_chars"] = 0
+    stats.update(reasoning_chars=0, content_chars=0, reasoning_tail="")
     with httpx.stream("POST", url, headers=headers, json={**payload, "stream": True}, timeout=300) as response:
         if response.status_code >= 400:
             response.read()  # So the error body (the server's reason) can be shown in the message.
@@ -52,11 +54,17 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
             choices = json.loads(data).get("choices") or [{}]
             finish = choices[0].get("finish_reason") or finish
             chunk = choices[0].get("delta") or {}
-            stats["reasoning_chars"] += len(chunk.get("reasoning_content") or chunk.get("reasoning") or "")
+            reasoning = chunk.get("reasoning_content") or chunk.get("reasoning") or ""
+            if reasoning:
+                stats["reasoning_chars"] += len(reasoning)
+                stats["reasoning_tail"] = (stats["reasoning_tail"] + reasoning)[-2000:]
             delta = chunk.get("content") or ""
             if delta:
                 parts.append(delta)
+                stats["content_chars"] += len(delta)
                 on_text("".join(parts))
+            if on_progress is not None and (reasoning or delta):
+                on_progress(stats)
         return "".join(parts), finish
 
 
@@ -185,8 +193,22 @@ class CrewAIEngine:
                 inner.call_log = None
                 # The stage whose agent makes the current call; only for the call log.
                 inner.stage = ""
+                # If set, the state of the current request (waiting, reasoning, writing, done, failed) is reported
+                # here while it runs, for the live activity view.
+                inner.activity = None
+                inner.current = {}
+
+            def _report(inner, phase: str, **fields: Any) -> None:
+                if inner.activity is None:
+                    return
+                try:
+                    inner.activity({"kind": "model", **inner.current, "phase": phase, **fields})
+                except Exception:
+                    pass  # Diagnostics never break a run.
 
             def _log(inner, attempt: int, started: float, messages: list[dict[str, Any]], outcome: str, **fields: Any) -> None:
+                inner._report("done" if outcome == "ok" else "failed", outcome=outcome,
+                              **{key: value for key, value in fields.items() if key in {"error", "finish_reason", "reasoning_chars"}})
                 if inner.call_log is None:
                     return
                 record = {"stage": inner.stage, "model": inner.model, "attempt": attempt + 1, "outcome": outcome,
@@ -218,9 +240,14 @@ class CrewAIEngine:
                     headers = {"Authorization": f"Bearer {inner.key}", "x-opencode-session": inner.session_id}
                     payload = {"model": inner.model, "messages": messages}
                     started, stats = time.monotonic(), {}
+                    inner.current = {"stage": inner.stage, "model": inner.model, "attempt": attempt + 1, "started_at": now(),
+                                     "prompt_chars": sum(len(str(message.get("content", ""))) for message in messages)}
+                    inner._report("waiting")
                     try:
                         if inner.listener is not None:
-                            content, finish = _stream_completion(url, headers, payload, inner.listener, stats)
+                            content, finish = _stream_completion(
+                                url, headers, payload, inner.listener, stats,
+                                lambda progress: inner._report("writing" if progress["content_chars"] else "reasoning", **progress))
                         else:
                             response = httpx.post(url, headers=headers, json=payload, timeout=300)
                             response.raise_for_status()
@@ -254,7 +281,8 @@ class CrewAIEngine:
                 inner.truncated = finish == "length"
                 empty = not isinstance(content, str) or not content.strip()
                 inner._log(attempt, started, messages, "empty" if empty else "ok", finish_reason=finish,
-                           response_chars=len(content) if isinstance(content, str) else 0, **stats)
+                           response_chars=len(content) if isinstance(content, str) else 0,
+                           reasoning_chars=stats.get("reasoning_chars", 0))
                 if empty:
                     raise RuntimeError("OpenCode Go returned an empty response")
                 return content

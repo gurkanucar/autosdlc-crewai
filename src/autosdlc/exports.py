@@ -12,6 +12,8 @@ import zipfile
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from .storage import clock, display_zone
+
 SKIPPED_DIRS = {".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__",
                 ".pytest_cache", "test-results", "dist", "build", "target"}
 # Mach-O magic numbers (32/64 bit, both byte orders); 0xCAFEBABE is left out because Java class files share it.
@@ -158,7 +160,8 @@ def diagnostics_summary(row: dict, files: dict[str, Path]) -> str:
         f"# Failure report · {row.get('title') or row['idea'][:80]}",
         "",
         f"- Run: `{row['id']}` · status **{row['status']}** · model `{row.get('model') or '-'}`",
-        f"- Created {row['created_at']} · finished {row.get('completed_at') or '-'} · test attempts {row.get('attempts', 0)}",
+        f"- Created {clock(row['created_at'], True)} · finished {clock(row['completed_at'], True) if row.get('completed_at') else '-'}"
+        f" · test attempts {row.get('attempts', 0)} · times in {display_zone()}",
         f"- Stopped at stage: **{stopped_at}** · completed: {', '.join(s for s in SDLC_STAGES if s in completed) or '-'}",
         f"- AutoSDLC {_app_version()} · Python {platform.python_version()} · {sys.platform}",
         "",
@@ -171,7 +174,7 @@ def diagnostics_summary(row: dict, files: dict[str, Path]) -> str:
         "## Problem events",
         "",
     ]
-    lines += [f"- {event['created_at']} · {event['stage']} · {event['status']}: {redact(event['detail'])[:600]}"
+    lines += [f"- {clock(event['created_at'], True)} · {event['stage']} · {event['status']}: {redact(event['detail'])[:600]}"
               for event in problems[-20:]] or ["- (none)"]
     lines += ["", "## Where to look", "",
               "- `failure.txt`: the full traceback of every failure (which function raised the error).",
@@ -186,7 +189,7 @@ def diagnostics_summary(row: dict, files: dict[str, Path]) -> str:
 
 
 def _call_line(record: dict) -> str:
-    fields = [record.get("time", "")[11:19], record.get("stage", ""), record.get("outcome", ""),
+    fields = [clock(record["time"]) if record.get("time") else "", record.get("stage", ""), record.get("outcome", ""),
               f"finish={record.get('finish_reason')}", f"{record.get('seconds')}s", f"prompt={record.get('prompt_chars')}",
               f"response={record.get('response_chars', '-')}", f"reasoning={record.get('reasoning_chars', '-')}"]
     if record.get("error"):
@@ -200,7 +203,7 @@ def diagnostics_text(row: dict) -> str:
     output = Path(row["output_dir"])
     text = diagnostics_summary(row, {}).split("## Where to look")[0].rstrip()
     text += "\n\n## Latest events\n\n" + "\n".join(
-        f"- {event['created_at'][11:19]} · {event['stage']} · {event['status']}: {redact(plain(event['detail']))[-200:].strip()}"
+        f"- {clock(event['created_at'])} · {event['stage']} · {event['status']}: {redact(plain(event['detail']))[-200:].strip()}"
         for event in row.get("events", [])[-8:])
     calls_path = output / "llm_calls.jsonl"
     if calls_path.is_file():
@@ -223,7 +226,7 @@ def diagnostics_zip(row: dict, changes: list[dict] | None = None, iterations: li
     """One ZIP to see where a run broke; secrets like API keys and tokens are masked."""
     output = Path(row["output_dir"])
     files = diagnostic_files(output)
-    timeline = "\n".join(f"{event['created_at']}\t{event['stage']}\t{event['status']}\t{event['detail']}"
+    timeline = "\n".join(f"{clock(event['created_at'], True)}\t{event['stage']}\t{event['status']}\t{event['detail']}"
                          for event in row.get("events", []))
     record = {**row, "changes": changes or [], "iterations": iterations or []}
     project = Path(row["project_dir"]) if row.get("project_dir") else None
