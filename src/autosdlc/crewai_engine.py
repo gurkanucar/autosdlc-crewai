@@ -22,11 +22,15 @@ DEFAULT_MODEL = "glm-5.3-flash"
 RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
-def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None]) -> tuple[str, str | None]:
+def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None],
+                       stats: dict | None = None) -> tuple[str, str | None]:
     """Reads the SSE stream and passes the accumulated text to on_text on every chunk; falls back to plain JSON if the server does not stream.
 
-    Returns (text, finish_reason).
+    Returns (text, finish_reason). stats, if given, receives the number of reasoning characters the model streamed:
+    a reasoning model can spend its whole output on reasoning and return no content.
     """
+    stats = {} if stats is None else stats
+    stats["reasoning_chars"] = 0
     with httpx.stream("POST", url, headers=headers, json={**payload, "stream": True}, timeout=300) as response:
         if response.status_code >= 400:
             response.read()  # So the error body (the server's reason) can be shown in the message.
@@ -34,6 +38,7 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
         if "text/event-stream" not in response.headers.get("content-type", ""):
             response.read()
             choice = response.json()["choices"][0]
+            stats["reasoning_chars"] = len(choice["message"].get("reasoning_content") or "")
             on_text(choice["message"]["content"])
             return choice["message"]["content"], choice.get("finish_reason")
         parts: list[str] = []
@@ -46,7 +51,9 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
                 break
             choices = json.loads(data).get("choices") or [{}]
             finish = choices[0].get("finish_reason") or finish
-            delta = (choices[0].get("delta") or {}).get("content") or ""
+            chunk = choices[0].get("delta") or {}
+            stats["reasoning_chars"] += len(chunk.get("reasoning_content") or chunk.get("reasoning") or "")
+            delta = chunk.get("content") or ""
             if delta:
                 parts.append(delta)
                 on_text("".join(parts))
@@ -174,6 +181,24 @@ class CrewAIEngine:
                 inner.listener = None
                 # True if the last response was cut at the model's output length limit (finish_reason == "length").
                 inner.truncated = False
+                # If set, every request attempt is reported here as a dict (the run's diagnostic call log).
+                inner.call_log = None
+                # The stage whose agent makes the current call; only for the call log.
+                inner.stage = ""
+
+            def _log(inner, attempt: int, started: float, messages: list[dict[str, Any]], outcome: str, **fields: Any) -> None:
+                if inner.call_log is None:
+                    return
+                record = {"stage": inner.stage, "model": inner.model, "attempt": attempt + 1, "outcome": outcome,
+                          "seconds": round(time.monotonic() - started, 1),
+                          "prompt_chars": sum(len(str(message.get("content", ""))) for message in messages), **fields}
+                if outcome != "ok":
+                    # The end of the prompt says what the agent was asked to do when it failed.
+                    record["prompt_tail"] = str(messages[-1].get("content", ""))[-1500:] if messages else ""
+                try:
+                    inner.call_log(record)
+                except Exception:
+                    pass  # Diagnostics never break a run.
 
             def call(
                 inner,
@@ -192,37 +217,45 @@ class CrewAIEngine:
                     url = f"{GO_BASE_URL}/chat/completions"
                     headers = {"Authorization": f"Bearer {inner.key}", "x-opencode-session": inner.session_id}
                     payload = {"model": inner.model, "messages": messages}
+                    started, stats = time.monotonic(), {}
                     try:
                         if inner.listener is not None:
-                            content, finish = _stream_completion(url, headers, payload, inner.listener)
+                            content, finish = _stream_completion(url, headers, payload, inner.listener, stats)
                         else:
                             response = httpx.post(url, headers=headers, json=payload, timeout=300)
                             response.raise_for_status()
                             choice = response.json()["choices"][0]
                             content, finish = choice["message"]["content"], choice.get("finish_reason")
+                            stats["reasoning_chars"] = len(choice["message"].get("reasoning_content") or "")
                         break
                     except httpx.HTTPStatusError as exc:
                         # A 400 is normally permanent, but a gateway can return a temporary 400 too, so it is retried once.
                         status_code = exc.response.status_code
-                        if (status_code in RETRY_STATUSES or (status_code == 400 and attempt == 0)) and attempt < 2:
-                            time.sleep(2 ** (attempt + 1))
-                            continue
                         try:
                             reason = exc.response.text.strip()[:400]
                         except httpx.ResponseNotRead:
                             reason = ""
+                        inner._log(attempt, started, messages, f"http_{status_code}", error=reason)
+                        if (status_code in RETRY_STATUSES or (status_code == 400 and attempt == 0)) and attempt < 2:
+                            time.sleep(2 ** (attempt + 1))
+                            continue
                         raise RuntimeError(
                             f"OpenCode Go returned HTTP {exc.response.status_code}" + (f": {reason}" if reason else "")
                         ) from exc
                     except httpx.TransportError as exc:
+                        inner._log(attempt, started, messages, "transport_error", error=repr(exc)[:400])
                         if attempt < 2:
                             time.sleep(2 ** (attempt + 1))
                             continue
                         raise RuntimeError("The OpenCode Go request failed") from exc
                     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+                        inner._log(attempt, started, messages, "bad_response", error=repr(exc)[:400])
                         raise RuntimeError("The OpenCode Go request or response failed") from exc
                 inner.truncated = finish == "length"
-                if not isinstance(content, str) or not content.strip():
+                empty = not isinstance(content, str) or not content.strip()
+                inner._log(attempt, started, messages, "empty" if empty else "ok", finish_reason=finish,
+                           response_chars=len(content) if isinstance(content, str) else 0, **stats)
+                if empty:
                     raise RuntimeError("OpenCode Go returned an empty response")
                 return content
 
@@ -259,6 +292,7 @@ class CrewAIEngine:
         prompt += "\n" + Template(self.tasks.get("language_rules", "")).safe_substitute(
             language=document_language, terms=jargon_rule(language or self.language))
         listener = self.output_listener
+        self.llm.stage = stage
         self.llm.listener = (lambda text: listener(stage, text)) if listener else None
         if ask_user:
             prompt += (

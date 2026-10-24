@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from .exports import diagnostics_zip
 from .i18n import set_language, t
 from .intake import applies, choice_label, parse_choice, question_text, questions, validate_decisions, with_default_delivery
 from .runner import run_project
@@ -36,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
     history.add_argument("--limit", type=int, default=20)
     show = commands.add_parser("show", help=t("Show a run and its stage events"))
     show.add_argument("run_id")
+    diagnose = commands.add_parser("diagnose", help=t("Write a failure report ZIP of a run (traceback, model calls, logs)"))
+    diagnose.add_argument("run_id")
+    diagnose.add_argument("--out", type=Path, help=t("Target ZIP file"))
 
     args = parser.parse_args(argv)
     workspace = args.workspace.resolve()
@@ -103,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     item = db.get(args.run_id)
     if item is None:
         parser.exit(2, t("Run not found: {run_id}", run_id=args.run_id) + "\n")
+    if args.command == "diagnose":
+        target = args.out or Path(f"{args.run_id}-diagnostics.zip")
+        target.write_bytes(diagnostics_zip(item, db.changes(args.run_id), db.iterations(args.run_id)))
+        print(target.resolve())
+        return 0
     print(json.dumps(item, ensure_ascii=False, indent=2))
     return 0
 

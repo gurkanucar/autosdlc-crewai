@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import io
+import json
 import os
+import platform
+import re
+import sys
 import zipfile
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 SKIPPED_DIRS = {".autosdlc-venv", ".venv", "node_modules", ".git", "__pycache__",
@@ -76,4 +81,118 @@ def project_zip(root: Path, files: list[Path]) -> bytes:
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for relative in files:
             archive.write(root / relative, relative.as_posix())
+    return buffer.getvalue()
+
+
+# Per file in the failure report: logs can grow large, and their end holds the error.
+DIAGNOSTIC_FILE_LIMIT = 2_000_000
+SECRET_PATTERNS = [
+    (re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}"), r"\1***"),
+    (re.compile(r"((?:API_KEY|SECRET|TOKEN|PASSWORD)[A-Z_]*\s*[=:]\s*)\S+", re.IGNORECASE), r"\1***"),
+    (re.compile(r"(sk-)[A-Za-z0-9_-]{8,}"), r"\1***"),
+]
+
+
+def redact(text: str) -> str:
+    for pattern, replacement in SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _tail(path: Path) -> str:
+    data = path.read_bytes()
+    text = data[-DIAGNOSTIC_FILE_LIMIT:].decode("utf-8", errors="replace")
+    if len(data) > DIAGNOSTIC_FILE_LIMIT:
+        text = f"[... first {len(data) - DIAGNOSTIC_FILE_LIMIT} bytes left out ...]\n" + text
+    return redact(text)
+
+
+def diagnostic_files(output: Path) -> dict[str, Path]:
+    """What shows where a run broke: the traceback, the model call log, build/test/server logs and live agent output.
+
+    Generated code and the throwaway database data are left out; the code has its own download.
+    """
+    files: dict[str, Path] = {}
+    if not output.is_dir():
+        return files
+    for path in sorted(output.iterdir()):
+        if path.is_file() and path.suffix in {".txt", ".jsonl", ".yaml", ".md"}:
+            files[path.name] = path
+    for folder in ("test_attempts", "live"):
+        for path in sorted((output / folder).glob("*")) if (output / folder).is_dir() else []:
+            if path.is_file():
+                files[f"{folder}/{path.name}"] = path
+    tmp = output / "tmp"
+    for path in sorted(tmp.rglob("*.log")) if tmp.is_dir() else []:
+        if path.is_file() and not path.is_symlink():
+            files[path.relative_to(output).as_posix()] = path
+    return files
+
+
+def _app_version() -> str:
+    try:
+        return version("autosdlc")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def diagnostics_summary(row: dict, files: dict[str, Path]) -> str:
+    from .runner import SDLC_STAGES, completed_from_events  # The runner imports this module.
+
+    events = row.get("events", [])
+    completed = completed_from_events(events)
+    stopped_at = next((stage for stage in SDLC_STAGES if stage not in completed), "-")
+    problems = [event for event in events if event["status"] in {"failed", "package_failed", "gate_failed", "interrupted"}]
+    lines = [
+        f"# Failure report · {row.get('title') or row['idea'][:80]}",
+        "",
+        f"- Run: `{row['id']}` · status **{row['status']}** · model `{row.get('model') or '-'}`",
+        f"- Created {row['created_at']} · finished {row.get('completed_at') or '-'} · test attempts {row.get('attempts', 0)}",
+        f"- Stopped at stage: **{stopped_at}** · completed: {', '.join(s for s in SDLC_STAGES if s in completed) or '-'}",
+        f"- AutoSDLC {_app_version()} · Python {platform.python_version()} · {sys.platform}",
+        "",
+        "## Error",
+        "",
+        "```",
+        redact(row.get("error") or "(none recorded)"),
+        "```",
+        "",
+        "## Problem events",
+        "",
+    ]
+    lines += [f"- {event['created_at']} · {event['stage']} · {event['status']}: {redact(event['detail'])[:600]}"
+              for event in problems[-20:]] or ["- (none)"]
+    lines += ["", "## Where to look", "",
+              "- `failure.txt`: the full traceback of every failure (which function raised the error).",
+              "- `llm_calls.jsonl`: one line per model request (stage, outcome, HTTP status, finish_reason, sizes, duration).",
+              "- `timeline.txt`: every event in order, with full details.",
+              "- `tmp/*.log`, `test_attempts/`: compile, test, server and packaging output.",
+              "- `live/`: the last streamed output of each agent.",
+              "", "## Included files", ""]
+    lines += [f"- `{name}`" for name in files] or ["- (none)"]
+    return "\n".join(lines) + "\n"
+
+
+def diagnostics_zip(row: dict, changes: list[dict] | None = None, iterations: list[dict] | None = None) -> bytes:
+    """One ZIP to see where a run broke; secrets like API keys and tokens are masked."""
+    output = Path(row["output_dir"])
+    files = diagnostic_files(output)
+    timeline = "\n".join(f"{event['created_at']}\t{event['stage']}\t{event['status']}\t{event['detail']}"
+                         for event in row.get("events", []))
+    record = {**row, "changes": changes or [], "iterations": iterations or []}
+    project = Path(row["project_dir"]) if row.get("project_dir") else None
+    listing = ""
+    if project and project.is_dir():
+        listing = "\n".join(f"{(project / path).stat().st_size:>10}  {path.as_posix()}" for path in export_files(project))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("summary.md", diagnostics_summary(row, files))
+        archive.writestr("run.json", redact(json.dumps(record, ensure_ascii=False, indent=2, default=str)))
+        archive.writestr("timeline.txt", redact(timeline) + "\n")
+        archive.writestr("project_files.txt", listing + "\n")
+        for name, path in files.items():
+            try:
+                archive.writestr(name, _tail(path))
+            except OSError as exc:
+                archive.writestr(name + ".unreadable", str(exc))
     return buffer.getvalue()

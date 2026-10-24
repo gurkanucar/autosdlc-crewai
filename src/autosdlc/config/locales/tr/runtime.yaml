@@ -201,3 +201,5 @@
 "PostgreSQL is not installed here; DATABASE_URL is not set for the tests": "PostgreSQL burada kurulu değil; testler için DATABASE_URL ayarlanmadı"
 "Redis is not installed here; REDIS_URL is not set for the tests": "Redis burada kurulu değil; testler için REDIS_URL ayarlanmadı"
 "Redis did not start for the tests": "Redis testler için başlatılamadı"
+"Write a failure report ZIP of a run (traceback, model calls, logs)": "Bir çalışmanın hata raporunu ZIP olarak yaz (traceback, model çağrıları, loglar)"
+"Target ZIP file": "Hedef ZIP dosyası"

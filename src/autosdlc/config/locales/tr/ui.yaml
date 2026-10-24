@@ -340,3 +340,6 @@
 "Test service missing": "Test servisi eksik"
 "🗄️ A throwaway database/cache was started for the tests ({detail}).": "🗄️ Testler için geçici bir veritabanı/önbellek başlatıldı ({detail})."
 "⚠️ {detail}": "⚠️ {detail}"
+"Diagnostics": "Tanılama"
+"Where and why the run broke: the error traceback, every model call, build/test logs and the event timeline. API keys and passwords are masked.": "Çalışmanın nerede ve neden patladığı: hata traceback'i, her model çağrısı, derleme/test logları ve olay zaman çizelgesi. API anahtarları ve parolalar maskelenir."
+"Failure report (ZIP)": "Hata raporu (ZIP)"

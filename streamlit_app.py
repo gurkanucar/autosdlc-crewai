@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 from autosdlc.auth import auth_enabled, password_matches
 from autosdlc.crewai_engine import CrewAIEngine
-from autosdlc.exports import export_files, export_zip, project_zip
+from autosdlc.exports import diagnostics_zip, export_files, export_zip, project_zip
 from autosdlc.desktop import open_folder
 from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
 from autosdlc.intake import applies, choice_label, default_delivery, question_text, templates, questions, validate_decisions
@@ -1020,6 +1020,12 @@ def header(db: History, row: dict) -> None:
                 st.download_button(label, lambda kind=kind: export_zip(Path(row["project_dir"]), Path(row["output_dir"]), kind),
                                    file_name=f"{run_id}-{kind}.zip", mime="application/zip", icon=":material/download:",
                                    key=f"bundle_{run_id}_{kind}", width="stretch", on_click="ignore")
+            st.markdown("**" + t("Diagnostics") + "**")
+            st.caption(t("Where and why the run broke: the error traceback, every model call, build/test logs and the event timeline. API keys and passwords are masked."))
+            st.download_button(t("Failure report (ZIP)"), lambda: diagnostics_zip(db.get(run_id), db.changes(run_id), db.iterations(run_id)),
+                               file_name=f"{run_id}-diagnostics.zip", mime="application/zip", icon=":material/bug_report:",
+                               key=f"diagnostics_{run_id}", width="stretch", on_click="ignore",
+                               type="primary" if row["status"] == "failed" else "secondary")
             if readme_path.is_file():
                 st.download_button("README.md", lambda: readme_path.read_bytes(), file_name="README.md", mime="text/markdown",
                                    key=f"readme_download_{run_id}", width="stretch", on_click="ignore")

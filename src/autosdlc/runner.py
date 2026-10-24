@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
 import unicodedata
 from dataclasses import dataclass
@@ -29,7 +30,7 @@ from .files import write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
 from .sections import NO_CHANGE, NO_CHANGE_TOKENS, apply_patch
-from .storage import History
+from .storage import History, now
 from .traceability import build_matrix
 
 
@@ -419,6 +420,8 @@ class RunSession:
         self._live_written = 0.0
         if hasattr(engine, "output_listener"):
             engine.output_listener = self._live_output
+        if hasattr(getattr(engine, "llm", None), "call_log"):
+            engine.llm.call_log = self._log_call
         if resume:
             self._load_checkpoint(existing)
             if not self.history.resume(self.run_id):
@@ -472,6 +475,23 @@ class RunSession:
             (live_dir / f"{stage}.md").write_text(text, encoding="utf-8")
         except OSError:
             pass  # The live view is only a convenience; a write can collide while the UI reads the file.
+
+    def _log_call(self, record: dict) -> None:
+        """One line per model request attempt, so a failure report shows which call failed and how."""
+        try:
+            with open(self.output_dir / "llm_calls.jsonl", "a", encoding="utf-8") as log:
+                log.write(json.dumps({"time": now(), **record}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def record_failure(self, exc: BaseException) -> None:
+        """Keeps the full traceback next to the run; the history only stores the one-line message."""
+        try:
+            with open(self.output_dir / "failure.txt", "a", encoding="utf-8") as report:
+                report.write(f"=== {now()} · attempts {self.attempts} · {type(exc).__name__}\n")
+                report.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)) + "\n")
+        except OSError:
+            pass
 
     def _check_pause(self) -> None:
         if self.history.pause_requested(self.run_id):
@@ -1318,6 +1338,7 @@ def run_project(
     except RunPaused:
         return session.pause()
     except Exception as exc:
+        session.record_failure(exc)
         session._event("workflow", "failed", str(exc))
         return session.result(error=str(exc))
     finally:
