@@ -70,6 +70,8 @@ STAGE_INPUTS = {
 }
 # Seconds the package command may run: release builds of GUI crates for several targets are slow on a small server.
 PACKAGE_TIMEOUT = 1800
+# Fix rounds the compile check may ask for before the test attempts; they do not count as test attempts.
+BUILD_FIXES = 2
 
 
 @dataclass
@@ -116,6 +118,59 @@ def _stop_process(process: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+
+
+def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, timeout: int) -> tuple[str, int | None]:
+    """Runs a build command with its output in a file; the code is None when it could not start or timed out.
+
+    The command runs in its own process group: on a timeout the compilers it started are stopped too, and nothing
+    waits for pipes that a leftover child still holds open (cargo -> rustc, sh build.sh -> go build).
+    """
+    log.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with log.open("w", encoding="utf-8") as log_file:
+            process = subprocess.Popen(command, cwd=cwd, env=env, stdout=log_file, stderr=subprocess.STDOUT,
+                                       start_new_session=os.name != "nt")
+    except OSError as exc:
+        return str(exc), None
+    try:
+        code = process.wait(timeout=timeout)
+        return _tail(log, 20_000), code
+    except subprocess.TimeoutExpired:
+        _stop_process(process)
+        return f"timed out after {timeout} seconds\n{_tail(log, 2500)}", None
+
+
+def _project_files(project_dir: Path, suffixes: set[str]) -> list[str]:
+    """The project's own source files with these suffixes; dependencies, build outputs and hidden folders are left out."""
+    found = []
+    for path in sorted(project_dir.rglob("*")):
+        relative = path.relative_to(project_dir)
+        folders = relative.parts[:-1]
+        if path.suffix in suffixes and path.is_file() and not any(part in SNAPSHOT_SKIP or part.startswith(".") for part in folders):
+            found.append(relative.as_posix())
+    return found
+
+
+def compile_commands(project_dir: Path) -> list[list[str]]:
+    """Commands that only build or parse the project and its tests, without running them. Rust and Go reuse the build
+    cache for the test run that follows; for Python, Node.js and shell this is a syntax check."""
+    commands = []
+    if (project_dir / "Cargo.toml").is_file():
+        # --all-features: a GUI behind an optional feature is otherwise compiled only by the release build.
+        commands.append(["cargo", "test", "--no-run", "--all-features"])
+    if (project_dir / "go.mod").is_file():
+        commands.append(["go", "test", "-count=1", "-run", "^$", "./..."])
+    tsc = project_dir / "node_modules" / ".bin" / "tsc"
+    if (project_dir / "tsconfig.json").is_file() and (tsc.is_file() or tsc.with_suffix(".cmd").is_file()):
+        commands.append(["node_modules/.bin/tsc", "--noEmit"])
+    else:
+        commands += [["node", "--check", name] for name in _project_files(project_dir, {".js", ".mjs", ".cjs"})]
+    python_files = _project_files(project_dir, {".py"})
+    if python_files:
+        commands.append(["python", "-m", "py_compile", *python_files])
+    commands += [["sh", "-n", name] for name in _project_files(project_dir, {".sh"})]
+    return commands
 
 
 # Lines of the impact analysis's open-questions section: the request is not applied until the user answers them.
@@ -343,6 +398,8 @@ class RunSession:
         self.python_executable = sys.executable
         self.attempts = 0
         self.test_passed = False
+        # Executables were asked for (binary delivery) but none could be built; the project then fails.
+        self.package_failed = False
         self.last_test_output = ""
         # Outcome of building the executables of a binary delivery; the deployment agent documents it.
         self.package_report = ""
@@ -769,6 +826,8 @@ class RunSession:
         )
 
     def testing(self) -> str:
+        # The Test Agent writes against code that compiles, and a compile error does not use up a test attempt.
+        self._fix_build(with_tests=False)
         self._event("testing", "started")
         existing = self._test_files_on_disk() if self.change else {}
         if existing:
@@ -803,6 +862,8 @@ class RunSession:
         self.test_files = tests
         if hasattr(self.engine, "current_files"):
             self.engine.current_files.update(tests)
+        self._fix_build(with_tests=True)
+        tests = self.test_files
         missing = uncovered_tests(self.manifest, list(tests))
         if missing:
             # A test that does not run must not look like a pass: it is stated clearly in the report and the events.
@@ -828,39 +889,10 @@ class RunSession:
                 break
             if number <= self.max_repairs and failure_is_in_tests(output):
                 # The error is in the Test Agent's own files; the developer is not allowed to touch them, so the author repairs them.
-                self._event("testing", "tests_repair_started", f"from test attempt {number}")
-                fixed = self._with_questions("testing", lambda: self.engine.tests(
-                    self.idea, self._context("testing"), {**self.code_files, **self._test_files_on_disk()}, feedback=output
-                ))
-                fixed = {name: content for name, content in fixed.items() if name.startswith(TEST_DIRS)}
-                if fixed:
-                    write_generated_files(self.project_dir, fixed)
-                    tests = {**tests, **fixed}
-                    self.test_files = tests
-                    if hasattr(self.engine, "current_files"):
-                        self.engine.current_files.update(fixed)
-                    self._event("testing", "tests_repaired", ", ".join(fixed))
+                if self._repair_tests(output, f"from test attempt {number}"):
                     continue
             if number <= self.max_repairs:
-                self._event("development", "repair_started", f"from test attempt {number}")
-                replacements = self._with_questions("development", lambda: self.engine.code(
-                    self.idea, self._context("development"), feedback=output
-                ))
-                # The tests belong to the Test Agent; the developer cannot make them pass by changing them.
-                rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
-                replacements = self._without_docs({name: content for name, content in replacements.items() if name not in rejected})
-                if hasattr(self.engine, "current_files"):
-                    self.engine.current_files.update(tests)
-                if rejected:
-                    self._event("development", "tests_protected", ", ".join(rejected))
-                if not replacements:
-                    continue
-                write_generated_files(self.project_dir, replacements)
-                self.code_files.update(replacements)
-                self._save_code_files()
-                self._load_manifest()
-                self.setup_done = False
-                self._event("development", "repair_completed", ", ".join(replacements))
+                self._repair_code(output, f"from test attempt {number}")
         summary = "PASSED" if self.test_passed else "FAILED"
         report = f"# {self._t('Test report')}\n\n" + self._t(
             "Result: **{summary}** ({attempts} attempts).", summary=self._t(summary), attempts=self.attempts) + "\n\n"
@@ -873,8 +905,84 @@ class RunSession:
         self._write_doc("test_report.md", report)
         return self._t(summary)
 
-    def _run_checks(self, env: dict[str, str]) -> tuple[str, int]:
-        """Execute stack-specific commands from the validated project manifest."""
+    def _repair_tests(self, output: str, reason: str) -> bool:
+        """The Test Agent fixes its own files from the failure output; False when it returned no test file."""
+        self._event("testing", "tests_repair_started", reason)
+        fixed = self._with_questions("testing", lambda: self.engine.tests(
+            self.idea, self._context("testing"), {**self.code_files, **self._test_files_on_disk()}, feedback=output
+        ))
+        fixed = {name: content for name, content in fixed.items() if name.startswith(TEST_DIRS)}
+        if not fixed:
+            return False
+        write_generated_files(self.project_dir, fixed)
+        self.test_files = {**self.test_files, **fixed}
+        if hasattr(self.engine, "current_files"):
+            self.engine.current_files.update(fixed)
+        self._event("testing", "tests_repaired", ", ".join(fixed))
+        return True
+
+    def _repair_code(self, output: str, reason: str) -> bool:
+        """The Development Agent fixes the application from the failure output; False when nothing was changed."""
+        self._event("development", "repair_started", reason)
+        replacements = self._with_questions("development", lambda: self.engine.code(
+            self.idea, self._context("development"), feedback=output
+        ))
+        # The tests belong to the Test Agent; the developer cannot make them pass by changing them.
+        rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
+        replacements = self._without_docs({name: content for name, content in replacements.items() if name not in rejected})
+        if hasattr(self.engine, "current_files"):
+            self.engine.current_files.update(self.test_files)
+        if rejected:
+            self._event("development", "tests_protected", ", ".join(rejected))
+        if not replacements:
+            return False
+        write_generated_files(self.project_dir, replacements)
+        self.code_files.update(replacements)
+        self._save_code_files()
+        self._load_manifest()
+        self.setup_done = False
+        self._event("development", "repair_completed", ", ".join(replacements))
+        return True
+
+    def _fix_build(self, with_tests: bool) -> None:
+        """Compile-only check before the test attempts: a compile error goes back to its author (the developer, or the
+        Test Agent for its own files) without using up a test attempt. What is still broken after BUILD_FIXES rounds
+        is left to the test attempts, which report it."""
+        stage = "testing" if with_tests else "development"
+        failed = False
+        for round_number in range(BUILD_FIXES + 1):
+            output, code = self._compile_check(self._test_env())
+            if code == 0:
+                if failed:
+                    self._event(stage, "build_fixed", f"after {round_number} fix(es)")
+                return
+            failed = True
+            self._event(stage, "build_failed", output[-300:])
+            if round_number == BUILD_FIXES:
+                return
+            reason = "from the compile check"
+            if with_tests and failure_is_in_tests(output):
+                if not self._repair_tests(output, reason):
+                    return
+            elif not self._repair_code(output, reason):
+                return
+
+    def _compile_check(self, env: dict[str, str]) -> tuple[str, int]:
+        """Runs setup, then the commands that only build or parse the code; ("", 0) when nothing can be checked."""
+        output, code = self._run_checks(env, keys=("setup",))
+        if code:
+            return output, code
+        log = self.output_dir / "tmp" / "compile.log"
+        for command in compile_commands(self.project_dir):
+            output, code = _run_logged(self._command(command, env), self.project_dir, env, log, timeout=600)
+            if code is None:
+                continue  # the toolchain is missing or too slow here; the test commands report it themselves
+            if code:
+                return f"[build failed] {' '.join(command)} (exit {code})\n{output}", code
+        return "", 0
+
+    def _run_checks(self, env: dict[str, str], keys: tuple[str, ...] = ("setup", "unit_test", "api_test", "ui_test")) -> tuple[str, int]:
+        """Execute stack-specific commands from the validated project manifest (only those in keys)."""
         env["PYTHONPATH"] = str(self.project_dir)
         temp_dir = self.output_dir / "tmp"
         temp_dir.mkdir(exist_ok=True)
@@ -893,7 +1001,7 @@ class RunSession:
             self.python_executable = str(venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
         commands = [(label, self.manifest[key]) for label, key in
                     (("Setup", "setup"), ("Unit", "unit_test"), ("API", "api_test"), ("UI", "ui_test"))
-                    if self.manifest.get(key) and (key != "setup" or not self.setup_done)]
+                    if key in keys and self.manifest.get(key) and (key != "setup" or not self.setup_done)]
         logs = []
         server_log = temp_dir / "server.log"
         for label, command in commands:
@@ -951,7 +1059,9 @@ class RunSession:
     def _package(self) -> None:
         """Binary delivery: runs the manifest's package command once the tests pass and lists what landed in dist/.
 
-        A failure is reported, not fatal: the tests decide whether the project succeeded.
+        The release build can compile code the tests never did (a GUI behind a cargo feature, a //go:build windows
+        file), so a failed build goes back to the developer, the tests run again and the build is retried. When the
+        user asked for executables and none can be built, the project fails: passing tests are not the deliverable.
         """
         if self.decisions["delivery"] != "binary":
             return
@@ -966,39 +1076,43 @@ class RunSession:
             self._event("deployment", "package_unavailable", "no package command in project.yaml")
             return
         dist = self.project_dir / "dist"
-        # dist/ only ever holds build outputs; executables of an older version must not be offered as current.
-        shutil.rmtree(dist, ignore_errors=True)
-        env = self._test_env()
-        self._event("deployment", "package_started", " ".join(command))
-        temp_dir = self.output_dir / "tmp"
-        temp_dir.mkdir(exist_ok=True)
-        build_log = temp_dir / "package.log"
-        try:
-            # The output goes to a file and the build runs in its own process group: on a timeout the compilers the
-            # script started are stopped too, and nothing waits for pipes that a leftover child still holds open.
-            with build_log.open("w", encoding="utf-8") as log_file:
-                process = subprocess.Popen(self._command(command, env), cwd=self.project_dir, env=env, stdout=log_file,
-                                           stderr=subprocess.STDOUT, start_new_session=os.name != "nt")
-            try:
-                code = process.wait(timeout=PACKAGE_TIMEOUT)
-                output = _tail(build_log, 3000)
-            except subprocess.TimeoutExpired:
-                _stop_process(process)
-                code, output = -1, f"the build timed out after {PACKAGE_TIMEOUT} seconds\n{_tail(build_log, 2500)}"
-        except OSError as exc:
-            output, code = str(exc), -1
-        artifacts = sorted(path.relative_to(dist).as_posix() for path in dist.rglob("*") if path.is_file()) if dist.is_dir() else []
-        if code == 0 and artifacts:
-            self.package_report = "Executables built into dist/: " + ", ".join(artifacts)
-            self._event("deployment", "packaged", ", ".join(artifacts))
-        else:
+        for round_number in range(BUILD_FIXES + 1):
+            # dist/ only ever holds build outputs; executables of an older version must not be offered as current.
+            shutil.rmtree(dist, ignore_errors=True)
+            env = self._test_env()
+            command = self.manifest.get("package") or command
+            self._event("deployment", "package_started", " ".join(command))
+            output, code = _run_logged(self._command(command, env), self.project_dir, env,
+                                       self.output_dir / "tmp" / "package.log", timeout=PACKAGE_TIMEOUT)
+            timed_out = code is None
+            output, code = output[-3000:], -1 if timed_out else code
+            artifacts = sorted(path.relative_to(dist).as_posix() for path in dist.rglob("*") if path.is_file()) if dist.is_dir() else []
+            if code == 0 and artifacts:
+                self.package_report = "Executables built into dist/: " + ", ".join(artifacts)
+                self._event("deployment", "packaged", ", ".join(artifacts))
+                return
             self.package_report = f"Packaging failed (exit {code}); no executables are available.\n{output}"
             self._event("deployment", "package_failed", f"exit {code}: {output[-300:]}")
+            # A timeout is not a code error the developer could fix.
+            if timed_out or round_number == BUILD_FIXES or not self._repair_code(
+                    f"THE RELEASE BUILD (`{' '.join(command)}`) FAILED, NO EXECUTABLE WAS PRODUCED:\n{output}",
+                    "from the packaging build"):
+                break
+            # The fix must not break what the tests verified.
+            test_output, test_code = self._run_checks(self._test_env())
+            self._event("testing", "passed" if test_code == 0 else "failed", "after the packaging fix")
+            if test_code:
+                self.test_passed = False
+                self.last_test_output = test_output
+                break
+        self.package_failed = True
 
     def maintenance(self) -> str:
         return self._document("maintenance", "maintenance_report.md")
 
     def result(self, error: str | None = None) -> RunResult:
+        if self.package_failed and not error:
+            error = "The executables could not be built: " + self.package_report[:1500]
         status = "failed" if error or not self.test_passed else "completed"
         if self.change:
             self._close_change(status, error)

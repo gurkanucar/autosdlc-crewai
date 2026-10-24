@@ -330,3 +330,7 @@
 "🔨 Building the executables ({detail}); this can take several minutes.": "🔨 Çalıştırılabilir dosyalar derleniyor ({detail}); bu birkaç dakika sürebilir."
 "Platforms": "Platformlar"
 "All": "Tümü"
+"Does not compile": "Derlenmiyor"
+"Compiles": "Derleniyor"
+"🧱 The code does not compile yet; it goes back to its author before the tests run (this does not use up a test attempt).": "🧱 Kod henüz derlenmiyor; testler çalışmadan önce yazarına geri gidiyor (test deneme hakkından düşmez)."
+"✅ The code compiles now ({detail}).": "✅ Kod artık derleniyor ({detail})."

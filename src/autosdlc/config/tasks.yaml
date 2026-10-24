@@ -144,6 +144,10 @@ development:
       Node.js: exported functions in src/ modules; the CLI entry file only reads arguments and calls them, and
         importing a module must have no side effects.
       Python: importable modules; guard the entry point with if __name__ == "__main__".
+    The tests and the release build must compile the same code: never put application code or a dependency behind
+    an optional cargo feature, a build flag or a build tag the test build leaves out (the only exception is the
+    window file of a Go desktop app with its stub, described below). The package manager installs the newest
+    version of a library, whose API may differ from the one you remember; write code for that current API.
     Never pin dependency versions from memory (an invented version breaks the build). Let the package manager
     resolve them in the setup command: Go [go, mod, tidy] with a go.mod that has no require lines; Rust
     [cargo, add, <crate>]; Node.js [npm, install, <package>]; Python [python, -m, pip, install, <package>].

@@ -31,6 +31,7 @@ class CliEngine:
     def __init__(self, package: str | None = "[python, build.py]", build: str = BUILD_SCRIPT):
         self.package = package
         self.build = build
+        self.feedback = []
 
     def document(self, stage: str, idea: str, context: str) -> str:
         if stage == "analysis":
@@ -42,6 +43,7 @@ class CliEngine:
         return f"# {stage}\n\n{context[-400:]}\n"
 
     def code(self, idea: str, docs: str, feedback: str | None = None) -> dict[str, str]:
+        self.feedback.append(feedback)
         manifest = "unit_test: [python, -m, pytest, -q, tests]\n" + (f"package: {self.package}\n" if self.package else "")
         return {"calc.py": "def add(a, b):\n    return a + b\n", "build.py": self.build, "project.yaml": manifest}
 
@@ -126,17 +128,40 @@ def test_packaging_timeout_stops_the_whole_build(tmp_path, monkeypatch):
     monkeypatch.setattr(autosdlc.runner, "PACKAGE_TIMEOUT", 2)
     build = "import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\nimport time\ntime.sleep(60)\n"
     started = time.monotonic()
-    result, events = _run(tmp_path, monkeypatch, CliEngine(build=build), "binary")
-    assert result.status == "completed", result.error
+    engine = CliEngine(build=build)
+    result, events = _run(tmp_path, monkeypatch, engine, "binary")
+    assert result.status == "failed"
     assert "timed out" in events[("deployment", "package_failed")]
     assert time.monotonic() - started < 40
+    # A timeout is not a code error: the developer is not asked to fix it.
+    assert engine.feedback == [None]
 
 
-def test_failed_packaging_does_not_fail_the_project(tmp_path, monkeypatch):
-    result, events = _run(tmp_path, monkeypatch, CliEngine(build="raise SystemExit('no cross compiler')\n"), "binary")
-    assert result.status == "completed", result.error
+def test_packaging_that_cannot_be_fixed_fails_the_project(tmp_path, monkeypatch):
+    # The user asked for executables; passing tests without them is not a finished project.
+    engine = CliEngine(build="raise SystemExit('error: could not compile `todo` (bin \"todo\")')\n")
+    result, events = _run(tmp_path, monkeypatch, engine, "binary")
+    assert result.status == "failed"
+    assert "executables could not be built" in result.error
     assert events[("deployment", "package_failed")].startswith("exit 1")
+    assert sum("RELEASE BUILD" in (feedback or "") for feedback in engine.feedback) == 2
     assert "No executables were built." in (result.project_dir / "README.md").read_text(encoding="utf-8")
+
+
+def test_a_failed_release_build_goes_back_to_the_developer(tmp_path, monkeypatch):
+    class FixableBuild(CliEngine):
+        def code(self, idea, docs, feedback=None):
+            files = super().code(idea, docs, feedback)
+            if not (feedback and "RELEASE BUILD" in feedback):
+                files["build.py"] = "raise SystemExit('src/main.rs:52:5: method `update` is not a member of trait')\n"
+            return files
+
+    engine = FixableBuild()
+    result, events = _run(tmp_path, monkeypatch, engine, "binary")
+    assert result.status == "completed", result.error
+    assert "src/main.rs:52:5" in engine.feedback[-1]
+    assert events[("deployment", "packaged")] == "calc-linux-amd64, calc-windows-amd64.exe"
+    assert events[("testing", "passed")] == "after the packaging fix"
 
 
 def test_binary_without_package_command_is_reported(tmp_path, monkeypatch):
