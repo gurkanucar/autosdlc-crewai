@@ -33,7 +33,7 @@
       src/main.rs. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: calculator-desktop-python
   title: Calculator app (Python, desktop window)
-  description: A small desktop calculator with a window and buttons; starts with a double click on run.bat.
+  description: A small desktop calculator with a window and buttons; starts with a double click on run.bat (Python must be installed).
   idea: 'A desktop calculator app with a window: a display, the digit buttons, plus, minus, multiply and divide buttons,
     a clear button and an equals button. Dividing by zero shows "Error" on the display instead of crashing.'
   decisions:
@@ -65,7 +65,7 @@
       net/http/httptest. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: timer-desktop-python
   title: Focus timer (Python, desktop window)
-  description: A small Pomodoro-style timer window with start, pause and reset; starts with a double click on run.bat.
+  description: A small Pomodoro-style timer window with start, pause and reset; starts with a double click on run.bat (Python must be installed).
   idea: 'A small focus timer desktop app: a window shows a 25-minute countdown with start, pause and reset buttons. When
     the time is up the window says so and plays a short sound. The length can be changed between 1 and 60 minutes.'
   decisions:
@@ -80,7 +80,7 @@
       every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: calculator-cli
   title: Calculator (Python, CLI)
-  description: A command-line calculator for the four basic operations; run.sh/run.bat launchers, short documents.
+  description: A command-line calculator for the four basic operations; run.sh/run.bat launchers (Python must be installed).
   idea: 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication
     and division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
     code.'

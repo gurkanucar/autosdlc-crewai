@@ -1,6 +1,6 @@
 """Code that does not compile is fixed before the test attempts start, so it never uses up a test attempt."""
 
-from autosdlc.runner import compile_commands, run_project
+from autosdlc.runner import compile_commands, run_project, with_display
 from autosdlc.storage import History
 
 
@@ -31,6 +31,18 @@ def test_compile_commands_prefer_tsc_for_typescript(tmp_path):
     (tmp_path / "node_modules" / ".bin" / "tsc").write_text("", encoding="utf-8")
     (tmp_path / "index.ts").write_text("export {}\n", encoding="utf-8")
     assert compile_commands(tmp_path) == [["node_modules/.bin/tsc", "--noEmit"]]
+
+
+def test_tests_get_a_virtual_display_on_a_linux_server(monkeypatch):
+    # A desktop app's test that opens a window anyway must not fail with "no display" on the server.
+    monkeypatch.setattr("autosdlc.runner.shutil.which", lambda name, path=None: "/usr/bin/xvfb-run")
+    command = ["python", "-m", "pytest", "-q", "tests"]
+    assert with_display(command, {}, "linux") == ["/usr/bin/xvfb-run", "-a", *command]
+    # A real display, another system or a missing xvfb-run leaves the command as it is.
+    assert with_display(command, {"DISPLAY": ":0"}, "linux") == command
+    assert with_display(command, {}, "win32") == command
+    monkeypatch.setattr("autosdlc.runner.shutil.which", lambda name, path=None: None)
+    assert with_display(command, {}, "linux") == command
 
 
 class CompileEngine:

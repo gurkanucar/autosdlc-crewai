@@ -19,8 +19,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 # git and a C compiler: Go modules fetched from git, native npm addons and cgo (e.g. go-sqlite3).
 # mingw-w64 is the linker Rust needs to cross-compile Windows .exe files (Go needs nothing extra).
+# libtk8.6: the image's Python ships the tkinter module but not the Tk library it loads, so a desktop app's tests
+# could not even import tkinter. xvfb/xauth: the tests run under a virtual display (xvfb-run), so a test that opens a
+# window does not fail with "no display"; fonts-dejavu-core gives those windows a font. zip/unzip: build scripts often
+# zip the dist/ folder.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git build-essential ca-certificates gcc-mingw-w64-x86-64 \
+    && apt-get install -y --no-install-recommends git build-essential ca-certificates gcc-mingw-w64-x86-64 libtk8.6 \
+       xvfb xauth fonts-dejavu-core zip unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js, npm and pnpm. Only node and npm are copied: /usr/local also holds Python in this image.

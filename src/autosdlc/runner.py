@@ -141,6 +141,15 @@ def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, t
         return f"timed out after {timeout} seconds\n{_tail(log, 2500)}", None
 
 
+def with_display(command: list[str], env: dict[str, str], platform: str = sys.platform) -> list[str]:
+    """On a Linux server without a screen the test command runs under a virtual display (xvfb-run), so a desktop
+    app's test that opens a window anyway fails on its own merits, not with "no display"."""
+    if not platform.startswith("linux") or env.get("DISPLAY"):
+        return command
+    xvfb_run = shutil.which("xvfb-run", path=env.get("PATH"))
+    return [xvfb_run, "-a", *command] if xvfb_run else command
+
+
 def _project_files(project_dir: Path, suffixes: set[str]) -> list[str]:
     """The project's own source files with these suffixes; dependencies, build outputs and hidden folders are left out."""
     found = []
@@ -1024,7 +1033,10 @@ class RunSession:
                         if time.monotonic() > deadline:
                             return "\n".join(logs + ["The application server did not start within 60 seconds", _tail(server_log)]), -1
                         time.sleep(0.2)
-                process = subprocess.run(self._command(command, env), cwd=self.project_dir, env=env, capture_output=True, text=True, timeout=300, check=False)
+                resolved = self._command(command, env)
+                if label != "Setup":
+                    resolved = with_display(resolved, env)
+                process = subprocess.run(resolved, cwd=self.project_dir, env=env, capture_output=True, text=True, timeout=300, check=False)
                 logs.append(f"### {label} tests (exit {process.returncode})\n{process.stdout}\n{process.stderr}"[-20_000:])
                 if process.returncode:
                     if server is not None:
@@ -1200,7 +1212,9 @@ class RunSession:
                     + "\n".join(f"- `dist/{name}`" for name in files)) if files else self._t("No executables were built.")
             return f"## {self._t('Executables')}\n\n{body}\n\n{guide}"
         if delivery == "script":
-            return f"## {self._t('How to run')}\n\n" + self._t("Run `./run.sh` on Linux/macOS or `run.bat` on Windows.") + f"\n\n{guide}"
+            return (f"## {self._t('How to run')}\n\n" + self._t("Run `./run.sh` on Linux/macOS or `run.bat` on Windows.") + " "
+                    + self._t("The launchers run the source code, so the language runtime (e.g. Python or Node.js) must be "
+                              "installed on the computer.") + f"\n\n{guide}")
         return guide
 
 

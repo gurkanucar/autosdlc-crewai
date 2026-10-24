@@ -12,8 +12,8 @@ Python 3.12, pytest: Python 3.12, pytest
 : 'Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü ve tests/ altında tek test dosyası. Bütün
   SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Calculator (Python, CLI): Hesap makinesi (Python, CLI)
-A command-line calculator for the four basic operations; run.sh/run.bat launchers, short documents.: Dört işlem yapan komut
-  satırı hesap makinesi; run.sh/run.bat başlatıcıları, kısa belgeler.
+A command-line calculator for the four basic operations; run.sh/run.bat launchers (Python must be installed).: Dört işlem
+  yapan komut satırı hesap makinesi; run.sh/run.bat başlatıcıları (Python kurulu olmalı).
 ? 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication and division.
   Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero code.'
 : 'Dört işlem yapan komut satırı hesap makinesi: toplama, çıkarma, çarpma ve bölme. Kullanım: calc 6 / 3 çıktısı 2 olsun.
@@ -57,8 +57,9 @@ Rust (stable), eframe/egui, serde_json: Rust (stable), eframe/egui, serde_json
   çağırır. Testler geçici dosyalar kullanır ve hiç pencere açmaz. En az dosya: Cargo.toml, src/lib.rs, src/main.rs. Bütün
   SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Focus timer (Python, desktop window): Odak zamanlayıcı (Python, masaüstü penceresi)
-A small Pomodoro-style timer window with start, pause and reset; starts with a double click on run.bat.: Başlat, duraklat
-  ve sıfırla düğmeli küçük bir Pomodoro tarzı zamanlayıcı penceresi; run.bat'a çift tıklayarak açılır.
+? A small Pomodoro-style timer window with start, pause and reset; starts with a double click on run.bat (Python must be installed).
+: Başlat, duraklat ve sıfırla düğmeli küçük bir Pomodoro tarzı zamanlayıcı penceresi; run.bat'a çift tıklayarak açılır (Python
+  kurulu olmalı).
 ? 'A small focus timer desktop app: a window shows a 25-minute countdown with start, pause and reset buttons. When the time
   is up the window says so and plays a short sound. The length can be changed between 1 and 60 minutes.'
 : 'Küçük bir odak zamanlayıcı masaüstü uygulaması: pencerede başlat, duraklat ve sıfırla düğmeleriyle 25 dakikalık bir geri
@@ -75,8 +76,8 @@ Python 3.12, tkinter, pytest: Python 3.12, tkinter, pytest
   ekransız çalışır. En az dosya: timer.py (mantık), app.py (pencere), run.bat, run.sh. Bütün SDLC belgeleri kısa olsun (her
   biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Calculator app (Python, desktop window): Hesap makinesi uygulaması (Python, masaüstü penceresi)
-A small desktop calculator with a window and buttons; starts with a double click on run.bat.: Pencereli ve düğmeli küçük masaüstü
-  hesap makinesi; run.bat'a çift tıklayarak açılır.
+A small desktop calculator with a window and buttons; starts with a double click on run.bat (Python must be installed).: Pencereli
+  ve düğmeli küçük masaüstü hesap makinesi; run.bat'a çift tıklayarak açılır (Python kurulu olmalı).
 ? 'A desktop calculator app with a window: a display, the digit buttons, plus, minus, multiply and divide buttons, a clear
   button and an equals button. Dividing by zero shows "Error" on the display instead of crashing.'
 : 'Pencereli bir masaüstü hesap makinesi uygulaması: bir ekran, rakam düğmeleri, artı, eksi, çarpı ve bölü düğmeleri, bir
