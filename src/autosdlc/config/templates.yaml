@@ -27,6 +27,19 @@
     constraints: 'Use no external dependencies; standard library only. Fewest files: one source module, a single
       test file under tests/, project.yaml and a Dockerfile. Keep every SDLC document short (at most half a page
       each); write at most 3 FRs and 2 NFRs.'
+- id: calculator-cli-go
+  title: Calculator (Go, CLI)
+  description: A lightweight command-line calculator for the four basic operations; no dependencies, builds and tests in seconds.
+  idea: 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication
+    and division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
+    code.'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: Go 1.24, standard library, go test
+    constraints: 'Use the Go standard library only (no go get); go.mod declares no dependencies and no setup command
+      is needed. Fewest files: main.go, calc.go with the pure calculation functions, calc_test.go, project.yaml and
+      a Dockerfile. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: inventory-tracker
   title: Inventory tracker (Node.js, fullstack)
   description: A simple web application that keeps stock records with product name, category and location.

@@ -35,7 +35,7 @@ from autosdlc.runner import (
 from autosdlc.sections import (
     delete_section, insert_after, replace_section, split_sections, strip_fences, unified_diff,
 )
-from autosdlc.storage import History
+from autosdlc.storage import TITLE_LIMIT, History, project_title
 from autosdlc.ui_jobs import WORKER_ERRORS
 
 
@@ -945,7 +945,26 @@ def header(db: History, row: dict) -> None:
     run_id = row["id"]
     title, status = st.columns([8, 1.5], vertical_alignment="center")
     with title:
-        st.markdown(f'<div class="project-title" role="heading" aria-level="1">{escape(row["idea"])}</div>', unsafe_allow_html=True)
+        rename_key = f"renaming_{run_id}"
+        if st.session_state.get(rename_key):
+            with st.form(f"rename_form_{run_id}", border=False):
+                name = st.text_input(t("Project name"), project_title(row), max_chars=TITLE_LIMIT, label_visibility="collapsed",
+                                     help=t("Leave it empty to show the project idea instead."))
+                save, cancel = st.columns(2)
+                saved = save.form_submit_button(t("Save"), type="primary", width="stretch")
+                cancelled = cancel.form_submit_button(t("Cancel"), width="stretch")
+            if saved or cancelled:
+                if saved:
+                    # An unchanged name stays unset, so the title keeps following the idea.
+                    db.rename(run_id, "" if name.strip() == row["idea"] and not row.get("title") else name)
+                st.session_state.pop(rename_key)
+                st.rerun()
+        else:
+            text, edit = st.columns([20, 1], vertical_alignment="center")
+            text.markdown(f'<div class="project-title" role="heading" aria-level="1">{escape(project_title(row))}</div>', unsafe_allow_html=True)
+            if edit.button("", icon=":material/edit:", key=f"rename_{run_id}", help=t("Rename project"), type="tertiary"):
+                st.session_state[rename_key] = True
+                st.rerun()
         # The full path spreads the header over several lines; only the folder name (the full path is in the README view and Manage menu).
         iterations = db.iterations(run_id)
         version = iteration_label(db, run_id, iterations[-1]) if iterations else t("no version yet")
@@ -1088,7 +1107,7 @@ def projects_page() -> None:
         if items:
             if st.session_state.get("selected_run") not in ids:
                 st.session_state["selected_run"] = ids[0]
-            labels = {item["id"]: f"{STATUS_LABELS.get(item['status'], ('⚪',))[0]} {item['idea'][:42]}" for item in items}
+            labels = {item["id"]: f"{STATUS_LABELS.get(item['status'], ('⚪',))[0]} {project_title(item)[:42]}" for item in items}
             st.radio(t("Project"), ids, key="selected_run", format_func=lambda run_id: labels[run_id], label_visibility="collapsed")
     if starting and starting not in ids:
         # A short waiting screen until the worker thread creates the record.

@@ -11,6 +11,14 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+TITLE_LIMIT = 120
+
+
+def project_title(row: dict) -> str:
+    """What the UI calls a project: its display name, or the idea when no name was set."""
+    return row.get("title") or row["idea"]
+
+
 class History:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -80,6 +88,8 @@ class History:
                 db.execute("ALTER TABLE runs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0")
             if "heartbeat_at" not in columns:
                 db.execute("ALTER TABLE runs ADD COLUMN heartbeat_at TEXT")
+            if "title" not in columns:
+                db.execute("ALTER TABLE runs ADD COLUMN title TEXT")
             change_columns = {row[1] for row in db.execute("PRAGMA table_info(changes)")}
             if "clarifications" not in change_columns:
                 db.execute("ALTER TABLE changes ADD COLUMN clarifications TEXT")
@@ -198,6 +208,14 @@ class History:
     def update_idea(self, run_id: str, idea: str) -> None:
         with self._connect() as db:
             db.execute("UPDATE runs SET idea=? WHERE id=? AND status != 'running'", (idea, run_id))
+
+    def rename(self, run_id: str, title: str) -> None:
+        """Sets the display name; an empty name goes back to showing the idea. Allowed while running: agents never read it."""
+        title = title.strip()
+        if len(title) > TITLE_LIMIT:
+            raise ValueError(f"The project name must be at most {TITLE_LIMIT} characters")
+        with self._connect() as db:
+            db.execute("UPDATE runs SET title=? WHERE id=?", (title or None, run_id))
 
     def delete_record(self, run_id: str) -> None:
         with self._connect() as db:

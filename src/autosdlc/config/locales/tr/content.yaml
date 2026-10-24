@@ -79,3 +79,12 @@ Should the backend project have a web UI?: Backend projesinde web UI olsun mu?
 : Proje ölçeği nedir? Küçük projede belgeler kısa tutulur ve inceleme yalnızca kritik bulguda tasarımı geri gönderir.
 In which language should the agents write the documents?: Ajanlar belgeleri hangi dilde yazsın?
 Are there any other technical or product constraints?: Başka teknik veya ürün kısıtları var mı?
+Calculator (Go, CLI): Hesap makinesi (Go, CLI)
+"A lightweight command-line calculator for the four basic operations; no dependencies, builds and tests in seconds.": "Dört işlem yapan hafif bir komut satırı hesap makinesi; bağımlılık yok, saniyeler içinde derlenir ve test edilir."
+Go 1.24, standard library, go test: Go 1.24, standard library, go test
+? 'Use the Go standard library only (no go get); go.mod declares no dependencies and no setup command is needed. Fewest
+  files: main.go, calc.go with the pure calculation functions, calc_test.go, project.yaml and a Dockerfile. Keep every
+  SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca Go standard library kullan (go get yok); go.mod hiçbir bağımlılık bildirmez ve setup komutu gerekmez. En az
+  dosya: main.go, saf hesaplama fonksiyonlarını içeren calc.go, calc_test.go, project.yaml ve bir Dockerfile. Bütün SDLC
+  belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
