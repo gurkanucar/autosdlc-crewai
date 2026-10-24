@@ -85,7 +85,13 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
         assert "abcdefghijkl" not in log and "error: boom" in log
         assert {"run.json", "timeline.txt", "project_files.txt"} <= set(names)
         assert not any("sk-secret-key-123456" in archive.read(name).decode() for name in names)
-    from autosdlc.exports import redact
+    from autosdlc.exports import diagnostics_text, redact
+    (result.output_dir / "build_checks").mkdir()
+    (result.output_dir / "build_checks" / "check-01-development.txt").write_text(
+        "[31m[MISSING_EXPORT][0m UNAUTHORIZED_EVENT", encoding="utf-8")
+    text = diagnostics_text(db.get(result.id))
+    assert "## Latest model calls" in text and "planning · empty · finish=length" in text
+    assert "[MISSING_EXPORT] UNAUTHORIZED_EVENT" in text and "Traceback" in text
     assert redact("PGPASSWORD=hunter22 x") == "PGPASSWORD=*** x"
     assert redact("postgresql://app:hunter22@127.0.0.1/db") == "postgresql://app:***@127.0.0.1/db"
     assert redact("export const TOKEN_KEY = 'token';") == "export const TOKEN_KEY = 'token';"

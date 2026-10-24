@@ -343,3 +343,6 @@
 "Diagnostics": "Tanılama"
 "Where and why the run broke: the error traceback, every model call, build/test logs and the event timeline. API keys and passwords are masked.": "Çalışmanın nerede ve neden patladığı: hata traceback'i, her model çağrısı, derleme/test logları ve olay zaman çizelgesi. API anahtarları ve parolalar maskelenir."
 "Failure report (ZIP)": "Hata raporu (ZIP)"
+"Copyable summary": "Kopyalanabilir özet"
+"🩺 Failure summary": "🩺 Hata özeti"
+"Copy it with the icon at the top right of the box and paste it anywhere. The full report is the ZIP download.": "Kutunun sağ üstündeki simgeyle kopyalayıp istediğin yere yapıştırabilirsin. Raporun tamamı ZIP indirmesinde."

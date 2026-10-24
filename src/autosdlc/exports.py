@@ -101,11 +101,20 @@ def redact(text: str) -> str:
     return text
 
 
-def _tail(path: Path) -> str:
+# Terminal color codes: a tool that forces color (pnpm passes FORCE_COLOR to its scripts) wraps every character of a
+# code frame in them, which buries the error the agent has to fix.
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def plain(text: str) -> str:
+    return ANSI_ESCAPE.sub("", text)
+
+
+def _tail(path: Path, limit: int = DIAGNOSTIC_FILE_LIMIT) -> str:
     data = path.read_bytes()
-    text = data[-DIAGNOSTIC_FILE_LIMIT:].decode("utf-8", errors="replace")
-    if len(data) > DIAGNOSTIC_FILE_LIMIT:
-        text = f"[... first {len(data) - DIAGNOSTIC_FILE_LIMIT} bytes left out ...]\n" + text
+    text = plain(data[-limit:].decode("utf-8", errors="replace"))
+    if len(data) > limit:
+        text = f"[... first {len(data) - limit} bytes left out ...]\n" + text
     return redact(text)
 
 
@@ -174,6 +183,40 @@ def diagnostics_summary(row: dict, files: dict[str, Path]) -> str:
               "", "## Included files", ""]
     lines += [f"- `{name}`" for name in files] or ["- (none)"]
     return "\n".join(lines) + "\n"
+
+
+def _call_line(record: dict) -> str:
+    fields = [record.get("time", "")[11:19], record.get("stage", ""), record.get("outcome", ""),
+              f"finish={record.get('finish_reason')}", f"{record.get('seconds')}s", f"prompt={record.get('prompt_chars')}",
+              f"response={record.get('response_chars', '-')}", f"reasoning={record.get('reasoning_chars', '-')}"]
+    if record.get("error"):
+        fields.append(str(record["error"])[:200])
+    return " · ".join(str(field) for field in fields)
+
+
+def diagnostics_text(row: dict) -> str:
+    """The failure report as one short text to paste into a chat or an issue: the summary, the latest model calls and
+    the end of the latest build, test and traceback output."""
+    output = Path(row["output_dir"])
+    text = diagnostics_summary(row, {}).split("## Where to look")[0].rstrip()
+    text += "\n\n## Latest events\n\n" + "\n".join(
+        f"- {event['created_at'][11:19]} · {event['stage']} · {event['status']}: {redact(plain(event['detail']))[-200:].strip()}"
+        for event in row.get("events", [])[-8:])
+    calls_path = output / "llm_calls.jsonl"
+    if calls_path.is_file():
+        calls = []
+        for line in calls_path.read_text(encoding="utf-8", errors="replace").splitlines()[-15:]:
+            try:
+                calls.append(_call_line(json.loads(line)))
+            except ValueError:
+                continue
+        text += "\n\n## Latest model calls\n\n" + "\n".join(f"- {call}" for call in calls)
+    latest = [sorted((output / folder).glob("*.txt"))[-1:] if (output / folder).is_dir() else [] for folder in ("build_checks", "test_attempts")]
+    for title, paths, limit in [("Latest compile check", latest[0], 3000), ("Latest test attempt", latest[1], 3000),
+                                ("Traceback", [output / "failure.txt"], 2500)]:
+        if paths and paths[0].is_file():
+            text += f"\n\n## {title} ({paths[0].name}, end)\n\n```\n{_tail(paths[0], limit).strip()}\n```"
+    return text + "\n"
 
 
 def diagnostics_zip(row: dict, changes: list[dict] | None = None, iterations: list[dict] | None = None) -> bytes:

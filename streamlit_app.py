@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 from autosdlc.auth import auth_enabled, password_matches
 from autosdlc.crewai_engine import CrewAIEngine
-from autosdlc.exports import diagnostics_zip, export_files, export_zip, project_zip
+from autosdlc.exports import diagnostics_text, diagnostics_zip, export_files, export_zip, project_zip
 from autosdlc.desktop import open_folder
 from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
 from autosdlc.intake import applies, choice_label, default_delivery, question_text, templates, questions, validate_decisions
@@ -903,6 +903,13 @@ def iteration_label(db: History, run_id: str, item: dict) -> str:
     return f"v{item['number']} · {item['change_id']} · {t(CHANGE_KINDS.get(item['kind'], item['kind']))}: {change.get('title', '')}"
 
 
+@st.dialog(t("🩺 Failure summary"), width="large")
+def diagnostics_dialog(run_id: str) -> None:
+    """The failure report as text: the copy icon at the top right of the box copies all of it."""
+    st.caption(t("Copy it with the icon at the top right of the box and paste it anywhere. The full report is the ZIP download."))
+    st.code(diagnostics_text(history().get(run_id)), language="markdown", height=480)
+
+
 @st.dialog(t("🕓 Version history"), width="large")
 def iterations_dialog(run_id: str) -> None:
     """Every finished iteration (first version, CR, bugfix): the diagram, metrics, documents and diff against the previous one."""
@@ -1026,6 +1033,8 @@ def header(db: History, row: dict) -> None:
                                file_name=f"{run_id}-diagnostics.zip", mime="application/zip", icon=":material/bug_report:",
                                key=f"diagnostics_{run_id}", width="stretch", on_click="ignore",
                                type="primary" if row["status"] == "failed" else "secondary")
+            if st.button(t("Copyable summary"), key=f"diagnostics_text_{run_id}", icon=":material/content_copy:", width="stretch"):
+                diagnostics_dialog(run_id)
             if readme_path.is_file():
                 st.download_button("README.md", lambda: readme_path.read_bytes(), file_name="README.md", mime="text/markdown",
                                    key=f"readme_download_{run_id}", width="stretch", on_click="ignore")

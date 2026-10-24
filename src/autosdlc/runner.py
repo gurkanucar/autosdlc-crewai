@@ -25,7 +25,7 @@ from .crewai_engine import ClarificationNeeded, CrewAIEngine
 from .i18n import normalize, t
 from .deployment import write_deployment_files
 from .services import LocalServices
-from .exports import is_compiled_binary
+from .exports import is_compiled_binary, plain
 from .files import write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
@@ -100,7 +100,7 @@ def _port_open(port: int) -> bool:
 
 def _tail(path: Path, limit: int = 4000) -> str:
     try:
-        return path.read_text(encoding="utf-8", errors="replace")[-limit:]
+        return plain(path.read_text(encoding="utf-8", errors="replace"))[-limit:]
     except OSError:
         return ""
 
@@ -852,6 +852,7 @@ class RunSession:
             if self.services.env:
                 self._event("testing", "services_started", ", ".join(sorted(self.services.env)))
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+        env.update({"NO_COLOR": "1", "FORCE_COLOR": "0"})
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return env
 
@@ -1083,7 +1084,7 @@ class RunSession:
                 if label != "Setup":
                     resolved = with_display(resolved, env)
                 process = subprocess.run(resolved, cwd=self.project_dir, env=env, capture_output=True, text=True, timeout=300, check=False)
-                logs.append(f"### {label} tests (exit {process.returncode})\n{process.stdout}\n{process.stderr}"[-20_000:])
+                logs.append(plain(f"### {label} tests (exit {process.returncode})\n{process.stdout}\n{process.stderr}")[-20_000:])
                 if process.returncode:
                     if server is not None:
                         logs.append("### Application server log\n" + _tail(server_log))
