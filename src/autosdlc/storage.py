@@ -14,6 +14,20 @@ def now() -> str:
 TITLE_LIMIT = 120
 
 
+def suggested_title(idea: str) -> str:
+    """The idea cut to fit a name: at most TITLE_LIMIT characters, ending at a word boundary.
+
+    A name field pre-filled with a longer text cannot be edited in a browser: it only allows deleting until the text
+    is below the limit, never typing.
+    """
+    idea = " ".join(idea.split())
+    if len(idea) <= TITLE_LIMIT:
+        return idea
+    cut = idea[:TITLE_LIMIT]
+    space = cut.rfind(" ")
+    return (cut[:space] if space >= TITLE_LIMIT // 2 else cut).rstrip(" ,.;:-")
+
+
 def project_title(row: dict) -> str:
     """What the UI calls a project: its display name, or the idea when no name was set."""
     return row.get("title") or row["idea"]

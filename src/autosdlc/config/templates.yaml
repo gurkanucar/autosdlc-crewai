@@ -1,6 +1,7 @@
 # Example project templates shown in the UI. Each one fills the form; the user can change it afterwards.
 # The decisions keys are the same as in questions.yaml. Idea at most 1000, stack at most 200 characters.
-# The first template is deliberately tiny: to see the concept end to end in a few minutes.
+# Keep the catalog small: one tiny, sensible example per language and kind (CLI, desktop app, web, script).
+# The idea is written the way a user would say it; technical hints belong to stack and constraints.
 # Texts are English source strings; other languages are in locales/<code>/content.yaml.
 - id: quick-demo
   title: ⚡ Quick demo — temperature converter (Python, library)
@@ -17,7 +18,7 @@
       and 2 NFRs.'
 - id: calculator-cli
   title: Calculator (Python, CLI)
-  description: A command-line calculator for the four basic operations; one module, run.sh/run.bat launchers, short documents.
+  description: A command-line calculator for the four basic operations; run.sh/run.bat launchers, short documents.
   idea: 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication
     and division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
     code.'
@@ -28,20 +29,21 @@
     delivery: script
     constraints: 'Use no external dependencies; standard library only. Fewest files: one source module and a single
       test file under tests/. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-- id: calculator-cli-go
-  title: Calculator (Go, CLI)
-  description: A lightweight command-line calculator; ready-to-run executables for Windows (.exe), Linux and macOS.
-  idea: 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication
-    and division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
-    code.'
+- id: password-generator-go
+  title: Password generator (Go, CLI)
+  description: Prints random passwords; ready-to-run executables for Windows (.exe), Linux and macOS.
+  idea: 'A command-line password generator. "genpass" prints one random password of 16 characters. "--length 24" sets the
+    length, "--no-symbols" leaves out symbols and "--count 5" prints five passwords. Every password contains at least
+    one lowercase letter, one uppercase letter and one digit. A length below 8 prints a clear error message and exits
+    with a non-zero code.'
   decisions:
     scale: small
     project_type: cli
     stack: Go 1.24, standard library, go test
     delivery: binary
-    constraints: 'Use the Go standard library only (no go get); go.mod declares no dependencies. Fewest files: main.go
-      and calc.go with the pure calculation functions. Keep every SDLC document short (at most half a page each); write
-      at most 3 FRs and 2 NFRs.'
+    constraints: 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Fewest files:
+      main.go and one package under internal/ with the generator. Keep every SDLC document short (at most half a page
+      each); write at most 3 FRs and 2 NFRs.'
 - id: word-counter-rust
   title: Word counter (Rust, CLI)
   description: A wc-like tool that counts lines, words and characters; executables for Windows (.exe) and Linux.
@@ -56,7 +58,7 @@
     constraints: 'Use the Rust standard library only (no external crates). Fewest files: Cargo.toml, src/main.rs and
       src/lib.rs with the counting logic. Keep every SDLC document short (at most half a page each); write at most 3 FRs
       and 2 NFRs.'
-- id: json-tool-node
+- id: json-formatter-node
   title: JSON formatter (Node.js, CLI)
   description: Pretty-prints and validates JSON files; run.sh/run.bat launchers, no dependencies.
   idea: 'A command-line JSON tool: "jsonfmt file.json" prints the file pretty-printed with two-space indentation and
@@ -70,11 +72,10 @@
     constraints: 'Use only Node.js built-in modules (no npm dependencies). Fewest files: package.json, src/cli.js and
       src/format.js. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: calculator-desktop-python
-  title: Calculator desktop app (Python, window)
-  description: A small desktop calculator with a real window and buttons; run.bat / run.sh launchers, logic tested without a display.
-  idea: 'A desktop calculator app with a window: a display, the digit buttons, the four basic operations, a clear button and
-    an equals button. Division by zero shows "Error" on the display instead of crashing. It runs on Windows with a double
-    click on run.bat.'
+  title: Calculator app (Python, desktop window)
+  description: A small desktop calculator with a window and buttons; starts with a double click on run.bat.
+  idea: 'A desktop calculator app with a window: a display, the digit buttons, plus, minus, multiply and divide buttons,
+    a clear button and an equals button. Dividing by zero shows "Error" on the display instead of crashing.'
   decisions:
     scale: small
     project_type: cli
@@ -86,73 +87,43 @@
       (logic), app.py (window), run.bat, run.sh. Keep every SDLC document short (at most half a page each); write at most
       3 FRs and 2 NFRs.'
 - id: calculator-desktop-go
-  title: Calculator desktop app (Go, single .exe)
-  description: A calculator that opens in its own browser window from one self-contained executable (Windows .exe, Linux, macOS); no installation.
-  idea: 'A calculator app delivered as ONE executable file. When started it serves a small calculator page (display, digit
-    buttons, the four basic operations, clear and equals) on a free port of 127.0.0.1 and opens it in the default browser;
-    if the browser cannot be opened it prints the address. Division by zero shows "Error" instead of crashing.'
+  title: Calculator app (Go, one .exe)
+  description: A calculator in a single file you double-click; opens in its own browser tab. Windows .exe, Linux and macOS builds.
+  idea: 'A calculator app in a single file: double-click it and a calculator opens, with a display, the digit buttons,
+    plus, minus, multiply and divide buttons, a clear button and an equals button. Dividing by zero shows "Error"
+    instead of crashing.'
   decisions:
     scale: small
     project_type: cli
-    stack: Go 1.24, standard library (net/http, embed), go test
+    stack: Go 1.24, standard library; the interface is a small web page built into the program
     delivery: binary
-    constraints: 'Use the Go standard library only; embed the HTML/CSS/JS in the executable with the embed package so no
-      other file is needed next to it. Put the calculation and the HTTP handler in an importable package (internal/...);
-      main.go only starts the server and opens the browser. Test the handler with net/http/httptest. Keep every SDLC
-      document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-- id: backup-helper-script
-  title: Folder backup helper (sh + bat)
-  description: Helper scripts that copy a folder into a timestamped backup and keep only the newest backups; the same behaviour as backup.sh and backup.bat.
-  idea: 'Helper scripts that back up a folder: "backup <source> <backup-root> [keep]" copies the source folder into
-    <backup-root>/<source-name>-YYYYMMDD-HHMMSS and then deletes the oldest backups of that source so that only the newest
-    N remain (default 5). A missing source folder prints a clear error and exits with a non-zero code. Provide the same
-    behaviour for Linux/macOS (backup.sh) and Windows (backup.bat).'
+    constraints: 'Use the Go standard library only. The HTML/CSS/JS is embedded in the program (embed package), so no
+      other file is needed next to it. The program starts a tiny local web server that only this computer can reach and
+      opens the page in the default browser; if that fails it prints the address. Put the calculation and the HTTP
+      handler in an importable package under internal/; main.go only starts the server. Test the handler with
+      net/http/httptest. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: todo-web-node
+  title: To-do list (Node.js, web app)
+  description: 'A simple to-do list web page: add tasks, tick them off and delete them; runs in Docker.'
+  idea: 'A simple to-do list web app. You can add a task, mark it as done or not done, and delete it. The list is
+    saved, so it is still there after a restart.'
   decisions:
     scale: small
-    project_type: cli
-    stack: POSIX sh and Windows batch (.bat), no dependencies
-    delivery: script
-    constraints: 'Only standard tools of each system (cp, rm, date / xcopy, robocopy). The tests run in a Linux container:
-      write a shell test script under tests/ that exercises backup.sh with temporary folders and run it with
-      [sh, tests/test_backup.sh] as unit_test; backup.bat cannot run there, so describe how to check it by hand in the
-      README. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-- id: file-organizer-script
-  title: Downloads organizer (sh + bat)
-  description: Helper scripts that sort the files of a folder into subfolders by type, with a dry-run mode.
-  idea: 'Helper scripts that tidy a folder: "organize <folder> [--dry-run]" moves every file into a subfolder named after
-    its type (images, documents, archives, other) chosen from the file extension; --dry-run only prints what would be moved.
-    Existing files are never overwritten (a counter is added to the name). A missing folder prints a clear error and exits
-    with a non-zero code. Provide the same behaviour for Linux/macOS (organize.sh) and Windows (organize.bat).'
-  decisions:
-    scale: small
-    project_type: cli
-    stack: POSIX sh and Windows batch (.bat), no dependencies
-    delivery: script
-    constraints: 'Only standard tools of each system. The tests run in a Linux container: write a shell test script under
-      tests/ that exercises organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as unit_test;
-      organize.bat cannot run there, so describe how to check it by hand in the README. Keep every SDLC document short
-      (at most half a page each); write at most 3 FRs and 2 NFRs.'
-- id: inventory-tracker
-  title: Inventory tracker (Node.js, fullstack)
-  description: A simple web application that keeps stock records with product name, category and location.
-  idea: A simple inventory tracking application. Products are stored with product name, category and location (warehouse/shelf).
-    It supports adding, editing, deleting and listing products; the list can be searched by product name and filtered
-    by category and location.
-  decisions:
     project_type: fullstack
     stack: Node.js (Express), pnpm, plain HTML/CSS/JS interface
     database: sqlite
     cache: none
     observability: none
     delivery: docker
-    constraints: Do not use a framework in the frontend, write plain HTML/CSS/JS. The user interface texts should
-      be in Turkish. Prefer a SQLite solution that needs no native compilation.
+    constraints: 'Do not use a framework in the frontend, write plain HTML/CSS/JS. Prefer a SQLite solution that needs
+      no native compilation. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: task-api
-  title: Task tracking API (Python, backend)
-  description: A REST API with endpoints to create, list, complete and delete tasks.
-  idea: A task tracking API for small teams. Tasks have a title, description, due date and status (todo, in progress,
-    done). It has endpoints to create, list, filter by status, update and delete tasks.
+  title: Task API (Python, web API)
+  description: A small REST API to create, list, update and delete tasks; runs in Docker.
+  idea: 'A small task tracking API. A task has a title and a status (todo or done). The API can create a task, list
+    the tasks (optionally only those with a given status), update a task and delete a task.'
   decisions:
+    scale: small
     project_type: backend
     stack: Python 3.12, FastAPI, pytest
     database: sqlite
@@ -160,28 +131,38 @@
     observability: none
     ui: none
     delivery: docker
-    constraints: Include input validation and meaningful error codes (400, 404).
-- id: unit-converter-cli
-  title: Unit converter (Python, CLI)
-  description: A small CLI tool that converts length, weight and temperature units.
-  idea: A CLI tool that converts length, weight and temperature units. For example the command "convert 10 km mi"
-    converts 10 kilometers to miles. It has a command that lists the supported units and a clear error message for
-    an invalid unit.
+    constraints: 'Include input validation and meaningful error codes (400, 404). Keep every SDLC document short (at most
+      half a page each); write at most 3 FRs and 2 NFRs.'
+- id: backup-helper-script
+  title: Folder backup (sh + bat scripts)
+  description: Helper scripts that copy a folder into a timestamped backup; backup.sh for Linux/macOS and backup.bat for Windows.
+  idea: 'Helper scripts that back up a folder: "backup <source> <backup-folder>" copies the source folder into
+    <backup-folder>/<source-name>-YYYYMMDD-HHMMSS and prints where the backup went. A missing source folder prints a
+    clear error message and exits with a non-zero code. The same behaviour for Linux/macOS (backup.sh) and for Windows
+    (backup.bat).'
   decisions:
     scale: small
     project_type: cli
-    stack: Python 3.12, argparse, pytest
+    stack: POSIX sh and Windows batch (.bat), no dependencies
     delivery: script
-    constraints: Use no external dependencies; standard library only.
-- id: text-helpers
-  title: Text helpers (Python, library)
-  description: A library offering slug generation and text cleanup functions that handle Turkish characters correctly.
-  idea: 'A text helpers library that handles Turkish characters correctly: slug generation for URLs, collapsing
-    extra whitespace, word counting and smart truncation to a given length. Every function should be documented
-    and type-hinted.'
+    constraints: 'Only the standard tools of each system (cp, date / xcopy). The tests run in a Linux container: write a
+      shell test script under tests/ that exercises backup.sh with temporary folders and run it with
+      [sh, tests/test_backup.sh] as unit_test; backup.bat cannot run there, so describe in the README how to check it by
+      hand. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: file-organizer-script
+  title: Folder organizer (sh + bat scripts)
+  description: Helper scripts that sort the files of a folder into subfolders by type; organize.sh for Linux/macOS and organize.bat for Windows.
+  idea: 'Helper scripts that tidy a folder: "organize <folder> [--dry-run]" moves every file into a subfolder named after
+    its type (images, documents or other), chosen from the file extension; --dry-run only prints what would be moved. A
+    file is skipped, never overwritten, when the target already has a file with that name. A missing folder prints a
+    clear error message and exits with a non-zero code. The same behaviour for Linux/macOS (organize.sh) and for Windows
+    (organize.bat).'
   decisions:
     scale: small
-    project_type: library
-    stack: Python 3.12, pytest
-    delivery: none
-    constraints: Use no external dependencies; standard library only.
+    project_type: cli
+    stack: POSIX sh and Windows batch (.bat), no dependencies
+    delivery: script
+    constraints: 'Only the standard tools of each system. The tests run in a Linux container: write a shell test script
+      under tests/ that exercises organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as
+      unit_test; organize.bat cannot run there, so describe in the README how to check it by hand. Keep every SDLC
+      document short (at most half a page each); write at most 3 FRs and 2 NFRs.'

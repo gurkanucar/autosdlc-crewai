@@ -138,3 +138,16 @@ def test_a_file_in_the_reserved_docs_folder_is_skipped_not_fatal(tmp_path, monke
     assert result.status == "completed", result.error
     assert events[("development", "files_skipped")] == "docs/NOTES.md"
     assert not (result.project_dir / "docs" / "NOTES.md").exists()
+
+
+def test_go_mod_requires_are_stripped_so_tidy_resolves_real_versions():
+    from autosdlc.runner import strip_go_requires
+
+    go_mod = (
+        "module gununsozu\n\ngo 1.24\n\n"
+        "require (\n\tgithub.com/lxn/walk v0.0.0-20210112085537-c381da492f70\n\tgolang.org/x/sys v0.49.0 // indirect\n)\n\n"
+        "require github.com/lxn/win v0.0.0-20210218163916-a377121e959e\n\n"
+        "replace example.com/x => ../x\n"
+    )
+    assert strip_go_requires(go_mod) == "module gununsozu\n\ngo 1.24\n\n\n\nreplace example.com/x => ../x\n"
+    assert strip_go_requires("module m\n\ngo 1.24\n") == "module m\n\ngo 1.24\n"

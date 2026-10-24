@@ -52,3 +52,16 @@ def test_old_database_gets_the_title_column(tmp_path):
     assert project_title(history.get("old")) == "An old idea"
     history.rename("old", "Named")
     assert project_title(history.get("old")) == "Named"
+
+
+def test_suggested_title_always_fits_the_name_field():
+    from autosdlc.storage import suggested_title
+
+    assert suggested_title("A short idea") == "A short idea"
+    long_idea = ("rastgele günün sözünü döndüren bir windows uygulaması exe olsun çalıştırılabilsin. günün sözlerini jsondan "
+                 "okusun aynı klasörde app ile. basit bir ui da olsun appde")
+    suggestion = suggested_title(long_idea)
+    assert len(suggestion) <= TITLE_LIMIT
+    assert long_idea.startswith(suggestion) and not suggestion.endswith(" ")
+    assert len(suggested_title("x" * 500)) == TITLE_LIMIT  # no space to cut at: hard cut
+    assert suggested_title("two   words\n and a  newline") == "two words and a newline"

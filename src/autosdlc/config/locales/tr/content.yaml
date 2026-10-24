@@ -12,8 +12,8 @@ Python 3.12, pytest: Python 3.12, pytest
 : 'Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü ve tests/ altında tek test dosyası. Bütün
   SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Calculator (Python, CLI): Hesap makinesi (Python, CLI)
-A command-line calculator for the four basic operations; one module, run.sh/run.bat launchers, short documents.: Dört işlem
-  yapan komut satırı hesap makinesi; tek modül, run.sh/run.bat başlatıcıları, kısa belgeler.
+A command-line calculator for the four basic operations; run.sh/run.bat launchers, short documents.: Dört işlem yapan komut
+  satırı hesap makinesi; run.sh/run.bat başlatıcıları, kısa belgeler.
 ? 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication and division.
   Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero code.'
 : 'Dört işlem yapan komut satırı hesap makinesi: toplama, çıkarma, çarpma ve bölme. Kullanım: calc 6 / 3 çıktısı 2 olsun.
@@ -23,15 +23,22 @@ Python 3.12, argparse, pytest: Python 3.12, argparse, pytest
   Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 : 'Dış bağımlılık kullanma; yalnızca standard library. En az dosya: tek kaynak modülü ve tests/ altında tek test dosyası.
   Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Calculator (Go, CLI): Hesap makinesi (Go, CLI)
-A lightweight command-line calculator; ready-to-run executables for Windows (.exe), Linux and macOS.: Hafif bir komut satırı
-  hesap makinesi; Windows (.exe), Linux ve macOS için hazır çalıştırılabilir dosyalar.
+Password generator (Go, CLI): Parola üretici (Go, CLI)
+Prints random passwords; ready-to-run executables for Windows (.exe), Linux and macOS.: Rastgele parola üretir; Windows (.exe),
+  Linux ve macOS için hazır çalıştırılabilir dosyalar.
+? A command-line password generator. "genpass" prints one random password of 16 characters. "--length 24" sets the length,
+  "--no-symbols" leaves out symbols and "--count 5" prints five passwords. Every password contains at least one lowercase
+  letter, one uppercase letter and one digit. A length below 8 prints a clear error message and exits with a non-zero code.
+: Komut satırı parola üretici. "genpass" 16 karakterlik bir rastgele parola yazar. "--length 24" uzunluğu belirler, "--no-symbols"
+  sembolleri çıkarır, "--count 5" beş parola yazar. Her parola en az bir küçük harf, bir büyük harf ve bir rakam içerir. 8'den
+  kısa uzunluk açık bir hata mesajı yazar ve sıfırdan farklı bir çıkış koduyla biter.
 Go 1.24, standard library, go test: Go 1.24, standard library, go test
-? 'Use the Go standard library only (no go get); go.mod declares no dependencies. Fewest files: main.go and calc.go with the
-  pure calculation functions. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-: 'Yalnızca Go standard library kullan (go get yok); go.mod hiçbir bağımlılık bildirmez. En az dosya: main.go ve saf hesaplama
-  fonksiyonlarını içeren calc.go. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR
-  yaz.'
+? 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Fewest files: main.go and one
+  package under internal/ with the generator. Keep every SDLC document short (at most half a page each); write at most 3 FRs
+  and 2 NFRs.'
+: 'Yalnızca Go standard library kullan; rastgele sayıları math/rand değil crypto/rand''dan al. En az dosya: main.go ve üreticiyi
+  içeren internal/ altında tek paket. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2
+  NFR yaz.'
 Word counter (Rust, CLI): Kelime sayacı (Rust, CLI)
 A wc-like tool that counts lines, words and characters; executables for Windows (.exe) and Linux.: Satır, kelime ve karakter
   sayan wc benzeri bir araç; Windows (.exe) ve Linux için çalıştırılabilir dosyalar.
@@ -58,14 +65,13 @@ Node.js 22, ES modules, node:test: Node.js 22, ES modules, node:test
   every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 : 'Yalnızca Node.js yerleşik modüllerini kullan (npm bağımlılığı yok). En az dosya: package.json, src/cli.js ve src/format.js.
   Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Calculator desktop app (Python, window): Hesap makinesi masaüstü uygulaması (Python, pencere)
-A small desktop calculator with a real window and buttons; run.bat / run.sh launchers, logic tested without a display.: Gerçek
-  bir pencere ve düğmeleri olan küçük masaüstü hesap makinesi; run.bat / run.sh başlatıcıları, mantık ekransız test edilir.
-? 'A desktop calculator app with a window: a display, the digit buttons, the four basic operations, a clear button and an
-  equals button. Division by zero shows "Error" on the display instead of crashing. It runs on Windows with a double click
-  on run.bat.'
-: 'Pencereli bir masaüstü hesap makinesi uygulaması: bir ekran, rakam düğmeleri, dört işlem, temizle ve eşittir düğmesi. Sıfıra
-  bölme uygulamayı çökertmek yerine ekranda "Error" gösterir. Windows''ta run.bat''a çift tıklayarak çalışır.'
+Calculator app (Python, desktop window): Hesap makinesi uygulaması (Python, masaüstü penceresi)
+A small desktop calculator with a window and buttons; starts with a double click on run.bat.: Pencereli ve düğmeli küçük masaüstü
+  hesap makinesi; run.bat'a çift tıklayarak açılır.
+? 'A desktop calculator app with a window: a display, the digit buttons, plus, minus, multiply and divide buttons, a clear
+  button and an equals button. Dividing by zero shows "Error" on the display instead of crashing.'
+: 'Pencereli bir masaüstü hesap makinesi uygulaması: bir ekran, rakam düğmeleri, artı, eksi, çarpı ve bölü düğmeleri, bir
+  temizle düğmesi ve bir eşittir düğmesi. Sıfıra bölme uygulamayı çökertmek yerine ekranda "Error" gösterir.'
 Python 3.12, tkinter, pytest: Python 3.12, tkinter, pytest
 ? 'Use tkinter and the standard library only. Keep all calculation and input-handling logic in a module that does not import
   tkinter; the window code only draws the buttons and calls that module, and creates the window inside a function (never at
@@ -75,103 +81,88 @@ Python 3.12, tkinter, pytest: Python 3.12, tkinter, pytest
   tut; pencere kodu yalnızca düğmeleri çizer ve bu modülü çağırır, pencereyi de import anında değil bir fonksiyonun içinde
   oluşturur, çünkü testler ekransız çalışır. En az dosya: calculator.py (mantık), app.py (pencere), run.bat, run.sh. Bütün
   SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Calculator desktop app (Go, single .exe): Hesap makinesi masaüstü uygulaması (Go, tek .exe)
-? A calculator that opens in its own browser window from one self-contained executable (Windows .exe, Linux, macOS); no installation.
-: Tek başına çalışan bir dosyadan kendi tarayıcı penceresinde açılan hesap makinesi (Windows .exe, Linux, macOS); kurulum
-  gerekmez.
-? A calculator app delivered as ONE executable file. When started it serves a small calculator page (display, digit buttons,
-  the four basic operations, clear and equals) on a free port of 127.0.0.1 and opens it in the default browser; if the browser
-  cannot be opened it prints the address. Division by zero shows "Error" instead of crashing.
-: TEK bir çalıştırılabilir dosya olarak teslim edilen hesap makinesi uygulaması. Başlatılınca 127.0.0.1'in boş bir portunda
-  küçük bir hesap makinesi sayfası (ekran, rakam düğmeleri, dört işlem, temizle ve eşittir) sunar ve varsayılan tarayıcıda
-  açar; tarayıcı açılamazsa adresi yazdırır. Sıfıra bölme çökmek yerine "Error" gösterir.
-Go 1.24, standard library (net/http, embed), go test: Go 1.24, standard library (net/http, embed), go test
-? Use the Go standard library only; embed the HTML/CSS/JS in the executable with the embed package so no other file is needed
-  next to it. Put the calculation and the HTTP handler in an importable package (internal/...); main.go only starts the server
-  and opens the browser. Test the handler with net/http/httptest. Keep every SDLC document short (at most half a page each);
-  write at most 3 FRs and 2 NFRs.
-: Yalnızca Go standard library kullan; HTML/CSS/JS'i embed paketiyle çalıştırılabilir dosyanın içine göm, yanında başka dosya
-  gerekmesin. Hesaplamayı ve HTTP handler'ı içe aktarılabilir bir pakette (internal/...) tut; main.go yalnızca sunucuyu başlatır
-  ve tarayıcıyı açar. Handler'ı net/http/httptest ile test et. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa);
+Calculator app (Go, one .exe): Hesap makinesi uygulaması (Go, tek .exe)
+A calculator in a single file you double-click; opens in its own browser tab. Windows .exe, Linux and macOS builds.: Çift
+  tıklayınca açılan tek dosyalık hesap makinesi; kendi tarayıcı sekmesinde açılır. Windows .exe, Linux ve macOS sürümleri.
+? 'A calculator app in a single file: double-click it and a calculator opens, with a display, the digit buttons, plus, minus,
+  multiply and divide buttons, a clear button and an equals button. Dividing by zero shows "Error" instead of crashing.'
+: 'Tek dosyalık bir hesap makinesi uygulaması: çift tıklayınca bir hesap makinesi açılır; ekran, rakam düğmeleri, artı, eksi,
+  çarpı ve bölü düğmeleri, bir temizle düğmesi ve bir eşittir düğmesi vardır. Sıfıra bölme çökmek yerine "Error" gösterir.'
+Go 1.24, standard library; the interface is a small web page built into the program: Go 1.24, standard library; arayüz programın
+  içine gömülü küçük bir web sayfası
+? Use the Go standard library only. The HTML/CSS/JS is embedded in the program (embed package), so no other file is needed
+  next to it. The program starts a tiny local web server that only this computer can reach and opens the page in the default
+  browser; if that fails it prints the address. Put the calculation and the HTTP handler in an importable package under internal/;
+  main.go only starts the server. Test the handler with net/http/httptest. Keep every SDLC document short (at most half a
+  page each); write at most 3 FRs and 2 NFRs.
+: Yalnızca Go standard library kullan. HTML/CSS/JS programın içine gömülü olsun (embed paketi), yanında başka dosya gerekmesin.
+  Program yalnızca bu bilgisayardan erişilebilen küçük bir yerel web sunucusu başlatır ve sayfayı varsayılan tarayıcıda açar;
+  açılamazsa adresi yazdırır. Hesaplamayı ve HTTP handler'ı internal/ altında içe aktarılabilir bir pakette tut; main.go yalnızca
+  sunucuyu başlatır. Handler'ı net/http/httptest ile test et. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa);
   en fazla 3 FR ve 2 NFR yaz.
-Folder backup helper (sh + bat): Klasör yedekleme yardımcısı (sh + bat)
-? Helper scripts that copy a folder into a timestamped backup and keep only the newest backups; the same behaviour as backup.sh
-  and backup.bat.
-: Bir klasörü zaman damgalı yedeğe kopyalayan ve yalnızca en yeni yedekleri tutan yardımcı script'ler; backup.sh ve backup.bat
-  aynı davranışı sunar.
-? 'Helper scripts that back up a folder: "backup <source> <backup-root> [keep]" copies the source folder into <backup-root>/<source-name>-YYYYMMDD-HHMMSS
-  and then deletes the oldest backups of that source so that only the newest N remain (default 5). A missing source folder
-  prints a clear error and exits with a non-zero code. Provide the same behaviour for Linux/macOS (backup.sh) and Windows
-  (backup.bat).'
-: 'Bir klasörü yedekleyen yardımcı script''ler: "backup <kaynak> <yedek-kökü> [adet]" kaynak klasörü <yedek-kökü>/<kaynak-adı>-YYYYAAGG-SSDDSS
-  klasörüne kopyalar, ardından o kaynağın en eski yedeklerini siler ve yalnızca en yeni N tanesini (varsayılan 5) bırakır.
-  Bulunamayan kaynak klasör açık bir hata yazar ve sıfırdan farklı bir çıkış koduyla biter. Aynı davranışı Linux/macOS (backup.sh)
-  ve Windows (backup.bat) için sağla.'
+To-do list (Node.js, web app): Yapılacaklar listesi (Node.js, web uygulaması)
+'A simple to-do list web page: add tasks, tick them off and delete them; runs in Docker.': 'Basit bir yapılacaklar web sayfası:
+  görev ekle, işaretle, sil; Docker''da çalışır.'
+? A simple to-do list web app. You can add a task, mark it as done or not done, and delete it. The list is saved, so it is
+  still there after a restart.
+: Basit bir yapılacaklar listesi web uygulaması. Görev ekleyebilir, görevi yapıldı ya da yapılmadı olarak işaretleyebilir
+  ve silebilirsin. Liste kaydedilir, yeniden başlatınca da yerinde durur.
+Node.js (Express), pnpm, plain HTML/CSS/JS interface: Node.js (Express), pnpm, sade HTML/CSS/JS arayüz
+? Do not use a framework in the frontend, write plain HTML/CSS/JS. Prefer a SQLite solution that needs no native compilation.
+  Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.
+: Frontend'de framework kullanma, düz HTML/CSS/JS yaz. Native derleme gerektirmeyen bir SQLite çözümü tercih et. Bütün SDLC
+  belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.
+Task API (Python, web API): Görev API'si (Python, web API)
+A small REST API to create, list, update and delete tasks; runs in Docker.: Görev oluşturma, listeleme, güncelleme ve silme
+  için küçük bir REST API; Docker'da çalışır.
+? A small task tracking API. A task has a title and a status (todo or done). The API can create a task, list the tasks (optionally
+  only those with a given status), update a task and delete a task.
+: Küçük bir görev takip API'si. Görevin bir başlığı ve bir durumu (yapılacak ya da bitti) vardır. API görev oluşturur, görevleri
+  listeler (istenirse yalnızca belirli durumdakileri), görevi günceller ve görevi siler.
+Python 3.12, FastAPI, pytest: Python 3.12, FastAPI, pytest
+? Include input validation and meaningful error codes (400, 404). Keep every SDLC document short (at most half a page each);
+  write at most 3 FRs and 2 NFRs.
+: Girdi doğrulaması ve anlamlı hata kodları (400, 404) olsun. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa);
+  en fazla 3 FR ve 2 NFR yaz.
+Folder backup (sh + bat scripts): Klasör yedekleme (sh + bat script'leri)
+Helper scripts that copy a folder into a timestamped backup; backup.sh for Linux/macOS and backup.bat for Windows.: Bir klasörü
+  zaman damgalı yedeğe kopyalayan yardımcı script'ler; Linux/macOS için backup.sh, Windows için backup.bat.
+? 'Helper scripts that back up a folder: "backup <source> <backup-folder>" copies the source folder into <backup-folder>/<source-name>-YYYYMMDD-HHMMSS
+  and prints where the backup went. A missing source folder prints a clear error message and exits with a non-zero code. The
+  same behaviour for Linux/macOS (backup.sh) and for Windows (backup.bat).'
+: 'Bir klasörü yedekleyen yardımcı script''ler: "backup <kaynak> <yedek-klasörü>" kaynak klasörü <yedek-klasörü>/<kaynak-adı>-YYYYAAGG-SSDDSS
+  klasörüne kopyalar ve yedeğin nereye gittiğini yazar. Bulunamayan kaynak klasör açık bir hata mesajı yazar ve sıfırdan farklı
+  bir çıkış koduyla biter. Aynı davranış Linux/macOS (backup.sh) ve Windows (backup.bat) için sağlanır.'
 POSIX sh and Windows batch (.bat), no dependencies: POSIX sh and Windows batch (.bat), no dependencies
-? 'Only standard tools of each system (cp, rm, date / xcopy, robocopy). The tests run in a Linux container: write a shell
-  test script under tests/ that exercises backup.sh with temporary folders and run it with [sh, tests/test_backup.sh] as unit_test;
-  backup.bat cannot run there, so describe how to check it by hand in the README. Keep every SDLC document short (at most
-  half a page each); write at most 3 FRs and 2 NFRs.'
-: 'Her sistemin yalnızca standart araçlarını kullan (cp, rm, date / xcopy, robocopy). Testler Linux container''ında çalışır:
-  tests/ altında backup.sh''yi geçici klasörlerle çalıştıran bir shell test script''i yaz ve unit_test olarak [sh, tests/test_backup.sh]
+? 'Only the standard tools of each system (cp, date / xcopy). The tests run in a Linux container: write a shell test script
+  under tests/ that exercises backup.sh with temporary folders and run it with [sh, tests/test_backup.sh] as unit_test; backup.bat
+  cannot run there, so describe in the README how to check it by hand. Keep every SDLC document short (at most half a page
+  each); write at most 3 FRs and 2 NFRs.'
+: 'Her sistemin yalnızca standart araçlarını kullan (cp, date / xcopy). Testler Linux container''ında çalışır: tests/ altında
+  backup.sh''yi geçici klasörlerle çalıştıran bir shell test script''i yaz ve unit_test olarak [sh, tests/test_backup.sh]
   ile çalıştır; backup.bat orada çalışamaz, bu yüzden elle nasıl kontrol edileceğini README''de anlat. Bütün SDLC belgeleri
   kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Downloads organizer (sh + bat): İndirilenler düzenleyici (sh + bat)
-Helper scripts that sort the files of a folder into subfolders by type, with a dry-run mode.: Bir klasördeki dosyaları türüne
-  göre alt klasörlere ayıran, kuru çalıştırma (dry-run) modlu yardımcı script'ler.
+Folder organizer (sh + bat scripts): Klasör düzenleyici (sh + bat script'leri)
+? Helper scripts that sort the files of a folder into subfolders by type; organize.sh for Linux/macOS and organize.bat for
+  Windows.
+: Bir klasördeki dosyaları türüne göre alt klasörlere ayıran yardımcı script'ler; Linux/macOS için organize.sh, Windows için
+  organize.bat.
 ? 'Helper scripts that tidy a folder: "organize <folder> [--dry-run]" moves every file into a subfolder named after its type
-  (images, documents, archives, other) chosen from the file extension; --dry-run only prints what would be moved. Existing
-  files are never overwritten (a counter is added to the name). A missing folder prints a clear error and exits with a non-zero
-  code. Provide the same behaviour for Linux/macOS (organize.sh) and Windows (organize.bat).'
+  (images, documents or other), chosen from the file extension; --dry-run only prints what would be moved. A file is skipped,
+  never overwritten, when the target already has a file with that name. A missing folder prints a clear error message and
+  exits with a non-zero code. The same behaviour for Linux/macOS (organize.sh) and for Windows (organize.bat).'
 : 'Bir klasörü toparlayan yardımcı script''ler: "organize <klasör> [--dry-run]" her dosyayı uzantısına göre seçilen, türünün
-  adını taşıyan bir alt klasöre (images, documents, archives, other) taşır; --dry-run yalnızca nelerin taşınacağını yazar.
-  Var olan dosyaların üzerine hiç yazılmaz (ada bir sayaç eklenir). Bulunamayan klasör açık bir hata yazar ve sıfırdan farklı
-  bir çıkış koduyla biter. Aynı davranışı Linux/macOS (organize.sh) ve Windows (organize.bat) için sağla.'
-? 'Only standard tools of each system. The tests run in a Linux container: write a shell test script under tests/ that exercises
-  organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as unit_test; organize.bat cannot run there,
-  so describe how to check it by hand in the README. Keep every SDLC document short (at most half a page each); write at most
-  3 FRs and 2 NFRs.'
+  adını taşıyan bir alt klasöre (images, documents ya da other) taşır; --dry-run yalnızca nelerin taşınacağını yazar. Hedefte
+  aynı adlı bir dosya varsa dosya atlanır, üzerine hiç yazılmaz. Bulunamayan klasör açık bir hata mesajı yazar ve sıfırdan
+  farklı bir çıkış koduyla biter. Aynı davranış Linux/macOS (organize.sh) ve Windows (organize.bat) için sağlanır.'
+? 'Only the standard tools of each system. The tests run in a Linux container: write a shell test script under tests/ that
+  exercises organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as unit_test; organize.bat cannot
+  run there, so describe in the README how to check it by hand. Keep every SDLC document short (at most half a page each);
+  write at most 3 FRs and 2 NFRs.'
 : 'Her sistemin yalnızca standart araçlarını kullan. Testler Linux container''ında çalışır: tests/ altında organize.sh''yi
   geçici klasörlerle çalıştıran bir shell test script''i yaz ve unit_test olarak [sh, tests/test_organize.sh] ile çalıştır;
   organize.bat orada çalışamaz, bu yüzden elle nasıl kontrol edileceğini README''de anlat. Bütün SDLC belgeleri kısa olsun
   (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Inventory tracker (Node.js, fullstack): Envanter takip uygulaması (Node.js, fullstack)
-A simple web application that keeps stock records with product name, category and location.: Ürün adı, kategori ve konum bilgisiyle
-  stok kaydı tutan basit bir web uygulaması.
-? A simple inventory tracking application. Products are stored with product name, category and location (warehouse/shelf).
-  It supports adding, editing, deleting and listing products; the list can be searched by product name and filtered by category
-  and location.
-: Basit bir envanter takip uygulaması. Ürünler; ürün adı, kategori ve konum (depo/raf) bilgisiyle saklanacak. Ürün ekleme,
-  düzenleme, silme ve listeleme olacak; liste ürün adına göre aranabilecek, kategoriye ve konuma göre süzülebilecek.
-Node.js (Express), pnpm, plain HTML/CSS/JS interface: Node.js (Express), pnpm, sade HTML/CSS/JS arayüz
-? Do not use a framework in the frontend, write plain HTML/CSS/JS. The user interface texts should be in Turkish. Prefer a
-  SQLite solution that needs no native compilation.
-: Frontend'de framework kullanma, düz HTML/CSS/JS yaz. Kullanıcı arayüzü metinleri Türkçe olsun. Native derleme gerektirmeyen
-  bir SQLite çözümü tercih et.
-Task tracking API (Python, backend): Görev takip API'si (Python, backend)
-A REST API with endpoints to create, list, complete and delete tasks.: Görev oluşturma, listeleme, tamamlama ve silme endpoint'leri
-  olan REST API.
-? A task tracking API for small teams. Tasks have a title, description, due date and status (todo, in progress, done). It
-  has endpoints to create, list, filter by status, update and delete tasks.
-: Küçük ekipler için görev takip API'si. Görevler başlık, açıklama, son tarih ve durum (yapılacak, sürüyor, bitti) alanlarına
-  sahip olacak. Görev oluşturma, listeleme, duruma göre süzme, güncelleme ve silme endpoint'leri bulunacak.
-Python 3.12, FastAPI, pytest: Python 3.12, FastAPI, pytest
-Include input validation and meaningful error codes (400, 404).: Girdi doğrulaması ve anlamlı hata kodları (400, 404) olsun.
-Unit converter (Python, CLI): Birim dönüştürücü (Python, CLI)
-A small CLI tool that converts length, weight and temperature units.: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren
-  küçük bir CLI aracı.
-? A CLI tool that converts length, weight and temperature units. For example the command "convert 10 km mi" converts 10 kilometers
-  to miles. It has a command that lists the supported units and a clear error message for an invalid unit.
-: Uzunluk, ağırlık ve sıcaklık birimlerini dönüştüren CLI aracı. Örneğin "convert 10 km mi" komutu 10 kilometreyi mile çevirsin.
-  Desteklenen birimleri listeleyen bir komut ve hatalı birim için açık hata mesajı olsun.
-Use no external dependencies; standard library only.: Dış bağımlılık kullanma; yalnızca standard library.
-Text helpers (Python, library): Metin yardımcıları (Python, library)
-A library offering slug generation and text cleanup functions that handle Turkish characters correctly.: Türkçe karakterlere
-  duyarlı slug üretme ve metin temizleme işlevleri sunan library.
-? 'A text helpers library that handles Turkish characters correctly: slug generation for URLs, collapsing extra whitespace,
-  word counting and smart truncation to a given length. Every function should be documented and type-hinted.'
-: 'Türkçe karakterlere duyarlı metin yardımcıları library''si: URL için slug üretme, fazla boşlukları temizleme, kelime sayma
-  ve belirli uzunlukta akıllı kısaltma. Her işlev belgelenmiş ve tip ipuçlu olsun.'
 What is the project type?: Proje türü nedir?
 Which languages and frameworks will be used? State the backend, frontend and package manager.: Hangi dil ve framework'ler
   kullanılacak? Backend, frontend ve package manager'ı belirt.

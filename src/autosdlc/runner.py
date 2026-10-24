@@ -231,6 +231,16 @@ _ERROR_LOCATION = re.compile(
 )
 
 
+_GO_REQUIRE_BLOCK = re.compile(r"^require\s*\([^)]*\)[ \t]*\n?", re.MULTILINE)
+_GO_REQUIRE_LINE = re.compile(r"^require\s+\S+\s+\S+[^\n]*\n?", re.MULTILINE)
+
+
+def strip_go_requires(go_mod: str) -> str:
+    """go.mod without its require entries: versions a model writes from memory are invented (an unknown pseudo-version
+    breaks the build), while `go mod tidy` resolves the real ones from the imports."""
+    return _GO_REQUIRE_LINE.sub("", _GO_REQUIRE_BLOCK.sub("", go_mod))
+
+
 def _in_tests(name: str) -> bool:
     name = name.replace("\\", "/")
     return name.startswith(TEST_DIRS) or any("/" + folder in name for folder in TEST_DIRS)
@@ -866,6 +876,10 @@ class RunSession:
         temp_dir = self.output_dir / "tmp"
         temp_dir.mkdir(exist_ok=True)
         env.update({"TEMP": str(temp_dir), "TMP": str(temp_dir), "TMPDIR": str(temp_dir)})
+        go_mod = self.project_dir / "go.mod"
+        if self.manifest.get("setup", [])[:3] == ["go", "mod", "tidy"] and not self.setup_done and go_mod.is_file():
+            go_mod.write_text(strip_go_requires(go_mod.read_text(encoding="utf-8")), encoding="utf-8")
+            (self.project_dir / "go.sum").unlink(missing_ok=True)
         if self.manifest.get("setup") and self.manifest["setup"][0] in PYTHON_TOOLS and self.python_executable == sys.executable:
             venv_dir = self.project_dir / ".autosdlc-venv"
             try:

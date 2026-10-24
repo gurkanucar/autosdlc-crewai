@@ -35,7 +35,7 @@ from autosdlc.runner import (
 from autosdlc.sections import (
     delete_section, insert_after, replace_section, split_sections, strip_fences, unified_diff,
 )
-from autosdlc.storage import TITLE_LIMIT, History, project_title
+from autosdlc.storage import TITLE_LIMIT, History, project_title, suggested_title
 from autosdlc.ui_jobs import WORKER_ERRORS
 
 
@@ -80,8 +80,6 @@ def require_login() -> None:
         st.error(t("Wrong password."))
     st.stop()
 
-
-require_login()
 
 STATUS_LABELS = {
     "running": ("🔵", "Running", "blue"), "paused": ("🟠", "Paused", "orange"),
@@ -958,15 +956,16 @@ def header(db: History, row: dict) -> None:
         rename_key = f"renaming_{run_id}"
         if st.session_state.get(rename_key):
             with st.form(f"rename_form_{run_id}", border=False):
-                name = st.text_input(t("Project name"), project_title(row), max_chars=TITLE_LIMIT, label_visibility="collapsed",
+                name = st.text_input(t("Project name"), row.get("title") or suggested_title(row["idea"]), max_chars=TITLE_LIMIT,
+                                     label_visibility="collapsed",
                                      help=t("Leave it empty to show the project idea instead."))
                 save, cancel = st.columns(2)
                 saved = save.form_submit_button(t("Save"), type="primary", width="stretch")
                 cancelled = cancel.form_submit_button(t("Cancel"), width="stretch")
             if saved or cancelled:
                 if saved:
-                    # An unchanged name stays unset, so the title keeps following the idea.
-                    db.rename(run_id, "" if name.strip() == row["idea"] and not row.get("title") else name)
+                    # An unchanged suggestion stays unset, so the title keeps following the idea.
+                    db.rename(run_id, "" if name.strip() == suggested_title(row["idea"]) and not row.get("title") else name)
                 st.session_state.pop(rename_key)
                 st.rerun()
         else:
@@ -1306,4 +1305,6 @@ PROJECTS_PAGE = st.Page(projects_page, title=t("Projects"), icon="📁")
 navigation = st.navigation([HOME_PAGE, PROJECTS_PAGE])
 with st.sidebar:
     language_selector()
+# After the pages are registered: a login screen shown earlier makes Streamlit forget the URL's page and land on the home page.
+require_login()
 navigation.run()
