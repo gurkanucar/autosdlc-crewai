@@ -16,6 +16,7 @@ CHOICE_LABELS = {
     "observability": {"none": "None", "otel": "OpenTelemetry", "openobserve": "OpenObserve"},
     "ui": {"none": "None", "web": "Web UI"},
     "delivery": {"docker": "Docker", "binary": "Executables", "script": "Scripts", "none": "None"},
+    "platforms": {"windows": "Windows", "linux": "Linux", "macos": "macOS", "all": "All"},
     "scale": {"normal": "Normal", "small": "Small"},
     # Language names are always written in their own language.
     "language": {"en": "English", "tr": "Türkçe"},
@@ -25,6 +26,12 @@ CHOICE_LABELS = {
 def default_delivery(project_type: str) -> str:
     """What the form preselects: services ship as containers, CLIs and desktop apps as executables, libraries as source."""
     return {"cli": "binary", "desktop": "binary", "library": "none"}.get(project_type, "docker")
+
+
+def applies(item: dict, decisions: dict[str, str]) -> bool:
+    """Whether a question fits the decisions so far: `when` lists project types, `when_delivery` delivery choices."""
+    return ((not item.get("when") or decisions.get("project_type") in item["when"])
+            and (not item.get("when_delivery") or decisions.get("delivery") in item["when_delivery"]))
 
 
 def choice_label(name: str, value: str) -> str:
@@ -86,7 +93,8 @@ def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
         if catalog[name].get("free_text"):
             if not isinstance(value, str) or (not catalog[name].get("optional") and not value.strip()) or len(value) > (1000 if catalog[name].get("optional") else 200):
                 raise ValueError(f"Invalid {name}: enter a short text")
-        elif value not in catalog[name]["options"]:
+        # A stored project keeps "none" for a choice that did not apply to it (e.g. platforms of a Docker project).
+        elif value not in catalog[name]["options"] and not (value == "none" and not applies(catalog[name], selected)):
             raise ValueError(f"Invalid {name}: {value}. Options: {catalog[name]['options']}")
     # Decisions that do not fit the project type (e.g. cli + postgres) are ignored.
     normalized = {
@@ -94,6 +102,10 @@ def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
         else selected.get(name, item.get("default", "" if item.get("optional") else "none"))
         for name, item in catalog.items()
     }
+    # Then those that do not fit the delivery (e.g. target platforms of a Docker project).
+    for name, item in catalog.items():
+        if not applies(item, normalized):
+            normalized[name] = "none"
     if project_type in {"frontend", "fullstack"}:
         normalized["ui"] = "web"
     return normalized

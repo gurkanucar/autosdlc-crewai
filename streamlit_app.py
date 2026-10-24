@@ -21,7 +21,7 @@ from autosdlc.crewai_engine import CrewAIEngine
 from autosdlc.exports import export_files, export_zip, project_zip
 from autosdlc.desktop import open_folder
 from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
-from autosdlc.intake import choice_label, default_delivery, question_text, templates, questions, validate_decisions
+from autosdlc.intake import applies, choice_label, default_delivery, question_text, templates, questions, validate_decisions
 from autosdlc.lifecycle import (
     STAGE_KEYS, STAGES, counters, format_duration, render_svg, stage_description, stage_label, stage_metrics, stage_states,
 )
@@ -106,7 +106,7 @@ EVENT_NAMES = {
     "change_failed": "Change failed", "bug_reproduced": "Bug reproduced by a test",
     "bug_not_reproduced": "Bug not reproduced", "regression": "Regression test", "tests_not_covered": "Test not executed",
     "delta": "Section patch", "skipped": "Stage skipped", "revision_skipped": "Revision not needed",
-    "packaged": "Executables built", "package_failed": "Packaging failed", "package_unavailable": "No executables",
+    "package_started": "Building executables", "packaged": "Executables built", "package_failed": "Packaging failed", "package_unavailable": "No executables",
     "package_skipped": "Packaging skipped", "files_skipped": "Files skipped",
     "tests_repair_started": "Test repair started", "tests_repaired": "Tests repaired",
 }
@@ -133,7 +133,7 @@ MERMAID_SCRIPT = (
 )
 FORM_FIELDS = {"project_type", "stack", "constraints"}
 FORM_LABELS = {"database": "Database", "cache": "Cache", "observability": "Monitoring", "ui": "Web UI",
-               "delivery": "Delivery", "scale": "Scale", "language": "Document language"}
+               "delivery": "Delivery", "platforms": "Platforms", "scale": "Scale", "language": "Document language"}
 
 st.html("""<style>
 .block-container {padding-top:4.5rem; padding-bottom:5rem; max-width:1600px;}
@@ -344,6 +344,7 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "bug_not_reproduced": t("⚠️ My regression test could not reproduce the bug; trying the fix anyway."),
             "regression": t("🔁 Regression: {detail}.", detail=detail),
             "tests_not_covered": t("⚠️ Test files not executed by the project.yaml commands: {detail}", detail=detail),
+            "package_started": t("🔨 Building the executables ({detail}); this can take several minutes.", detail=detail),
             "packaged": t("📦 Executables built: {detail}", detail=detail),
             "package_failed": t("⚠️ The executables could not be built ({detail}); the tests are not affected.", detail=detail),
             "package_unavailable": t("ℹ️ This stack cannot be built into executables; launcher scripts are delivered instead."),
@@ -1251,8 +1252,11 @@ def home_page() -> None:
         if st.session_state.get("delivery_for") != project_type:
             st.session_state["choice_delivery"] = default_delivery(project_type)
             st.session_state["delivery_for"] = project_type
+        # The selectboxes are drawn in one row, so a choice that depends on the delivery reads the delivery from
+        # the previous run of the script; changing the delivery reruns the page and shows or hides it.
+        shown_for = {"project_type": project_type, "delivery": st.session_state["choice_delivery"]}
         options = [(name, item) for name, item in catalog.items()
-                   if name not in FORM_FIELDS and (not item.get("when") or project_type in item["when"])]
+                   if name not in FORM_FIELDS and applies(item, shown_for)]
         if options:
             # The document language follows the interface language until the user picks one explicitly.
             if not st.session_state.get("language_chosen"):

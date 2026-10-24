@@ -68,6 +68,8 @@ STAGE_INPUTS = {
     "deployment": ("design", "analysis"),
     "maintenance": ("analysis", "review", "deployment", "design"),
 }
+# Seconds the package command may run: release builds of GUI crates for several targets are slow on a small server.
+PACKAGE_TIMEOUT = 1800
 
 
 @dataclass
@@ -503,8 +505,9 @@ class RunSession:
             f"EXISTING DOCUMENT:\n{base[:14000]}\n\n"
         )
 
-    def _document(self, stage: str, filename: str) -> str:
-        self._event(stage, "started")
+    def _document(self, stage: str, filename: str, announce: bool = True) -> str:
+        if announce:
+            self._event(stage, "started")
         content = self._generate(stage)
         if stage in {"deployment", "maintenance"}:
             content = self._with_test_header(content)
@@ -938,9 +941,11 @@ class RunSession:
         return [shutil.which(executable, path=env.get("PATH")) or executable, *args]
 
     def deployment(self) -> str:
+        # Announced before packaging: a release build (e.g. Rust GUI crates for two targets) can take many minutes.
+        self._event("deployment", "started")
         write_deployment_files(self.project_dir, self.decisions, self.manifest["port"])
         self._package()
-        report = self._document("deployment", "deployment.md")
+        report = self._document("deployment", "deployment.md", announce=False)
         return report
 
     def _package(self) -> None:
@@ -964,11 +969,23 @@ class RunSession:
         # dist/ only ever holds build outputs; executables of an older version must not be offered as current.
         shutil.rmtree(dist, ignore_errors=True)
         env = self._test_env()
+        self._event("deployment", "package_started", " ".join(command))
+        temp_dir = self.output_dir / "tmp"
+        temp_dir.mkdir(exist_ok=True)
+        build_log = temp_dir / "package.log"
         try:
-            process = subprocess.run(self._command(command, env), cwd=self.project_dir, env=env, capture_output=True,
-                                     text=True, timeout=600, check=False)
-            output, code = (process.stdout + process.stderr)[-3000:], process.returncode
-        except (subprocess.TimeoutExpired, OSError) as exc:
+            # The output goes to a file and the build runs in its own process group: on a timeout the compilers the
+            # script started are stopped too, and nothing waits for pipes that a leftover child still holds open.
+            with build_log.open("w", encoding="utf-8") as log_file:
+                process = subprocess.Popen(self._command(command, env), cwd=self.project_dir, env=env, stdout=log_file,
+                                           stderr=subprocess.STDOUT, start_new_session=os.name != "nt")
+            try:
+                code = process.wait(timeout=PACKAGE_TIMEOUT)
+                output = _tail(build_log, 3000)
+            except subprocess.TimeoutExpired:
+                _stop_process(process)
+                code, output = -1, f"the build timed out after {PACKAGE_TIMEOUT} seconds\n{_tail(build_log, 2500)}"
+        except OSError as exc:
             output, code = str(exc), -1
         artifacts = sorted(path.relative_to(dist).as_posix() for path in dist.rglob("*") if path.is_file()) if dist.is_dir() else []
         if code == 0 and artifacts:

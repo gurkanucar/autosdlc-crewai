@@ -106,6 +106,32 @@ def test_binary_delivery_builds_executables_after_the_tests(tmp_path, monkeypatc
     assert not any(name.endswith("/calc") or "/dist/" in name for name in names)
 
 
+def test_packaging_is_announced_before_it_runs(tmp_path, monkeypatch):
+    # A Rust GUI release build can take many minutes; the deployment stage must show up before it starts.
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    result = run_project("Calculator", workspace=tmp_path, engine=CliEngine(), decisions=_decisions("binary"))
+    events = [(event["stage"], event["status"]) for event in History(tmp_path / "runs" / "history.sqlite3").get(result.id)["events"]]
+    order = [events.index(key) for key in (("testing", "passed"), ("deployment", "started"),
+                                           ("deployment", "package_started"), ("deployment", "packaged"))]
+    assert order == sorted(order)
+    assert events.count(("deployment", "started")) == 1
+
+
+def test_packaging_timeout_stops_the_whole_build(tmp_path, monkeypatch):
+    # build.sh starts cargo, which starts rustc: a timeout must stop them all and must not wait for their output pipes.
+    import time
+
+    import autosdlc.runner
+
+    monkeypatch.setattr(autosdlc.runner, "PACKAGE_TIMEOUT", 2)
+    build = "import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\nimport time\ntime.sleep(60)\n"
+    started = time.monotonic()
+    result, events = _run(tmp_path, monkeypatch, CliEngine(build=build), "binary")
+    assert result.status == "completed", result.error
+    assert "timed out" in events[("deployment", "package_failed")]
+    assert time.monotonic() - started < 40
+
+
 def test_failed_packaging_does_not_fail_the_project(tmp_path, monkeypatch):
     result, events = _run(tmp_path, monkeypatch, CliEngine(build="raise SystemExit('no cross compiler')\n"), "binary")
     assert result.status == "completed", result.error

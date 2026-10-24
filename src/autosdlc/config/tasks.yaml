@@ -83,10 +83,12 @@ development:
     Return ONLY this JSON format: {"files": {"relative/path": "complete file content", ...}}.
     Package the project according to the `delivery` decision:
       docker: a Dockerfile suited to the chosen technology.
-      binary: a POSIX sh script build.sh that builds standalone executables into dist/ for every target the
-        toolchain can cross-compile from Linux, named <app>-<os>-<arch> (with .exe for Windows). Go:
-        CGO_ENABLED=0 with GOOS/GOARCH for windows/amd64, linux/amd64, linux/arm64, darwin/amd64, darwin/arm64.
-        Rust: cargo build --release for x86_64-unknown-linux-gnu and x86_64-pc-windows-gnu (no macOS).
+      binary: a POSIX sh script build.sh that builds standalone executables into dist/ ONLY for the operating
+        systems in the `platforms` decision (windows, linux, macos, or all of them), named <app>-<os>-<arch>
+        (with .exe for Windows); building more targets than asked only wastes time. Go: CGO_ENABLED=0 with
+        GOOS/GOARCH windows/amd64; linux/amd64 and linux/arm64; darwin/amd64 and darwin/arm64.
+        Rust: cargo build --release --target x86_64-pc-windows-gnu (Windows) or x86_64-unknown-linux-gnu (Linux);
+        Rust cannot be built for macOS from Linux, so for macos build nothing for it and say so in the README.
         Add package: [sh, build.sh] to project.yaml. If the stack cannot build standalone executables from
         Linux (Python, Node.js, ...), do not fake it: write run.sh and run.bat launchers instead, leave package
         out and say so in the README. No Dockerfile.

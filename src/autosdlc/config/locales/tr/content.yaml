@@ -40,10 +40,9 @@ Go 1.24, standard library, go test: Go 1.24, standard library, go test
   içeren internal/ altında tek paket. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2
   NFR yaz.'
 To-do list (Rust, desktop window): Yapılacaklar listesi (Rust, masaüstü penceresi)
-? 'A small to-do list app with its own window: add, tick off and delete tasks; saved to a JSONL file. Windows .exe and Linux
-  builds.'
+? 'A small to-do list app with its own window: add, tick off and delete tasks; saved to a JSONL file. Built as a Windows .exe.'
 : 'Kendi penceresi olan küçük bir yapılacaklar uygulaması: görev ekle, işaretle, sil; JSONL dosyasına kaydedilir. Windows
-  .exe ve Linux sürümleri.'
+  .exe olarak derlenir.'
 ? A simple to-do list desktop app. You can add a task, mark it as done or not done, and delete it. The list is saved, so it
   is still there after a restart.
 : Basit bir yapılacaklar listesi masaüstü uygulaması. Görev ekleyebilir, görevi yapıldı ya da yapılmadı olarak işaretleyebilir
@@ -91,8 +90,8 @@ A small desktop calculator with a window and buttons; starts with a double click
   oluşturur, çünkü testler ekransız çalışır. En az dosya: calculator.py (mantık), app.py (pencere), run.bat, run.sh. Bütün
   SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 Calculator app (Go, one .exe): Hesap makinesi uygulaması (Go, tek .exe)
-A calculator in a single file you double-click; opens in its own browser tab. Windows .exe, Linux and macOS builds.: Çift
-  tıklayınca açılan tek dosyalık hesap makinesi; kendi tarayıcı sekmesinde açılır. Windows .exe, Linux ve macOS sürümleri.
+A calculator in a single file you double-click; opens in its own browser tab. Built as a Windows .exe.: Çift tıklayınca açılan
+  tek dosyalık hesap makinesi; kendi tarayıcı sekmesinde açılır. Windows .exe olarak derlenir.
 ? 'A calculator app in a single file: double-click it and a calculator opens, with a display, the digit buttons, plus, minus,
   multiply and divide buttons, a clear button and an equals button. Dividing by zero shows "Error" instead of crashing.'
 : 'Tek dosyalık bir hesap makinesi uygulaması: çift tıklayınca bir hesap makinesi açılır; ekran, rakam düğmeleri, artı, eksi,
@@ -184,6 +183,8 @@ Should the backend project have a web UI?: Backend projesinde web UI olsun mu?
 : 'Proje nasıl teslim edilecek? Docker: container imajı; Çalıştırılabilir dosya: araç zincirinin izin verdiği her işletim
   sistemi için derlenmiş dosyalar (Windows .exe, Linux, macOS); Script: run.sh/run.bat başlatıcıları; Yok: yalnızca kaynak
   kod.'
+For which operating systems should the executables be built? Every extra system adds build time.: Çalıştırılabilir dosyalar
+  hangi işletim sistemleri için derlensin? Her ek sistem derleme süresini uzatır.
 ? What is the project scale? In a small project documents are kept short and the review only sends the design back on a critical
   finding.
 : Proje ölçeği nedir? Küçük projede belgeler kısa tutulur ve inceleme yalnızca kritik bulguda tasarımı geri gönderir.

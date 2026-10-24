@@ -54,6 +54,17 @@ delivery:
   optional: true
   # Projects created before this decision existed were all delivered with Docker. The form preselects per project type.
   default: docker
+platforms:
+  question: For which operating systems should the executables be built? Every extra system adds build time.
+  options:
+  - windows
+  - linux
+  - macos
+  - all
+  optional: true
+  default: windows
+  when_delivery:
+  - binary
 scale:
   question: What is the project scale? In a small project documents are kept short and the review only sends the design back
     on a critical finding.

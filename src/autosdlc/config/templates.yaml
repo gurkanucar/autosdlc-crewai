@@ -18,7 +18,7 @@
       and 2 NFRs.'
 - id: todo-desktop-rust
   title: To-do list (Rust, desktop window)
-  description: 'A small to-do list app with its own window: add, tick off and delete tasks; saved to a JSONL file. Windows .exe and Linux builds.'
+  description: 'A small to-do list app with its own window: add, tick off and delete tasks; saved to a JSONL file. Built as a Windows .exe.'
   idea: 'A simple to-do list desktop app. You can add a task, mark it as done or not done, and delete it. The list is
     saved, so it is still there after a restart.'
   decisions:
@@ -26,6 +26,7 @@
     project_type: desktop
     stack: Rust (stable), eframe/egui, serde_json
     delivery: binary
+    platforms: windows
     constraints: 'Save the tasks to a JSONL file (one task per line with id, text and done) next to the program. Keep
       the task list and the JSONL load/save logic in src/lib.rs without any egui code; src/main.rs only draws the window
       and calls the library. Tests use temporary files and never open a window. Fewest files: Cargo.toml, src/lib.rs,
@@ -47,7 +48,7 @@
       3 FRs and 2 NFRs.'
 - id: calculator-desktop-go
   title: Calculator app (Go, one .exe)
-  description: A calculator in a single file you double-click; opens in its own browser tab. Windows .exe, Linux and macOS builds.
+  description: A calculator in a single file you double-click; opens in its own browser tab. Built as a Windows .exe.
   idea: 'A calculator app in a single file: double-click it and a calculator opens, with a display, the digit buttons,
     plus, minus, multiply and divide buttons, a clear button and an equals button. Dividing by zero shows "Error"
     instead of crashing.'
@@ -56,6 +57,7 @@
     project_type: desktop
     stack: Go 1.24, standard library; the interface is a small web page built into the program
     delivery: binary
+    platforms: windows
     constraints: 'Use the Go standard library only. The HTML/CSS/JS is embedded in the program (embed package), so no
       other file is needed next to it. The program starts a tiny local web server that only this computer can reach and
       opens the page in the default browser; if that fails it prints the address. Put the calculation and the HTTP
@@ -101,6 +103,7 @@
     project_type: cli
     stack: Go 1.24, standard library, go test
     delivery: binary
+    platforms: all
     constraints: 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Fewest files:
       main.go and one package under internal/ with the generator. Keep every SDLC document short (at most half a page
       each); write at most 3 FRs and 2 NFRs.'

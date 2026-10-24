@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from .i18n import set_language, t
-from .intake import choice_label, parse_choice, question_text, questions, validate_decisions, with_default_delivery
+from .intake import applies, choice_label, parse_choice, question_text, questions, validate_decisions, with_default_delivery
 from .runner import run_project
 from .storage import History
 
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             selected.update({name: getattr(args, name) for name in questions() if getattr(args, name) is not None})
             if not args.no_prompt:
                 for name, item in questions().items():
-                    if item.get("when") and selected.get("project_type") not in item["when"]:
+                    if not applies(item, with_default_delivery(selected)):
                         continue
                     if name not in selected:
                         while True:

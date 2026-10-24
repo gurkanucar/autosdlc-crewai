@@ -326,3 +326,7 @@
 "🛠️ The tests themselves do not compile; I am fixing my own test files.": "🛠️ Testlerin kendisi derlenmiyor; kendi test dosyalarımı düzeltiyorum."
 "✅ Test files fixed: {detail}": "✅ Test dosyaları düzeltildi: {detail}"
 "Desktop app": "Masaüstü uygulaması"
+"Building executables": "Çalıştırılabilir dosyalar derleniyor"
+"🔨 Building the executables ({detail}); this can take several minutes.": "🔨 Çalıştırılabilir dosyalar derleniyor ({detail}); bu birkaç dakika sürebilir."
+"Platforms": "Platformlar"
+"All": "Tümü"
