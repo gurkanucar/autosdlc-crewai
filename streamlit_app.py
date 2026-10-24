@@ -960,9 +960,8 @@ def header(db: History, row: dict) -> None:
                 st.session_state.pop(rename_key)
                 st.rerun()
         else:
-            text, edit = st.columns([20, 1], vertical_alignment="center")
-            text.markdown(f'<div class="project-title" role="heading" aria-level="1">{escape(project_title(row))}</div>', unsafe_allow_html=True)
-            if edit.button("", icon=":material/edit:", key=f"rename_{run_id}", help=t("Rename project"), type="tertiary"):
+            st.markdown(f'<div class="project-title" role="heading" aria-level="1">{escape(project_title(row))}</div>', unsafe_allow_html=True)
+            if st.button(t("Rename"), icon=":material/edit:", key=f"rename_{run_id}", help=t("Rename project"), type="tertiary"):
                 st.session_state[rename_key] = True
                 st.rerun()
         # The full path spreads the header over several lines; only the folder name (the full path is in the README view and Manage menu).
