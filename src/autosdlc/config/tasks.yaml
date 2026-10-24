@@ -130,6 +130,13 @@ development:
     [-p, pytest_playwright.pytest_playwright] to the ui_test list; automatic plugin loading is off.
     Use the environment variables TASK_DB_PATH for SQLite, DATABASE_URL for Postgres, REDIS_URL for Redis
     and OTEL_EXPORTER_OTLP_ENDPOINT for telemetry.
+    During the tests a real, empty PostgreSQL database is at DATABASE_URL and a real Redis at REDIS_URL. The
+    application creates its tables itself when it starts (or in the setup command); never replace the database with
+    an in-memory fake.
+    Files users upload (images, attachments) are stored on the file system in the folder named by the UPLOADS_DIR
+    environment variable (default ./uploads, created if missing), never in the database; the database keeps only the
+    generated file name. Generate the stored name yourself (never trust the uploaded name), check the type and size,
+    and serve the files from that folder under /uploads. In Docker this folder is /data/uploads on a persistent volume.
     For a SQLite backend, the API test runner supplies an isolated TASK_DB_PATH; the app must still
     support a practical local default. In Docker, make the persistent data directory writable by the
     non-root runtime user. Copy the pnpm lockfile and workspace policy before installing dependencies;
@@ -175,7 +182,9 @@ testing:
     and faulty usage. Write the related id (e.g. FR-01) explicitly in the name or description of every test;
     the traceability matrix is built from these ids.
     Every FR must be covered by at least one test. In a backend/fullstack project test the real API HTTP
-    endpoints. If there is a web UI, open BASE_URL with Playwright
+    endpoints. A Postgres or Redis project gets a real, empty server at DATABASE_URL / REDIS_URL during the tests:
+    use it, never mock the database, and keep each test independent of the data other tests leave behind (unique
+    names or emails per test). If there is a web UI, open BASE_URL with Playwright
     and verify a visible interaction. Keep the test data isolated and deterministic.
     For Node.js ESM TypeScript projects using tsx, use `node --import tsx --test tests/*.test.ts`;
     `node --test tests/` is not a valid directory invocation. Check that every imported helper and

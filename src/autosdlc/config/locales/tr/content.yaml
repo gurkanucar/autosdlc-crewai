@@ -121,6 +121,38 @@ Node.js (Express), pnpm, plain HTML/CSS/JS interface: Node.js (Express), pnpm, s
   Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.
 : Frontend'de framework kullanma, düz HTML/CSS/JS yaz. Native derleme gerektirmeyen bir SQLite çözümü tercih et. Bütün SDLC
   belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.
+Event registration (Node.js + React, PostgreSQL, web app): Etkinlik kayıt (Node.js + React, PostgreSQL, web uygulaması)
+? Organizers publish events with a capacity and a cover image, users sign up for them; user, organizer and admin roles. Express
+  API, React + Vite + axios, PostgreSQL; runs with Docker Compose.
+: Düzenleyiciler kontenjanlı ve kapak resimli etkinlik yayınlar, kullanıcılar kayıt olur; user, organizer ve admin rolleri.
+  Express API, React + Vite + axios, PostgreSQL; Docker Compose ile çalışır.
+? 'An event registration web app. People can sign up and log in. Organizers create events with a title, a description, a date,
+  a capacity and a cover image they upload, and see who registered for their own events. Users see the upcoming events with
+  their images and the number of free places, register for an event and cancel their registration. A user cannot register
+  twice for the same event, and registration closes when the event is full or has already taken place. There are three roles:
+  user, organizer and admin; an admin changes other users'' roles. The first user who signs up becomes the admin.'
+: 'Bir etkinlik kayıt web uygulaması. Kişiler kayıt olup giriş yapabilir. Düzenleyiciler başlık, açıklama, tarih, kontenjan
+  ve yükledikleri bir kapak resmiyle etkinlik oluşturur ve kendi etkinliklerine kimlerin kayıt olduğunu görür. Kullanıcılar
+  yaklaşan etkinlikleri resimleri ve boş yer sayısıyla görür, bir etkinliğe kayıt olur ve kaydını iptal eder. Bir kullanıcı
+  aynı etkinliğe iki kez kayıt olamaz; etkinlik dolduğunda ya da tarihi geçtiğinde kayıt kapanır. Üç rol var: user, organizer
+  ve admin; admin diğer kullanıcıların rolünü değiştirir. İlk kayıt olan kullanıcı admin olur.'
+Node.js 22 (Express), pnpm, React + Vite + axios frontend: Node.js 22 (Express), pnpm, React + Vite + axios frontend
+? 'Two folders: server/ (Express API under /api) and web/ (React + Vite + axios). The setup command installs both and builds
+  the React app; the start command runs only the Express server, which also serves the built web/dist files, so the whole
+  app runs on one port. Hash passwords with bcryptjs (no native build). Login returns a JWT that the client sends as an Authorization:
+  Bearer <token> header (axios interceptor); check the role on the server for every protected route (401 when not logged in,
+  403 when the role is not allowed). Enforce the capacity in the database transaction so two people cannot take the last place;
+  a full event, a past event or a second registration answers 409. Upload images with multer: JPEG, PNG or WebP up to 5 MB,
+  saved in UPLOADS_DIR under a generated name (other files answer 400). The server creates its tables at startup. Keep every
+  SDLC document short (at most half a page each); at most 4 FRs and 2 NFRs.'
+: 'İki klasör: server/ (/api altında Express API) ve web/ (React + Vite + axios). Setup komutu ikisini de kurar ve React uygulamasını
+  derler; start komutu yalnızca Express sunucusunu çalıştırır, o da derlenmiş web/dist dosyalarını sunar, böylece bütün uygulama
+  tek portta çalışır. Parolaları bcryptjs ile hash''le (native derleme yok). Giriş bir JWT döndürür, istemci bunu Authorization:
+  Bearer <token> başlığıyla gönderir (axios interceptor); korumalı her route''ta rolü sunucuda kontrol et (giriş yoksa 401,
+  rol izin vermiyorsa 403). Kontenjanı veritabanı transaction''ı içinde uygula ki iki kişi son yeri aynı anda alamasın; dolu
+  etkinlik, geçmiş etkinlik ya da ikinci kayıt 409 döner. Resimleri multer ile yükle: en fazla 5 MB JPEG, PNG ya da WebP,
+  UPLOADS_DIR içine üretilmiş bir adla kaydedilir (diğer dosyalar 400 döner). Sunucu tablolarını açılışta kendisi oluşturur.
+  Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 4 FR ve 2 NFR.'
 Task API (Python, web API): Görev API'si (Python, web API)
 A small REST API to create, list, update and delete tasks; runs in Docker.: Görev oluşturma, listeleme, güncelleme ve silme
   için küçük bir REST API; Docker'da çalışır.

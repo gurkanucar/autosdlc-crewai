@@ -220,6 +220,13 @@ def test_architecture_choices_and_compose():
     compose = render_compose(fullstack, 3000)
     assert compose["services"]["app"]["ports"] == ["3000:3000"]
     assert {"db", "redis", "otel-collector", "openobserve"} <= set(compose["services"])
+    # Uploaded files survive a container restart: a Postgres app still gets its own data volume.
+    assert compose["services"]["app"]["environment"]["UPLOADS_DIR"] == "/data/uploads"
+    assert "app-data:/data" in compose["services"]["app"]["volumes"] and "app-data" in compose["volumes"]
+    sqlite = render_compose(validate_decisions({"project_type": "backend", "stack": "Go", "database": "sqlite", "cache": "none",
+                                                "observability": "none", "ui": "none"}))
+    assert sqlite["services"]["app"]["volumes"] == ["app-data:/data"]
+    assert sqlite["services"]["app"]["environment"]["UPLOADS_DIR"] == "/data/uploads"
 
 
 def test_custom_output_path_is_recorded(tmp_path, monkeypatch):

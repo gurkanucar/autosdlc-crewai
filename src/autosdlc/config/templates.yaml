@@ -122,6 +122,32 @@
     delivery: docker
     constraints: 'Do not use a framework in the frontend, write plain HTML/CSS/JS. Prefer a SQLite solution that needs
       no native compilation. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: event-registration-node
+  title: Event registration (Node.js + React, PostgreSQL, web app)
+  description: 'Organizers publish events with a capacity and a cover image, users sign up for them; user, organizer
+    and admin roles. Express API, React + Vite + axios, PostgreSQL; runs with Docker Compose.'
+  idea: 'An event registration web app. People can sign up and log in. Organizers create events with a title, a
+    description, a date, a capacity and a cover image they upload, and see who registered for their own events. Users see the upcoming events
+    with their images and the number of free places, register for an event and cancel their registration. A user cannot register
+    twice for the same event, and registration closes when the event is full or has already taken place. There are
+    three roles: user, organizer and admin; an admin changes other users'' roles. The first user who signs up becomes
+    the admin.'
+  decisions:
+    scale: small
+    project_type: fullstack
+    stack: Node.js 22 (Express), pnpm, React + Vite + axios frontend
+    database: postgres
+    cache: none
+    observability: none
+    delivery: docker
+    constraints: 'Two folders: server/ (Express API under /api) and web/ (React + Vite + axios). The setup command
+      installs both and builds the React app; the start command runs only the Express server, which also serves the
+      built web/dist files, so the whole app runs on one port. Hash passwords with bcryptjs (no native build). Login
+      returns a JWT that the client sends as an Authorization: Bearer <token> header (axios interceptor); check the role on the server for every protected route (401 when not logged in, 403 when
+      the role is not allowed). Enforce the capacity in the database transaction so two people cannot take the last
+      place; a full event, a past event or a second registration answers 409. Upload images with multer: JPEG, PNG
+      or WebP up to 5 MB, saved in UPLOADS_DIR under a generated name (other files answer 400). The server creates
+      its tables at startup. Keep every SDLC document short (at most half a page each); at most 4 FRs and 2 NFRs.'
 - id: task-api
   title: Task API (Python, web API)
   description: A small REST API to create, list, update and delete tasks; runs in Docker.

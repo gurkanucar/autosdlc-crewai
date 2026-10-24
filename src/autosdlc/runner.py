@@ -23,6 +23,7 @@ import yaml
 from .crewai_engine import ClarificationNeeded, CrewAIEngine
 from .i18n import normalize, t
 from .deployment import write_deployment_files
+from .services import LocalServices
 from .exports import is_compiled_binary
 from .files import write_generated_files
 from .intake import validate_decisions
@@ -409,6 +410,8 @@ class RunSession:
         self.test_passed = False
         # Executables were asked for (binary delivery) but none could be built; the project then fails.
         self.package_failed = False
+        # Throwaway PostgreSQL/Redis for the tests, started on first use and stopped when the run ends or pauses.
+        self.services = LocalServices(self.output_dir / "tmp" / "services", self.decisions)
         self.last_test_output = ""
         # Outcome of building the executables of a binary delivery; the deployment agent documents it.
         self.package_report = ""
@@ -503,6 +506,7 @@ class RunSession:
         return f"> {header} {TEST_MARKER}\n\n{TEST_HEADER.sub('', content, count=1)}"
 
     def pause(self) -> RunResult:
+        self.services.stop()
         self._event("workflow", "paused", "Paused at the user's request")
         self.history.pause(self.run_id, self.attempts)
         return RunResult(self.run_id, "paused", self.output_dir, self.project_dir, self.attempts)
@@ -806,6 +810,16 @@ class RunSession:
         # the user has not created a local .env file. Isolate it from project data.
         if self.decisions.get("database") == "sqlite":
             env["TASK_DB_PATH"] = str(self.output_dir / "tmp" / "autosdlc-test.sqlite3")
+        if self.decisions.get("project_type") in {"backend", "fullstack"}:
+            # Files the tests upload stay out of the project folder.
+            env["UPLOADS_DIR"] = str(self.output_dir / "tmp" / "uploads")
+        started = self.services.env is not None
+        env.update(self.services.start())
+        if not started:
+            for note in self.services.notes:
+                self._event("testing", "services_unavailable", note)
+            if self.services.env:
+                self._event("testing", "services_started", ", ".join(sorted(self.services.env)))
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return env
@@ -1123,6 +1137,7 @@ class RunSession:
         return self._document("maintenance", "maintenance_report.md")
 
     def result(self, error: str | None = None) -> RunResult:
+        self.services.stop()
         if self.package_failed and not error:
             error = "The executables could not be built: " + self.package_report[:1500]
         status = "failed" if error or not self.test_passed else "completed"

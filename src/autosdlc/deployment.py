@@ -14,6 +14,11 @@ def render_compose(decisions: dict[str, str], port: int = 8000) -> dict:
         app["ports"] = [f"{port}:{port}"]
     services = {"app": app}
     volumes = {}
+    if decisions["project_type"] in {"backend", "fullstack"}:
+        # Files users upload (e.g. images) live on this volume and survive a container restart.
+        app["environment"]["UPLOADS_DIR"] = "/data/uploads"
+        app["volumes"] = ["app-data:/data"]
+        volumes["app-data"] = {}
     if decisions["database"] == "sqlite":
         app["environment"]["TASK_DB_PATH"] = "/data/app.db"
         app["volumes"] = ["app-data:/data"]

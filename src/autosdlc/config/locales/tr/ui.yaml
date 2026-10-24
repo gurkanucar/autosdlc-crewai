@@ -336,3 +336,7 @@
 "✅ The code compiles now ({detail}).": "✅ Kod artık derleniyor ({detail})."
 "🛠️ I am fixing the code according to the compile errors.": "🛠️ Derleme hatalarına göre kodu düzeltiyorum."
 "🛠️ I am fixing the code according to the release build errors.": "🛠️ Release derleme hatalarına göre kodu düzeltiyorum."
+"Test services started": "Test servisleri başladı"
+"Test service missing": "Test servisi eksik"
+"🗄️ A throwaway database/cache was started for the tests ({detail}).": "🗄️ Testler için geçici bir veritabanı/önbellek başlatıldı ({detail})."
+"⚠️ {detail}": "⚠️ {detail}"

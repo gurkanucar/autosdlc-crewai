@@ -22,10 +22,11 @@ ENV PYTHONUNBUFFERED=1 \
 # libtk8.6: the image's Python ships the tkinter module but not the Tk library it loads, so a desktop app's tests
 # could not even import tkinter. xvfb/xauth: the tests run under a virtual display (xvfb-run), so a test that opens a
 # window does not fail with "no display"; fonts-dejavu-core gives those windows a font. zip/unzip: build scripts often
-# zip the dist/ folder.
+# zip the dist/ folder. postgresql-15/redis-server: the tests of a project that uses them get a throwaway server
+# (autosdlc/services.py); compose.yaml only provides them for deployment.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git build-essential ca-certificates gcc-mingw-w64-x86-64 libtk8.6 \
-       xvfb xauth fonts-dejavu-core zip unzip \
+       xvfb xauth fonts-dejavu-core zip unzip postgresql-15 redis-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js, npm and pnpm. Only node and npm are copied: /usr/local also holds Python in this image.
