@@ -86,6 +86,22 @@ make test   # run the test suite
 
 The generated project's tools and services are chosen per project. Review AI-generated code before running or deploying it; generated commands execute as local subprocesses.
 
+## Deploy with Docker (Dokploy / any VPS)
+
+The repository ships a `Dockerfile` and a `docker-compose.yml`. The image contains the app, Playwright Chromium and the toolchains generated projects need (Python 3.12, Node.js 22 with npm and pnpm, Go 1.24, Rust, git and a C compiler); it is large (about 6–7 GB on disk). Other stacks (Java, …) are not installed. Projects and run history are kept in the `/data` volume.
+
+| Variable | Purpose |
+|----------|---------|
+| `OPENCODE_API_KEY` | OpenCode Go key shared by every user of the instance |
+| `AUTOSDLC_MODEL` | Default model (optional) |
+| `APP_PASSWORD` | Shared password for the web UI. Leave it empty and the UI is open to anyone who can reach it (a warning is logged) |
+
+```bash
+docker compose up -d --build   # serves on port 8501
+```
+
+On Dokploy, create a **Compose** (or **Application** with the Dockerfile) service from this repository, set the variables above in its environment, point your domain at port `8501` and enable HTTPS; Dokploy's Traefik terminates TLS and forwards WebSockets, which Streamlit needs. There is a single shared password and no per-user separation: everyone who signs in sees every project and spends the same API key. Generated code (tests, servers, Chromium) runs inside the container, so treat the password as access to that container.
+
 ## Project references
 
 [CrewAI Flows](https://docs.crewai.com/concepts/flows) · [OpenCode Go](https://opencode.ai/go) · [Streamlit](https://streamlit.io/) · [FastAPI](https://fastapi.tiangolo.com/) · [Pytest](https://docs.pytest.org/) · [Playwright](https://playwright.dev/python/)

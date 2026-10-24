@@ -1,0 +1,14 @@
+.git
+.venv
+.tmp
+.env
+.pytest_cache
+__pycache__
+*.py[cod]
+*.egg-info
+projects
+runs
+docs
+tests
+Makefile
+README*.md

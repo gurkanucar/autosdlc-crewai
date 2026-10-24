@@ -86,6 +86,22 @@ make test   # testleri çalıştır
 
 Oluşturulan projenin araçları ve servisleri projeye göre seçilir. AI tarafından üretilen kodu çalıştırmadan veya dağıtmadan önce inceleyin; üretilen komutlar yerel subprocess olarak çalışır.
 
+## Docker ile yayınlama (Dokploy / herhangi bir VPS)
+
+Depoda bir `Dockerfile` ve bir `docker-compose.yml` vardır. İmajda uygulama, Playwright Chromium ve üretilen projelerin ihtiyaç duyduğu araçlar bulunur (Python 3.12, npm ve pnpm ile Node.js 22, Go 1.24, Rust, git ve C derleyicisi); imaj büyüktür (diskte yaklaşık 6–7 GB). Diğer stack'ler (Java vb.) kurulu değildir. Projeler ve çalıştırma geçmişi `/data` volume'unda tutulur.
+
+| Değişken | Amaç |
+|----------|------|
+| `OPENCODE_API_KEY` | Örneği kullanan herkesin paylaştığı OpenCode Go anahtarı |
+| `AUTOSDLC_MODEL` | Varsayılan model (isteğe bağlı) |
+| `APP_PASSWORD` | Web arayüzü için ortak parola. Boş bırakılırsa arayüze erişebilen herkes kullanır (logda uyarı yazılır) |
+
+```bash
+docker compose up -d --build   # 8501 portunda yayın yapar
+```
+
+Dokploy'da bu depodan bir **Compose** (veya Dockerfile ile **Application**) servisi oluşturun, yukarıdaki değişkenleri ortamına girin, alan adınızı `8501` portuna yönlendirip HTTPS'i açın; TLS'i Dokploy'un Traefik'i sonlandırır ve Streamlit'in ihtiyaç duyduğu WebSocket'leri iletir. Tek bir ortak parola vardır, kullanıcı ayrımı yoktur: giriş yapan herkes tüm projeleri görür ve aynı API anahtarını harcar. Üretilen kod (testler, sunucular, Chromium) konteynerin içinde çalışır; parolayı bu konteynere erişim olarak düşünün.
+
 ## Proje referansları
 
 [CrewAI Flows](https://docs.crewai.com/concepts/flows) · [OpenCode Go](https://opencode.ai/go) · [Streamlit](https://streamlit.io/) · [FastAPI](https://fastapi.tiangolo.com/) · [Pytest](https://docs.pytest.org/) · [Playwright](https://playwright.dev/python/)

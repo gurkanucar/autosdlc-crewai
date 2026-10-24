@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -15,6 +16,7 @@ import streamlit as st
 import yaml
 from dotenv import load_dotenv
 
+from autosdlc.auth import auth_enabled, password_matches
 from autosdlc.crewai_engine import CrewAIEngine
 from autosdlc.exports import export_files, export_zip, project_zip
 from autosdlc.desktop import open_folder
@@ -51,6 +53,35 @@ def use_language() -> None:
 
 
 use_language()
+
+
+@st.cache_resource
+def warn_auth_disabled() -> bool:
+    """Logs once per server process; the cache keeps Streamlit's script reruns from repeating it."""
+    logging.getLogger("autosdlc").warning("APP_PASSWORD is not set: the UI is open to everyone who can reach it")
+    return True
+
+
+def require_login() -> None:
+    """Shows a password form instead of the app until APP_PASSWORD is entered; a no-op when no password is set."""
+    if not auth_enabled():
+        warn_auth_disabled()
+        return
+    if st.session_state.get("authenticated"):
+        return
+    st.title("AutoSDLC")
+    with st.form("login"):
+        password = st.text_input(t("Password"), type="password")
+        submitted = st.form_submit_button(t("Sign in"))
+    if submitted:
+        if password_matches(password):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        st.error(t("Wrong password."))
+    st.stop()
+
+
+require_login()
 
 STATUS_LABELS = {
     "running": ("🔵", "Running", "blue"), "paused": ("🟠", "Paused", "orange"),

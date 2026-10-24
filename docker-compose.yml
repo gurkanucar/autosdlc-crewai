@@ -1,0 +1,16 @@
+services:
+  autosdlc:
+    build: .
+    restart: unless-stopped
+    environment:
+      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
+      AUTOSDLC_MODEL: ${AUTOSDLC_MODEL:-glm-5.3-flash}
+      # Leave empty to keep the UI open; set it to require a shared password.
+      APP_PASSWORD: ${APP_PASSWORD:-}
+    volumes:
+      - autosdlc-data:/data
+    expose:
+      - "8501"
+
+volumes:
+  autosdlc-data:
