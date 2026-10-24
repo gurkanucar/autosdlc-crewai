@@ -224,6 +224,17 @@ def regenerate(db: History, run_id: str, stage: str, api_key: str | None) -> Non
 
 # ---------------------------------------------------------------- small helpers
 
+def continue_model_field(row: dict, prefix: str) -> str:
+    """The model to continue a paused or failed run with; defaults to the one it used so far."""
+    models = model_options()
+    current = row.get("model")
+    if current and current not in models:
+        models = [current, *models]
+    return st.selectbox(t("OpenCode Go model"), models, index=models.index(current) if current else models.index(default_model(models)),
+                        key=f"{prefix}_model", help=t("A model that thinks very long (e.g. glm-5.3) can use up its output on reasoning "
+                                                      "and return an empty answer; a faster model can be picked here."))
+
+
 def api_key_field(prefix: str) -> tuple[bool, str | None]:
     """(key ready?, user key). The .env key is never sent to the browser."""
     if os.getenv("OPENCODE_API_KEY") and not st.toggle(t("Use a different API key"), key=f"{prefix}_override"):
@@ -1126,8 +1137,10 @@ def header(db: History, row: dict) -> None:
                 st.rerun()
         elif row["status"] == "paused":
             with primary.popover(t("▶ Resume"), width="stretch"):
+                model = continue_model_field(row, f"resume_{run_id}")
                 ready, key = api_key_field(f"resume_{run_id}")
                 if st.button(t("Resume where it stopped"), key=f"resume_{run_id}", type="primary", disabled=not ready):
+                    db.set_model(run_id, model)
                     resume_run(run_id, key)
                     st.rerun()
         elif row["status"] == "failed":
@@ -1135,8 +1148,10 @@ def header(db: History, row: dict) -> None:
             failed_at = next((stage for stage in STAGE_KEYS if stage not in completed_from_events(row["events"])), STAGE_KEYS[-1])
             with primary.popover(t("↻ Retry"), width="stretch"):
                 st.caption(t("Continues from the {stage} stage; completed stages are kept.", stage=stage_label(failed_at)))
+                model = continue_model_field(row, f"retry_{run_id}")
                 ready, key = api_key_field(f"retry_{run_id}")
                 if st.button(t("Retry"), key=f"retry_{run_id}", type="primary", disabled=not ready):
+                    db.set_model(run_id, model)
                     regenerate(db, run_id, failed_at, key)
                     st.rerun()
         with manage.popover(t("⚙️ Manage"), width="stretch"):

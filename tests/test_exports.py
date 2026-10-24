@@ -113,3 +113,15 @@ def test_times_are_shown_in_the_configured_time_zone(monkeypatch):
     assert clock("2026-10-24T17:28:21+00:00", with_date=True) == "2026-10-24 19:28:21"
     monkeypatch.setenv("AUTOSDLC_TIMEZONE", "Not/AZone")
     assert clock("2026-10-24T17:28:21+00:00") == "17:28:21"  # an unknown name falls back to UTC
+
+
+def test_a_stopped_run_can_continue_with_another_model(tmp_path):
+    from autosdlc.storage import History
+
+    db = History(tmp_path / "history.sqlite3")
+    db.create("run123456789", "Idea", tmp_path / "out", tmp_path / "project", "glm-5.3")
+    db.set_model("run123456789", "glm-5.3-flash")
+    assert db.get("run123456789")["model"] == "glm-5.3"  # never while it runs
+    db.finish("run123456789", "failed", 0, "OpenCode Go returned an empty response")
+    db.set_model("run123456789", "glm-5.3-flash")
+    assert db.get("run123456789")["model"] == "glm-5.3-flash"

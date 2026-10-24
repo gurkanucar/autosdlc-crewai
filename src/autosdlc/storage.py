@@ -244,6 +244,11 @@ class History:
             )
             return True
 
+    def set_model(self, run_id: str, model: str) -> None:
+        """The model a paused or finished run continues with; a resume reads it from here."""
+        with self._connect() as db:
+            db.execute("UPDATE runs SET model=? WHERE id=? AND status != 'running'", (model, run_id))
+
     def update_idea(self, run_id: str, idea: str) -> None:
         with self._connect() as db:
             db.execute("UPDATE runs SET idea=? WHERE id=? AND status != 'running'", (idea, run_id))
