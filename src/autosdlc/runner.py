@@ -954,7 +954,7 @@ class RunSession:
             output, code = self._compile_check(self._test_env())
             if code == 0:
                 if failed:
-                    self._event(stage, "build_fixed", f"after {round_number} fix(es)")
+                    self._event(stage, "build_fixed", f"fix rounds: {round_number}")
                 return
             failed = True
             self._event(stage, "build_failed", output[-300:])

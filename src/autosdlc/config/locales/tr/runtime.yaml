@@ -193,3 +193,7 @@
 "No executables were built.": "Çalıştırılabilir dosya üretilmedi."
 "How to run": "Nasıl çalıştırılır"
 "Run `./run.sh` on Linux/macOS or `run.bat` on Windows.": "Linux/macOS'ta `./run.sh`, Windows'ta `run.bat` çalıştır."
+"fix rounds: {count}": "düzeltme turu: {count}"
+"after the packaging fix": "paketleme düzeltmesinden sonra"
+"from the compile check": "derleme kontrolünden"
+"from the packaging build": "paketleme derlemesinden"

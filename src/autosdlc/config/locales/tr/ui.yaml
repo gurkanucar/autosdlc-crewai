@@ -334,3 +334,5 @@
 "Compiles": "Derleniyor"
 "🧱 The code does not compile yet; it goes back to its author before the tests run (this does not use up a test attempt).": "🧱 Kod henüz derlenmiyor; testler çalışmadan önce yazarına geri gidiyor (test deneme hakkından düşmez)."
 "✅ The code compiles now ({detail}).": "✅ Kod artık derleniyor ({detail})."
+"🛠️ I am fixing the code according to the compile errors.": "🛠️ Derleme hatalarına göre kodu düzeltiyorum."
+"🛠️ I am fixing the code according to the release build errors.": "🛠️ Release derleme hatalarına göre kodu düzeltiyorum."

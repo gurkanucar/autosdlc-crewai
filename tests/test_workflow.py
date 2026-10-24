@@ -701,6 +701,12 @@ def test_streamlit_template_fills_the_form(monkeypatch):
     app.button(key="apply_template").click().run()
     assert app.selectbox(key="project_type_input").value == "backend"
     assert app.selectbox(key="choice_ui").value == "none"
+    # Leaving the page drops the widget keys while delivery_for stays; coming back must not crash.
+    back = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30)
+    back.session_state["delivery_for"] = "backend"
+    back.run()
+    assert not back.exception, [e.value for e in back.exception]
+    assert back.selectbox(key="choice_delivery").value == "docker"
 
 
 def test_stage_metrics_count_runs_and_exclude_waiting_time():

@@ -328,7 +328,10 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "skipped": t("↷ Stage skipped: {detail}; the previous document was kept.", detail=detail),
             "passed": t("✅ Tests passed ({detail}).", detail=detail),
             "failed": t("❌ Tests failed ({detail}).", detail=detail) if stage == "testing" else f"❌ {detail}",
-            "repair_started": t("🛠️ I am fixing the code according to the test failures."),
+            "repair_started": {
+                "from the compile check": t("🛠️ I am fixing the code according to the compile errors."),
+                "from the packaging build": t("🛠️ I am fixing the code according to the release build errors."),
+            }.get(event["detail"], t("🛠️ I am fixing the code according to the test failures.")),
             "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
             "traceability": t("🔗 Traceability matrix produced: {detail}.", detail=detail),
             "question": t("❔ **I have a question:** {detail}", detail=detail),
@@ -1252,7 +1255,8 @@ def home_page() -> None:
         decisions = {"project_type": project_type, "stack": stack}
         # The delivery follows the project type (CLI -> executables, library -> none, services -> Docker) until the user
         # picks one; changing the type again resets it to that type's default.
-        if st.session_state.get("delivery_for") != project_type:
+        # Streamlit drops a widget's key after a page switch while delivery_for stays, so a missing key resets too.
+        if st.session_state.get("delivery_for") != project_type or "choice_delivery" not in st.session_state:
             st.session_state["choice_delivery"] = default_delivery(project_type)
             st.session_state["delivery_for"] = project_type
         # The selectboxes are drawn in one row, so a choice that depends on the delivery reads the delivery from
