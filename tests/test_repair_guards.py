@@ -313,6 +313,37 @@ def test_a_failing_suite_does_not_hide_the_suites_after_it(tmp_path, monkeypatch
     assert "API SUITE RAN" in engine.reasons[0]
 
 
+def test_a_test_helper_called_in_a_way_that_cannot_work_is_reported(tmp_path):
+    from autosdlc.runner import test_helper_misuse
+
+    _write(tmp_path, {
+        "tests/helpers.js": (
+            "export async function createEvent(token, { title, date = futureDate(), coverImage }) {\n"
+            "  const form = new FormData();\n"
+            "  return fetch(`${BASE}/api/events`, { method: 'POST', body: form });\n"
+            "}\n"
+            "export async function listEvents(token) {\n"
+            "  const res = await fetch(`${BASE}/api/events`);\n"
+            "  return { status: res.status, body: await res.json() };\n"
+            "}\n"
+            "export function build({ a, ...rest }) { return rest; }\n"),
+        "tests/upload.test.js": (
+            "import { createEvent, listEvents, build } from './helpers.js';\n"
+            "const ok = await createEvent(t, { title: 'x', coverImage: png });\n"
+            "const created = await createEvent(t, { title: 'x', cover: { buffer: gif, type: 'image/gif' } });\n"
+            "assert.ok(created.body.id);\n"
+            "const list = await listEvents(t);\n"
+            "assert.ok(list.body.length);\n"
+            "build({ anything: 1 });\n"),
+    })
+    assert test_helper_misuse(tmp_path) == [
+        "tests/upload.test.js:3: passes cover to createEvent(), which reads only coverImage, date, title; the value "
+        "is ignored",
+        "tests/upload.test.js:4: reads created.body.… but createEvent() returns the fetch Response, whose body is a "
+        "stream; parse it (await res.json()) in the helper and return { status, body }",
+    ]
+
+
 def test_a_long_output_keeps_its_start_and_its_end():
     from autosdlc.runner import _clip
 
@@ -549,6 +580,27 @@ def test_a_repair_that_breaks_passing_tests_is_rolled_back(tmp_path, monkeypatch
     assert ("development", "repair_reverted", "attempt 2: 1 passed, attempt 1: 2 passed") in events
     assert "YOUR LAST REPAIR WAS ROLLED BACK" in engine.reasons[1] and "test_fr01_sub" in engine.reasons[1]
     assert not (result.project_dir / "extra.py").exists()
+
+
+class NoProgressAfterRollbackEngine(RegressingEngine):
+    """The first repair is rolled back; the second changes nothing, so the run is back where it was, not better."""
+
+    def code(self, idea, docs, feedback=None, change=None):
+        if feedback is not None and len(self.reasons) >= 1:
+            self.reasons.append(feedback)
+            return {"calc.py": "def add(a, b):\n    return a - b\n\n" + self.GOOD}
+        return super().code(idea, docs, feedback, change)
+
+
+def test_returning_to_the_rolled_back_version_is_not_progress(tmp_path, monkeypatch):
+    engine = NoProgressAfterRollbackEngine(tmp_path, [])
+    result, events = _run(tmp_path, monkeypatch, engine)
+    statuses = [status for _stage, status, _detail in events]
+    assert "repair_reverted" in statuses
+    # 1 → 2 passed after the rollback is the restored version, not a better one: no extra attempt.
+    assert "attempt_added" not in statuses and result.attempts == 3
+    # Tests of the discarded attempt are not reported as broken by the repair that started from the restored code.
+    assert "repair_regressed" not in statuses
 
 
 def test_the_developer_can_report_a_wrong_test():

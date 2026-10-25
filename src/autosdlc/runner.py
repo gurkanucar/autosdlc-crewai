@@ -461,6 +461,117 @@ NODE_BUILTINS = {
 }
 
 
+def _closing(text: str, start: int) -> int:
+    """The index of the bracket that closes the one at start; -1 when it is not closed."""
+    pairs = {"(": ")", "{": "}", "[": "]"}
+    stack = []
+    quote = ""
+    for index in range(start, len(text)):
+        char = text[index]
+        if quote:
+            if char == "\\":
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char in pairs:
+            stack.append(pairs[char])
+        elif stack and char == stack[-1]:
+            stack.pop()
+            if not stack:
+                return index
+    return -1
+
+
+def _top_level_items(text: str) -> list[str]:
+    """The comma separated items of a parameter list or object literal, without descending into nested brackets."""
+    items, depth, current, quote = [], 0, "", ""
+    for char in text:
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "'\"`":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            items.append(current.strip())
+            current = ""
+            continue
+        current += char
+    if current.strip():
+        items.append(current.strip())
+    return items
+
+
+def _object_keys(literal: str) -> set[str] | None:
+    """The keys an object pattern or literal names ({ a, b = 1, c: d } → a, b, c); None with a ...spread."""
+    keys = set()
+    for item in _top_level_items(literal.strip()[1:-1]):
+        if item.startswith("..."):
+            return None
+        match = re.match(r"['\"]?([\w$]+)['\"]?", item)
+        if match:
+            keys.add(match.group(1))
+    return keys
+
+
+_JS_EXPORTED_FUNCTION = re.compile(r"\bexport\s+(?:async\s+)?function\s+([\w$]+)\s*\(")
+
+
+def test_helper_misuse(project_dir: Path) -> list[str]:
+    """Calls of the tests' own helpers that cannot work, found without running them: an option the helper does not
+    read (tests passed `cover` to a helper that reads `coverImage`, so every upload test sent the default PNG), and
+    `.body.x` read from a helper that returns the raw fetch Response, whose body is a stream (`created.body.id` was
+    never set, and five test files failed on it)."""
+    sources = {name: _source(project_dir, name) for name in _project_files(project_dir, _JS_SOURCES)
+               if _in_tests(name)}
+    helpers: dict[str, tuple[int, set[str] | None, bool]] = {}
+    for source in sources.values():
+        for match in _JS_EXPORTED_FUNCTION.finditer(source):
+            params_end = _closing(source, match.end() - 1)
+            body_start = source.find("{", params_end)
+            body_end = _closing(source, body_start) if params_end > 0 and body_start > 0 else -1
+            if body_end < 0:
+                continue
+            params = _top_level_items(source[match.end():params_end])
+            options = [(index, item) for index, item in enumerate(params) if item.startswith("{")]
+            pattern = options[-1] if options else None
+            # `{ a, b = f() } = {}`: the pattern ends at its own closing brace, before a default for the whole object.
+            keys = _object_keys(pattern[1][:_closing(pattern[1], 0) + 1]) if pattern else None
+            body = source[body_start:body_end]
+            returns_response = bool(re.search(r"\breturn\s+(?:await\s+)?fetch\s*\(", body))
+            helpers[match.group(1)] = (pattern[0] if pattern else -1, keys, returns_response)
+    problems = []
+    for name, source in sorted(sources.items()):
+        for helper, (position, keys, returns_response) in helpers.items():
+            for call in re.finditer(rf"(?<![\w$.]){re.escape(helper)}\s*\(", source):
+                if source[max(0, call.start() - 9):call.start()].rstrip().endswith("function"):
+                    continue  # the definition itself
+                end = _closing(source, call.end() - 1)
+                args = _top_level_items(source[call.end():end]) if end > 0 else []
+                line = source.count("\n", 0, call.start()) + 1
+                if keys is not None and 0 <= position < len(args) and args[position].startswith("{"):
+                    unknown = sorted((_object_keys(args[position]) or set()) - keys)
+                    if unknown:
+                        problems.append(f"{name}:{line}: passes {', '.join(unknown)} to {helper}(), which reads only "
+                                        f"{', '.join(sorted(keys))}; the value is ignored")
+            if returns_response:
+                for assigned in re.finditer(rf"(?:const|let|var)\s+([\w$]+)\s*=\s*await\s+{re.escape(helper)}\s*\(",
+                                            source):
+                    variable = assigned.group(1)
+                    use = re.search(rf"\b{re.escape(variable)}\.body\s*(?:\?\.|\.)\s*[\w$]", source[assigned.end():])
+                    if use:
+                        line = source.count("\n", 0, assigned.end() + use.start()) + 1
+                        problems.append(f"{name}:{line}: reads {variable}.body.… but {helper}() returns the fetch "
+                                        "Response, whose body is a stream; parse it (await res.json()) in the helper "
+                                        "and return { status, body }")
+                        break
+    return problems
+
+
 def missing_js_packages(project_dir: Path) -> list[str]:
     """Packages a JS file imports that are not installed where Node looks for them from that file.
 
@@ -1462,18 +1573,24 @@ class RunSession:
                     best=best["number"]) + "\n")
                 base = best["output"]
                 note = REVERTED_NOTE.format(count=count, best=best["passes"], broken="; ".join(broken[:15]) or "-")
+                # The next repair starts from the restored code: progress and broken tests are measured against it,
+                # not against the attempt that was thrown away (20 → 47 passed once looked like progress, and tests
+                # of the discarded attempt were reported as broken).
+                previous = best["passes"]
+                last_run = (best["output"], best["tests"])
             elif count is not None and (best is None or best["tests"] != self.test_files or count >= best["passes"]):
                 best = {"number": number, "passes": count, "output": output,
                         "code": dict(self.code_files), "tests": dict(self.test_files)}
             regressed: list[str] = []
-            if not note and last_run:
-                # The total can stay the same while the repair fixed some tests and broke others; the broken ones
-                # are named to the developer, and the rules that send failures to the Test Agent skip them.
-                regressed = regressed_tests(last_run[0], output, last_run[1], tests_run)
-                if regressed:
-                    self._event("development", "repair_regressed", "; ".join(regressed[:10]))
-                    note = REGRESSED_NOTE.format(tests="\n".join(f"- {name}" for name in regressed[:20]))
-            last_run = (output, tests_run)
+            if not note:
+                if last_run:
+                    # The total can stay the same while the repair fixed some tests and broke others; the broken
+                    # ones are named to the developer, and the rules that send failures to the Test Agent skip them.
+                    regressed = regressed_tests(last_run[0], output, last_run[1], tests_run)
+                    if regressed:
+                        self._event("development", "repair_regressed", "; ".join(regressed[:10]))
+                        note = REGRESSED_NOTE.format(tests="\n".join(f"- {name}" for name in regressed[:20]))
+                last_run = (output, tests_run)
             if number >= limit:
                 continue
             if failure_is_in_tests(output):
@@ -1615,11 +1732,12 @@ class RunSession:
         if syntax_errors:
             return "\n".join(syntax_errors[:25]), 1
         problems = (missing_js_imports(self.project_dir) + missing_js_packages(self.project_dir)
-                    + test_runner_mismatches(self.project_dir, self.manifest))
+                    + test_runner_mismatches(self.project_dir, self.manifest) + test_helper_misuse(self.project_dir))
         # The application's problems alone first: the developer cannot fix the tests, and the tests may be right.
         problems = [problem for problem in problems if not _in_tests(problem.split(":", 1)[0])] or problems
         if problems:
-            return "[build failed] import check: modules or packages that cannot be loaded as written\n" + \
+            return "[build failed] import check: modules or packages that cannot be loaded as written, or test " \
+                   "helpers that are called in a way that cannot work\n" + \
                 "\n".join(problems[:30]), 1
         return "", 0
 
