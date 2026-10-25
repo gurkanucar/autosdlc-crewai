@@ -129,6 +129,7 @@
 "External tools are not allowed for agents in this project": "Bu projede ajanlara harici araç izni verilmez"
 "OPENCODE_API_KEY is required; check the local .env file": "OPENCODE_API_KEY gerekli; yerel .env dosyasını kontrol et"
 "OpenCode Go returned an empty response": "OpenCode Go boş yanıt döndürdü"
+"OpenCode Go returned an empty response: the {model} model spent its whole output limit on reasoning ({chars} characters); choose another model for the {stage} stage and continue": "OpenCode Go boş yanıt döndürdü: {model} modeli çıktı limitinin tamamını düşünmeye harcadı ({chars} karakter); {stage} aşaması için başka bir model seçip devam et"
 "OpenCode Go returned HTTP {code}: {reason}": "OpenCode Go HTTP {code} döndürdü: {reason}"
 "OpenCode Go returned HTTP {code}": "OpenCode Go HTTP {code} döndürdü"
 "The OpenCode Go request failed": "OpenCode Go isteği başarısız"

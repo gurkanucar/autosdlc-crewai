@@ -40,6 +40,7 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
     from autosdlc.cli import main as cli_main
     from autosdlc.crewai_engine import CrewAIEngine
     from autosdlc.exports import diagnostics_zip
+    from autosdlc.i18n import translate_stored
     from autosdlc.runner import run_project
     from autosdlc.storage import History
 
@@ -70,6 +71,9 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
                  "observability": "none", "ui": "none"}
     result = run_project("Book tracker", workspace=tmp_path, engine=engine, decisions=decisions)
     assert result.status == "failed" and "empty response" in result.error
+    # The error says that the model only reasoned and what to change.
+    assert "spent its whole output limit on reasoning" in result.error and "planning stage" in result.error
+    assert "başka bir model seçip devam et" in translate_stored(result.error, "tr")
     # The live activity view shows the last model call and how it ended.
     activity = json.loads((result.output_dir / "live" / "activity.json").read_text(encoding="utf-8"))
     assert activity["kind"] == "model" and activity["stage"] == "planning" and activity["phase"] == "failed"
@@ -125,3 +129,18 @@ def test_a_stopped_run_can_continue_with_another_model(tmp_path):
     db.finish("run123456789", "failed", 0, "OpenCode Go returned an empty response")
     db.set_model("run123456789", "glm-5.3-flash")
     assert db.get("run123456789")["model"] == "glm-5.3-flash"
+
+
+def test_a_new_model_call_clears_the_previous_live_output(tmp_path):
+    from types import SimpleNamespace
+
+    from autosdlc.runner import RunSession
+
+    (tmp_path / "live").mkdir()
+    (tmp_path / "live" / "testing.md").write_text("tests of the previous call", encoding="utf-8")
+    session = SimpleNamespace(output_dir=tmp_path, _activity_written=0.0, _live_written=99.0)
+    RunSession._activity(session, {"kind": "model", "stage": "testing", "phase": "reasoning"})
+    assert (tmp_path / "live" / "testing.md").is_file()
+    session._activity_written = 0.0
+    RunSession._activity(session, {"kind": "model", "stage": "testing", "phase": "waiting"})
+    assert not (tmp_path / "live" / "testing.md").exists() and session._live_written == 0.0

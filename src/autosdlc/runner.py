@@ -539,6 +539,10 @@ class RunSession:
         try:
             live_dir = self.output_dir / "live"
             live_dir.mkdir(exist_ok=True)
+            if record.get("kind") == "model" and record.get("phase") == "waiting" and record.get("stage"):
+                # A new call starts: the previous call's output would look like this call is already writing.
+                (live_dir / f"{record['stage']}.md").unlink(missing_ok=True)
+                self._live_written = 0.0
             temporary = live_dir / "activity.json.tmp"
             temporary.write_text(json.dumps({**record, "updated_at": now()}, ensure_ascii=False), encoding="utf-8")
             os.replace(temporary, live_dir / "activity.json")

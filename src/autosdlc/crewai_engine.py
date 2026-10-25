@@ -298,6 +298,12 @@ class CrewAIEngine:
                 inner._log(attempt, started, messages, "empty" if empty else "ok", finish_reason=finish,
                            response_chars=len(content) if isinstance(content, str) else 0,
                            reasoning_chars=stats.get("reasoning_chars", 0))
+                if empty and finish == "length" and stats.get("reasoning_chars"):
+                    # A retry with the same model usually burns out the same way, so the error says what to change.
+                    model, chars, stage = inner.model, stats["reasoning_chars"], inner.stage
+                    raise RuntimeError(f"OpenCode Go returned an empty response: the {model} model spent its whole "
+                                       f"output limit on reasoning ({chars} characters); choose another model for "
+                                       f"the {stage} stage and continue")
                 if empty:
                     raise RuntimeError("OpenCode Go returned an empty response")
                 return content
