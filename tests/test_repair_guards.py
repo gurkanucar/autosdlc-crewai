@@ -250,6 +250,36 @@ def test_a_run_that_does_not_improve_gets_no_extra_attempts(tmp_path, monkeypatc
     assert "attempt_added" not in [status for _stage, status, _detail in events]
 
 
+class KeptTestsEngine(RepairEngine):
+    """Counts the suites written; the kept suite has a marker a new suite would not have."""
+
+    def __init__(self, workspace, repairs):
+        super().__init__(workspace, repairs)
+        self.suites = 0
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        if feedback is None:
+            self.suites += 1
+        return {"tests/test_calc.py": f"from calc import add\n\n# suite {self.suites}\n"
+                                      "def test_fr01_add():\n    assert add(1, 2) == 3\n"}
+
+
+def test_a_retry_can_keep_the_tests_of_the_last_try(tmp_path, monkeypatch):
+    engine = KeptTestsEngine(tmp_path, [])
+    first, _events = _run(tmp_path, monkeypatch, engine)
+    assert first.status == "failed" and engine.suites == 1
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    assert db.reset_from(first.id, "testing")
+    engine.repairs = [{"calc.py": "def add(a, b):\n    return a + b\n"}]
+    again = run_project("", workspace=tmp_path, engine=engine, resume_run_id=first.id, keep_tests=True)
+    assert again.status == "completed", again.error
+    # No new suite was written: the kept file (suite 1) ran and the developer fixed the code.
+    assert engine.suites == 1
+    assert "# suite 1" in (again.project_dir / "tests" / "test_calc.py").read_text(encoding="utf-8")
+    assert ("testing", "tests_kept", "1 test files") in [
+        (e["stage"], e["status"], e["detail"]) for e in db.get(first.id)["events"]]
+
+
 def test_a_stale_test_that_fails_the_build_before_the_new_suite_is_not_the_developers_to_fix(tmp_path, monkeypatch):
     from autosdlc.runner import RunSession
 
@@ -434,6 +464,35 @@ def test_a_repair_that_breaks_an_import_is_sent_back_before_the_next_attempt(tmp
     assert result.attempts == 2
     assert "imports 'add' from './calc.js'" in engine.reasons[1]
     assert ("testing", "build_failed") in [(stage, status) for stage, status, _detail in events]
+
+
+class BrokenTestsEngine(ImportEngine):
+    """Two test files use await in a plain callback; both must reach the Test Agent in one compile-check round."""
+
+    def code(self, idea, docs, feedback=None, change=None):
+        if feedback is None:
+            # "type": "module" makes `node --check` parse the files as ES modules, where await needs an async function.
+            return {"src/calc.js": "export function add(a, b) { return a + b; }\n",
+                    "package.json": '{"name": "calc", "type": "module"}\n',
+                    "project.yaml": "unit_test: [node, --test, tests/a.test.js, tests/b.test.js]\n"}
+        self.reasons.append(feedback)
+        return {}
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        self.test_feedback = getattr(self, "test_feedback", []) + [feedback]
+        callback = "() => { await Promise.resolve(); }" if feedback is None else "async () => { await Promise.resolve(); }"
+        return {f"tests/{name}.test.js": f"import test from 'node:test';\n\ntest('FR-01 {name}', {callback});\n"
+                for name in ("a", "b")}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node.js")
+def test_every_test_file_that_does_not_parse_is_reported_in_one_round(tmp_path, monkeypatch):
+    engine = BrokenTestsEngine(tmp_path, [])
+    result, _events = _run(tmp_path, monkeypatch, engine, {
+        "project_type": "library", "stack": "Node.js", "delivery": "none", "scale": "small"})
+    assert result.status == "completed", result.error
+    assert len(engine.test_feedback) == 2
+    assert "tests/a.test.js" in engine.test_feedback[1] and "tests/b.test.js" in engine.test_feedback[1]
 
 
 def _free_port():

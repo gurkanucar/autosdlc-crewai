@@ -113,7 +113,7 @@ EVENT_NAMES = {
     "tests_repair_started": "Test repair started", "tests_repaired": "Tests repaired",
     "old_tests_removed": "Old tests removed", "stubs_rejected": "Placeholder file rejected",
     "test_issues_reported": "Tests reported as wrong", "repair_reverted": "Repair rolled back",
-    "attempt_added": "Extra test attempt",
+    "attempt_added": "Extra test attempt", "tests_kept": "Tests kept",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
@@ -220,14 +220,14 @@ def start_run(idea: str, decisions: dict[str, str], output: Path | None, model: 
     return run_id
 
 
-def resume_run(run_id: str, api_key: str | None) -> None:
-    _spawn(run_id, "resume", idea="", resume_run_id=run_id, api_key=api_key)
+def resume_run(run_id: str, api_key: str | None, keep_tests: bool = False) -> None:
+    _spawn(run_id, "resume", idea="", resume_run_id=run_id, api_key=api_key, keep_tests=keep_tests)
 
 
-def regenerate(db: History, run_id: str, stage: str, api_key: str | None) -> None:
+def regenerate(db: History, run_id: str, stage: str, api_key: str | None, keep_tests: bool = False) -> None:
     if not db.reset_from(run_id, stage):
         raise ValueError(t("A running project cannot be regenerated; stop it first."))
-    resume_run(run_id, api_key)
+    resume_run(run_id, api_key, keep_tests)
 
 
 # ---------------------------------------------------------------- small helpers
@@ -374,6 +374,7 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             }.get(event["detail"], t("🛠️ I am fixing the code according to the test failures.")),
             "old_tests_removed": t("🧹 Test files of the earlier suite were removed: {detail}", detail=detail),
             "repair_reverted": t("↩️ The last repair made more tests fail, so it was rolled back ({detail}).", detail=detail),
+            "tests_kept": t("📌 The tests of the last try are kept and run again ({detail}).", detail=detail),
             "attempt_added": t("➕ The repairs are working, so the tests get one more attempt ({detail}).", detail=detail),
             "stubs_rejected": t("🛡️ A placeholder that would have replaced a real file was rejected: {detail}", detail=detail),
             "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
@@ -1193,10 +1194,16 @@ def header(db: History, row: dict) -> None:
             with primary.popover(t("↻ Retry"), width="stretch"):
                 st.caption(t("Continues from the {stage} stage; completed stages are kept.", stage=stage_label(failed_at)))
                 models = model_fields(f"retry_{run_id}", row)
+                keep_tests = False
+                if failed_at == "testing" and any((Path(row["project_dir"]) / folder).is_dir() for folder in ("tests", "test")):
+                    keep_tests = st.checkbox(
+                        t("Keep the current tests"), value=True, key=f"keep_tests_{run_id}",
+                        help=t("The tests written last time run again and only the failures are repaired. Clear it to "
+                               "have the Test Agent write a new suite."))
                 ready, key = api_key_field(f"retry_{run_id}")
                 if st.button(t("Retry"), key=f"retry_{run_id}", type="primary", disabled=not ready):
                     continue_with(db, run_id, models)
-                    regenerate(db, run_id, failed_at, key)
+                    regenerate(db, run_id, failed_at, key, keep_tests)
                     st.rerun()
         with manage.popover(t("⚙️ Manage"), width="stretch"):
             manage_menu(db, row)

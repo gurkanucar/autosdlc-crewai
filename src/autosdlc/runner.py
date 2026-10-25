@@ -584,7 +584,7 @@ _ERROR_LOCATION = re.compile(
     r"^\s*([^\s:\"]+\.\w+):\d+(?::\d+)?: "
     r"|^\s*--> ([^\s:]+\.\w+):\d+:\d+"
     r"|^\s*(?:E\s+)?File \"([^\"]+)\", line \d+"
-    r"|^\s*(/?[^\s:\"]+\.\w+):\d+\s*$",
+    r"|^\s*((?:[A-Za-z]:)?/?[^\s:\"]+\.\w+):\d+\s*$",
     re.MULTILINE,
 )
 
@@ -652,8 +652,11 @@ class RunSession:
         run_id: str | None = None,
         resume: bool = False,
         stage_models: dict[str, str] | None = None,
+        keep_tests: bool = False,
     ):
         self.idea = idea.strip()
+        # A retry of the Testing stage that runs the test files already on disk instead of writing a new suite.
+        self.keep_tests = keep_tests
         self.workspace = Path(workspace).resolve()
         self.run_id = run_id or uuid.uuid4().hex[:12]
         self.history = History(self.workspace / "runs" / "history.sqlite3")
@@ -1250,8 +1253,13 @@ class RunSession:
         # The Test Agent writes against code that compiles, and a compile error does not use up a test attempt.
         self._fix_build(with_tests=False)
         self._event("testing", "started")
-        existing = self._test_files_on_disk() if self.change else {}
-        if existing:
+        existing = self._test_files_on_disk() if self.change or self.keep_tests else {}
+        if existing and not self.change:
+            # The suite of the last try is kept: a working suite (all API tests passing once) was thrown away for a
+            # new one that did not even parse, and every new suite is a fresh draw.
+            tests = existing
+            self._event("testing", "tests_kept", f"{len(tests)} test files")
+        elif existing:
             # Change request: existing tests are kept, only new/updated tests are written, then all of them run (regression).
             new_tests = self._with_questions("testing", lambda: self.engine.tests(
                 self.idea, self._context("testing"), {**self.code_files, **existing}, change=self._change_text()
@@ -1468,12 +1476,19 @@ class RunSession:
         if code:
             return output, code
         log = self.output_dir / "tmp" / "compile.log"
+        # A syntax check runs file by file; all of its failures are reported at once. Stopping at the first one let
+        # the Test Agent fix one file per round, and eight broken test files used up every round and attempt.
+        syntax_errors = []
         for command in compile_commands(self.project_dir):
             output, code = self._run_reported("Compile", self._command(command, env), env, log, timeout=600)
             if code is None:
                 continue  # the toolchain is missing or too slow here; the test commands report it themselves
-            if code:
+            if code and command[:2] in (["node", "--check"], ["sh", "-n"]):
+                syntax_errors.append(f"[build failed] {' '.join(command)} (exit {code})\n{_clip(output, 1500)}")
+            elif code:
                 return f"[build failed] {' '.join(command)} (exit {code})\n{output}", code
+        if syntax_errors:
+            return "\n".join(syntax_errors[:25]), 1
         problems = (missing_js_imports(self.project_dir) + missing_js_packages(self.project_dir)
                     + test_runner_mismatches(self.project_dir, self.manifest))
         # The application's problems alone first: the developer cannot fix the tests, and the tests may be right.
@@ -1779,6 +1794,7 @@ def run_project(
     run_id: str | None = None,
     resume_run_id: str | None = None,
     stage_models: dict[str, str] | None = None,
+    keep_tests: bool = False,
 ) -> RunResult:
     workspace = Path(workspace or Path.cwd()).resolve()
     if resume_run_id:
@@ -1800,7 +1816,8 @@ def run_project(
     engine = engine or CrewAIEngine(api_key=api_key, model=model)
     if hasattr(engine, "stage_models"):
         engine.stage_models = stage_models
-    session = RunSession(idea, workspace, engine, max_repairs, decisions, Path(output) if output is not None else None, on_event, on_question, run_id, bool(resume_run_id), stage_models)
+    session = RunSession(idea, workspace, engine, max_repairs, decisions, Path(output) if output is not None else None,
+                         on_event, on_question, run_id, bool(resume_run_id), stage_models, keep_tests=keep_tests)
     # Heartbeat: if the process dies the UI can pause the run as "interrupted".
     stop = threading.Event()
 

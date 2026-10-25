@@ -205,6 +205,8 @@ testing:
     Node.js and Python tests import the application's modules; they never start a window or a real GUI.
     Every file you return is complete, valid source (imports first, balanced braces, no "..." placeholders).
     In JavaScript/TypeScript a string that contains an apostrophe uses double quotes or backticks, never single quotes.
+    Every function that uses await is declared async, the callbacks of test(), it(), describe(), before() and after()
+    too (`test('...', async () => { ... })`); `await` in a plain callback does not even parse.
     Comments, skip reasons and assertion messages in test files are English, like the test names.
     The test commands in project.yaml (the first application file above, with the scripts they call) decide the test
     runner and which files run. Write every test for exactly that runner and put it where those commands find it:
