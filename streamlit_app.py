@@ -364,7 +364,11 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "repair_started": {
                 "from the compile check": t("🛠️ I am fixing the code according to the compile errors."),
                 "from the packaging build": t("🛠️ I am fixing the code according to the release build errors."),
+                "the application server did not start": t(
+                    "🛠️ The application server did not start; I am fixing the code (this does not use up a test attempt)."),
             }.get(event["detail"], t("🛠️ I am fixing the code according to the test failures.")),
+            "old_tests_removed": t("🧹 Test files of the earlier suite were removed: {detail}", detail=detail),
+            "stubs_rejected": t("🛡️ A placeholder that would have replaced a real file was rejected: {detail}", detail=detail),
             "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
             "traceability": t("🔗 Traceability matrix produced: {detail}.", detail=detail),
             "question": t("❔ **I have a question:** {detail}", detail=detail),

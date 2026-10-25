@@ -168,7 +168,8 @@ development:
     such as eframe/egui. Python: tkinter (ships with Python on Windows), created only inside a function that main calls.
     A simple local web page served by the program and opened in the default browser is an acceptable "window".
     Do not write a .env file; use .env.example if needed.
-    Do not return a Markdown code block. When fixing, give complete file contents, not patches.
+    Do not return a Markdown code block. When fixing, give complete file contents, not patches. Keep the names other
+    files import from a module; if you rename or remove an export, return every file that imports it, updated.
   expected_output: Valid JSON containing project.yaml, the packaging files the delivery decision asks for and complete source files.
 
 testing:
@@ -186,7 +187,10 @@ testing:
     Every FR must be covered by at least one test. In a backend/fullstack project test the real API HTTP
     endpoints. A Postgres or Redis project gets a real, empty server at DATABASE_URL / REDIS_URL during the tests:
     use it, never mock the database, and keep each test independent of the data other tests leave behind (unique
-    names or emails per test). If there is a web UI, open BASE_URL with Playwright
+    names or emails per test). Test files run in parallel against that one database, which also keeps its data
+    between test attempts: never rely on the order of signups or on an empty table (e.g. "the first user becomes
+    admin"). When a test needs a privileged role, create a fresh user and give it the role directly in the database
+    (SQL at DATABASE_URL, or the application's own data module). If there is a web UI, open BASE_URL with Playwright
     and verify a visible interaction. Keep the test data isolated and deterministic.
     For Node.js ESM TypeScript projects using tsx, use `node --import tsx --test tests/*.test.ts`;
     `node --test tests/` is not a valid directory invocation.
@@ -200,6 +204,7 @@ testing:
     Node.js and Python tests import the application's modules; they never start a window or a real GUI.
     Every file you return is complete, valid source (imports first, balanced braces, no "..." placeholders).
     In JavaScript/TypeScript a string that contains an apostrophe uses double quotes or backticks, never single quotes.
+    Comments, skip reasons and assertion messages in test files are English, like the test names.
     The test commands in project.yaml (the first application file above, with the scripts they call) decide the test
     runner and which files run. Write every test for exactly that runner and put it where those commands find it:
     a file run by `node --test` uses node:test (with Playwright's library API for a browser), never the test() of

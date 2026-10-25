@@ -1,7 +1,10 @@
 """Guards around the repair loop: what the agents see, what they may overwrite and what an attempt is spent on."""
 
 import json
+import shutil
 import socket
+
+import pytest
 
 from autosdlc.crewai_engine import CrewAIEngine, _files_for_prompt
 from autosdlc.runner import run_project
@@ -117,6 +120,64 @@ def test_failed_tests_are_named_as_the_error(tmp_path, monkeypatch):
     result, _events = _run(tmp_path, monkeypatch, RepairEngine(tmp_path, []))
     assert result.status == "failed"
     assert result.error == "The tests did not pass after 3 attempts; see the test report"
+
+
+def _write(root, files):
+    for name, content in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(content, encoding="utf-8")
+
+
+def test_a_renamed_export_is_reported_with_what_the_module_exports(tmp_path):
+    from autosdlc.runner import missing_js_imports
+
+    _write(tmp_path, {
+        "server/src/cache.js": "/* import { nope } from './x.js' */\nexport async function getCached() {}\nexport const ttl = 5;\n",
+        "server/src/helpers.js": "// header\nimport { getUpcoming, ttl } from './cache.js';\nexport { getUpcoming as get };\n",
+        "server/src/index.js": "import app, { createApp as make } from './app';\nimport pkg from 'express';\n",
+        "server/src/app.js": "function createApp() {}\nexport { createApp };\nexport default createApp;\n",
+        "server/src/all.js": "export * from './cache.js';\n",
+        "server/src/user.js": "import { anything } from './all.js';\n",
+        "tests/a.test.js": "import { missing } from '../server/src/cache.js';\n",
+    })
+    # The application's own problem comes first and alone; the test file's would only distract the developer.
+    assert missing_js_imports(tmp_path) == [
+        "server/src/helpers.js:2: imports 'getUpcoming' from './cache.js', but server/src/cache.js does not export it "
+        "(it exports: getCached, ttl)"]
+    (tmp_path / "server/src/helpers.js").write_text("import { ttl } from './cache.js';\n", encoding="utf-8")
+    assert missing_js_imports(tmp_path) == [
+        "tests/a.test.js:1: imports 'missing' from '../server/src/cache.js', but server/src/cache.js does not export it "
+        "(it exports: getCached, ttl)"]
+
+
+class ImportEngine(RepairEngine):
+    """Node library: the first repair renames an export without updating its importer; the compile check sends it back."""
+
+    def code(self, idea, docs, feedback=None, change=None):
+        if feedback is None:
+            return {"src/calc.js": "export function add(a, b) { return a - b; }\n",
+                    "src/index.js": "import { add } from './calc.js';\nexport { add };\n",
+                    "project.yaml": "unit_test: [node, --test, tests/calc.test.js]\n"}
+        self.reasons.append(feedback)
+        if len(self.reasons) == 1:
+            return {"src/calc.js": "export function sum(a, b) { return a + b; }\n"}
+        return {"src/calc.js": "export function add(a, b) { return a + b; }\n"}
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        return {"tests/calc.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\n"
+                                      "import { add } from '../src/index.js';\n\n"
+                                      "test('FR-01 adds', () => { assert.equal(add(1, 2), 3); });\n"}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node.js")
+def test_a_repair_that_breaks_an_import_is_sent_back_before_the_next_attempt(tmp_path, monkeypatch):
+    engine = ImportEngine(tmp_path, [])
+    result, events = _run(tmp_path, monkeypatch, engine, {
+        "project_type": "library", "stack": "Node.js", "delivery": "none", "scale": "small"})
+    assert result.status == "completed", result.error
+    assert result.attempts == 2
+    assert "imports 'add' from './calc.js'" in engine.reasons[1]
+    assert ("testing", "build_failed") in [(stage, status) for stage, status, _detail in events]
 
 
 def _free_port():

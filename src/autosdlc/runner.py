@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import json
 import re
 import shutil
@@ -76,6 +77,7 @@ PACKAGE_TIMEOUT = 1800
 BUILD_FIXES = 2
 SERVER_START_FAILURES = ("The application server exited before the tests",
                          "The application server did not start within 60 seconds")
+SERVER_START_REPAIR = "the application server did not start"
 
 
 @dataclass
@@ -216,6 +218,70 @@ def compile_commands(project_dir: Path) -> list[list[str]]:
         commands.append(["python", "-m", "py_compile", *python_files])
     commands += [["sh", "-n", name] for name in _project_files(project_dir, {".sh"})]
     return commands
+
+
+_JS_SOURCES = {".js", ".mjs", ".jsx"}
+_JS_COMMENTS = re.compile(r"/\*.*?\*/|^\s*//[^\n]*", re.DOTALL | re.MULTILINE)
+# `import { a, b as c } from './x.js'` (with an optional default before the braces) and `export { a } from './x.js'`.
+_JS_NAMED_IMPORT = re.compile(r"\b(?:import\s+(?:[\w$]+\s*,\s*)?|export\s*)\{([^}]*)\}\s*from\s*['\"](\.{1,2}/[^'\"]+)['\"]")
+_JS_EXPORT_DECLARATION = re.compile(r"\bexport\s+(?:async\s+)?(?:function\s*\*?|class|const|let|var)\s*([\w$]+)")
+_JS_EXPORT_LIST = re.compile(r"\bexport\s*\{([^}]*)\}")
+
+
+def _js_names(clause: str, exported: bool) -> list[str]:
+    """Names in an import/export brace list: `a as b` is a when imported and b when exported."""
+    names = []
+    for item in clause.split(","):
+        parts = item.split()
+        if parts and parts[0] != "type":
+            names.append(parts[-1] if exported and len(parts) == 3 and parts[1] == "as" else parts[0])
+    return names
+
+
+def _js_exports(source: str) -> set[str] | None:
+    """What a module exports by name; None when that cannot be told statically (`export *`, destructured exports)."""
+    if re.search(r"\bexport\s*\*|\bexport\s+(?:const|let|var)\s*[{\[]", source):
+        return None
+    names = set(_JS_EXPORT_DECLARATION.findall(source))
+    for clause in _JS_EXPORT_LIST.findall(source):
+        names.update(_js_names(clause, exported=True))
+    if re.search(r"\bexport\s+default\b", source):
+        names.add("default")
+    return names
+
+
+def missing_js_imports(project_dir: Path) -> list[str]:
+    """Relative named imports whose target module does not export the name.
+
+    `node --check` only parses a file, so a repair that renamed an export without updating its importers was found
+    only when the server crashed at start, using up a test attempt each time. The application's files are reported
+    first: the tests cannot be fixed by the developer, and a broken application would hide what the tests expect.
+    """
+    sources = {}
+    for name in _project_files(project_dir, _JS_SOURCES):
+        try:
+            # Comments are blanked, keeping their line breaks so the reported line numbers stay right.
+            sources[name] = _JS_COMMENTS.sub(lambda match: "\n" * match.group().count("\n"),
+                                             (project_dir / name).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+    problems: list[str] = []
+    for name, source in sources.items():
+        for clause, specifier in _JS_NAMED_IMPORT.findall(source):
+            base = posixpath.normpath(posixpath.join(posixpath.dirname(name), specifier))
+            target = next((candidate for candidate in (base, *(base + suffix for suffix in _JS_SOURCES),
+                                                      *(f"{base}/index{suffix}" for suffix in _JS_SOURCES))
+                           if candidate in sources), None)
+            exports = _js_exports(sources[target]) if target else None
+            if exports is None:
+                continue  # not a project JS file (a .ts/.json module, a package) or not checkable
+            line = source[:source.find(clause)].count("\n") + 1
+            for imported in _js_names(clause, exported=False):
+                if imported not in exports:
+                    problems.append(f"{name}:{line}: imports '{imported}' from '{specifier}', but {target} does not "
+                                    f"export it (it exports: {', '.join(sorted(exports)) or 'nothing'})")
+    in_app = [problem for problem in problems if not _in_tests(problem.split(":", 1)[0])]
+    return in_app or problems
 
 
 # Lines of the impact analysis's open-questions section: the request is not applied until the user answers them.
@@ -1052,15 +1118,15 @@ class RunSession:
         attempt_dir = self.output_dir / "test_attempts"
         attempt_dir.mkdir(exist_ok=True)
         reports = []
-        start_fixes = 0
         for number in range(1, self.max_repairs + 2):
             self.attempts = number
             output, code = self._run_checks(self._test_env())
             # A server that does not even start ran no test; like a compile error it goes back to the developer
-            # without using up an attempt (a repair that broke an import cost two attempts this way).
-            while (code and any(marker in output for marker in SERVER_START_FAILURES) and start_fixes < BUILD_FIXES
-                   and self._repair_code(output, "the application server did not start")):
-                start_fixes += 1
+            # without using up an attempt (a repair that broke an import cost two attempts this way). Once per
+            # attempt: a budget for the whole stage was spent before the first attempt and left the others bare.
+            if (code and any(marker in output for marker in SERVER_START_FAILURES)
+                    and self._repair_code(output, SERVER_START_REPAIR)):
+                self._fix_build(with_tests=True)
                 output, code = self._run_checks(self._test_env())
             passed = code == 0
             self.last_test_output = output
@@ -1076,8 +1142,9 @@ class RunSession:
                 # The error is in the Test Agent's own files; the developer is not allowed to touch them, so the author repairs them.
                 if self._repair_tests(output, f"from test attempt {number}"):
                     continue
-            if number <= self.max_repairs:
-                self._repair_code(output, f"from test attempt {number}")
+            if number <= self.max_repairs and self._repair_code(output, f"from test attempt {number}"):
+                # A repair that broke the build or an import is sent back before it costs the next attempt.
+                self._fix_build(with_tests=True)
         summary = "PASSED" if self.test_passed else "FAILED"
         report = f"# {self._t('Test report')}\n\n" + self._t(
             "Result: **{summary}** ({attempts} attempts).", summary=self._t(summary), attempts=self.attempts) + "\n\n"
@@ -1166,6 +1233,10 @@ class RunSession:
                 continue  # the toolchain is missing or too slow here; the test commands report it themselves
             if code:
                 return f"[build failed] {' '.join(command)} (exit {code})\n{output}", code
+        missing = missing_js_imports(self.project_dir)
+        if missing:
+            return "[build failed] import check: names imported from project modules that do not export them\n" + \
+                "\n".join(missing[:30]), 1
         return "", 0
 
     def _run_checks(self, env: dict[str, str], keys: tuple[str, ...] = ("setup", "unit_test", "api_test", "ui_test")) -> tuple[str, int]:

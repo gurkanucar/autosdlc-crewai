@@ -371,3 +371,6 @@
 "A model that thinks very long (e.g. glm-5.3) can use up its output on reasoning and return an empty answer; a faster model can be picked for that stage only.": "Çok uzun düşünen bir model (ör. glm-5.3) çıktısını düşünmeye harcayıp boş yanıt dönebilir; sadece o aşama için daha hızlı bir model seçebilirsin."
 "Main model ({model})": "Ana model ({model})"
 "⏸ The model call of the {stage} agent was cut off by Stop.": "⏸ {stage} ajanının model çağrısı Durdur ile kesildi."
+"🛠️ The application server did not start; I am fixing the code (this does not use up a test attempt).": "🛠️ Uygulama sunucusu açılmadı; kodu düzeltiyorum (bu bir test denemesi harcamaz)."
+"🧹 Test files of the earlier suite were removed: {detail}": "🧹 Önceki test paketinin dosyaları silindi: {detail}"
+"🛡️ A placeholder that would have replaced a real file was rejected: {detail}": "🛡️ Gerçek bir dosyanın yerine geçecek yer tutucu reddedildi: {detail}"
