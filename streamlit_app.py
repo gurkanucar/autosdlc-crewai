@@ -111,6 +111,7 @@ EVENT_NAMES = {
     "package_started": "Building executables", "packaged": "Executables built", "package_failed": "Packaging failed", "package_unavailable": "No executables",
     "package_skipped": "Packaging skipped", "files_skipped": "Files skipped",
     "tests_repair_started": "Test repair started", "tests_repaired": "Tests repaired",
+    "old_tests_removed": "Old tests removed", "stubs_rejected": "Placeholder file rejected",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {

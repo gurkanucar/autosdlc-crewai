@@ -13,8 +13,9 @@ language_rules: |
   - All code is English: variable, function/method, class, module, file and folder names, comments inside the code,
     docstrings, log and error messages, test names and commit messages. Do not use identifiers made of non-English
     words or containing non-ASCII letters (e.g. addProduct, not urunEkle). Only the UI texts the end user sees may
-    be in the language the user asked for; string literals and patterns in tests that match those UI texts may be
-    in that language too. These rules are complete: apply them directly, do not deliberate over them.
+    be in the language the user asked for, and so may the string literals in tests that match those UI texts.
+    Test names (the titles given to test(), describe(), it() and test function names) are always English, with
+    their FR/NFR/AC ids. These rules are complete: apply them directly, do not deliberate over them.
 
 planning:
   description: |
@@ -198,7 +199,11 @@ testing:
     Rust tests in tests/ are integration tests: they use the library crate by name and only its public items.
     Node.js and Python tests import the application's modules; they never start a window or a real GUI.
     Every file you return is complete, valid source (imports first, balanced braces, no "..." placeholders).
-    The test commands are specified in the application's project.yaml.
+    In JavaScript/TypeScript a string that contains an apostrophe uses double quotes or backticks, never single quotes.
+    The test commands in project.yaml (the first application file above, with the scripts they call) decide the test
+    runner and which files run. Write every test for exactly that runner and put it where those commands find it:
+    a file run by `node --test` uses node:test (with Playwright's library API for a browser), never the test() of
+    @playwright/test; a Playwright Test spec only if a command runs `playwright test`.
     Work decisively: decide what each test checks, then write it. Do not draft the files in your head first and do
     not re-verify the same rule or import more than once; a test that turns out wrong is fixed in a later step.
   expected_output: Valid JSON containing complete test files suited to the chosen technology.

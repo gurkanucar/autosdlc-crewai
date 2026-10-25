@@ -323,6 +323,8 @@
 "ℹ️ Files in the reserved docs/ folder were not written: {detail}": "ℹ️ Ayrılmış docs/ klasöründeki dosyalar yazılmadı: {detail}"
 "Test repair started": "Test onarımı başladı"
 "Tests repaired": "Testler onarıldı"
+"Old tests removed": "Eski testler silindi"
+"Placeholder file rejected": "Yer tutucu dosya reddedildi"
 "🛠️ The tests themselves do not compile; I am fixing my own test files.": "🛠️ Testlerin kendisi derlenmiyor; kendi test dosyalarımı düzeltiyorum."
 "✅ Test files fixed: {detail}": "✅ Test dosyaları düzeltildi: {detail}"
 "Desktop app": "Masaüstü uygulaması"

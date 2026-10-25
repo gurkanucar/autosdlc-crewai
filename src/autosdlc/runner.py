@@ -74,6 +74,8 @@ STAGE_INPUTS = {
 PACKAGE_TIMEOUT = 1800
 # Fix rounds the compile check may ask for before the test attempts; they do not count as test attempts.
 BUILD_FIXES = 2
+SERVER_START_FAILURES = ("The application server exited before the tests",
+                         "The application server did not start within 60 seconds")
 
 
 @dataclass
@@ -893,7 +895,8 @@ class RunSession:
             self.idea, self._context("development"), feedback=feedback, change=description
         ))
         rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
-        replacements = self._without_docs({name: content for name, content in replacements.items() if name not in rejected})
+        replacements = self._without_stubs(self._without_docs(
+            {name: content for name, content in replacements.items() if name not in rejected}))
         if rejected:
             self._event("development", "tests_protected", ", ".join(rejected))
         if replacements:
@@ -911,6 +914,34 @@ class RunSession:
         if skipped:
             self._event("development", "files_skipped", ", ".join(skipped))
         return {name: content for name, content in files.items() if name not in skipped}
+
+    def _remove_old_tests(self) -> None:
+        """A rewritten test suite replaces the old one: tests left from an earlier generation import helpers that
+        no longer exist and fail every attempt, and they crowd the agents' prompts."""
+        old = self._test_files_on_disk()
+        for folder in ("tests", "test"):
+            shutil.rmtree(self.project_dir / folder, ignore_errors=True)
+        if hasattr(self.engine, "current_files"):
+            for name in [name for name in self.engine.current_files if name.startswith(TEST_DIRS)]:
+                del self.engine.current_files[name]
+        if old:
+            self._event("testing", "old_tests_removed", ", ".join(old))
+
+    def _without_stubs(self, files: dict[str, str]) -> dict[str, str]:
+        """A repair that does not see a file may return it as a placeholder (`const _placeholder = undefined;` once
+        replaced a whole Express app); the existing file is kept instead."""
+        def stub(name: str, content: str) -> bool:
+            old = self.code_files.get(name, "")
+            if len(old) < 1000 or len(content.strip()) >= 200 or len(content) * 10 >= len(old):
+                return False
+            # A real, shorter rewrite still defines or re-exports some of what the file did.
+            defined = set(re.findall(r"\b(?:def|class|function|const|let|var|fn|func|type|interface)\s+(\w+)", old))
+            return bool(defined) and not any(re.search(rf"\b{re.escape(word)}\b", content) for word in defined)
+
+        stubs = sorted(name for name, content in files.items() if stub(name, content))
+        if stubs:
+            self._event("development", "stubs_rejected", ", ".join(stubs))
+        return {name: content for name, content in files.items() if name not in stubs}
 
     def _test_files_on_disk(self) -> dict[str, str]:
         files = {}
@@ -1004,6 +1035,7 @@ class RunSession:
                 )
             else:
                 raise ValueError(problem)
+            self._remove_old_tests()
             write_generated_files(self.project_dir, tests)
         self.test_files = tests
         if hasattr(self.engine, "current_files"):
@@ -1020,9 +1052,16 @@ class RunSession:
         attempt_dir = self.output_dir / "test_attempts"
         attempt_dir.mkdir(exist_ok=True)
         reports = []
+        start_fixes = 0
         for number in range(1, self.max_repairs + 2):
             self.attempts = number
             output, code = self._run_checks(self._test_env())
+            # A server that does not even start ran no test; like a compile error it goes back to the developer
+            # without using up an attempt (a repair that broke an import cost two attempts this way).
+            while (code and any(marker in output for marker in SERVER_START_FAILURES) and start_fixes < BUILD_FIXES
+                   and self._repair_code(output, "the application server did not start")):
+                start_fixes += 1
+                output, code = self._run_checks(self._test_env())
             passed = code == 0
             self.last_test_output = output
             (attempt_dir / f"attempt-{number}.txt").write_text(output, encoding="utf-8")
@@ -1075,7 +1114,8 @@ class RunSession:
         ))
         # The tests belong to the Test Agent; the developer cannot make them pass by changing them.
         rejected = sorted(name for name in replacements if name.startswith(TEST_DIRS))
-        replacements = self._without_docs({name: content for name, content in replacements.items() if name not in rejected})
+        replacements = self._without_stubs(self._without_docs(
+            {name: content for name, content in replacements.items() if name not in rejected}))
         if hasattr(self.engine, "current_files"):
             self.engine.current_files.update(self.test_files)
         if rejected:
@@ -1167,9 +1207,9 @@ class RunSession:
                     deadline = time.monotonic() + 60
                     while not _port_open(port):
                         if server.poll() is not None:
-                            return "\n".join(logs + ["The application server exited before the tests", _tail(server_log)]), -1
+                            return "\n".join(logs + [SERVER_START_FAILURES[0], _tail(server_log)]), -1
                         if time.monotonic() > deadline:
-                            return "\n".join(logs + ["The application server did not start within 60 seconds", _tail(server_log)]), -1
+                            return "\n".join(logs + [SERVER_START_FAILURES[1], _tail(server_log)]), -1
                         time.sleep(0.2)
                 resolved = self._command(command, env)
                 if label != "Setup":
@@ -1269,6 +1309,8 @@ class RunSession:
         self.services.stop()
         if self.package_failed and not error:
             error = "The executables could not be built: " + self.package_report[:1500]
+        if not error and not self.test_passed and self.attempts:
+            error = f"The tests did not pass after {self.attempts} attempts; see the test report"
         status = "failed" if error or not self.test_passed else "completed"
         if self.change:
             self._close_change(status, error)

@@ -187,6 +187,42 @@ def _extract_json(raw: str):
     return value
 
 
+def _files_for_prompt(files: dict[str, str], limit: int, focus: str = "", first: tuple[str, ...] = (),
+                      skip: tuple[str, ...] = ()) -> str:
+    """The files as JSON, whole files only and at most limit characters.
+
+    A plain [:limit] cut showed a big project's agent a seventh of the code, ending mid-file; a repair that cannot
+    see a file breaks its interface or rewrites it as a placeholder. So the files named in focus (usually the
+    failure output) and the files linked to them by imports come first, then the rest while they fit; the names
+    of the files left out are listed so the agent knows they exist.
+    """
+    files = {name: content for name, content in files.items() if not name.startswith(skip)}
+    named = [name for name in files if focus and name in focus]
+
+    def mentions(content: str, name: str) -> bool:
+        stem = re.escape(name.rsplit("/", 1)[-1].rsplit(".", 1)[0])
+        return re.search(rf"[/'\".]{stem}\b", content) is not None
+
+    related = [name for name in files if name not in named and any(
+        mentions(files[other], name) or mentions(files[name], other) for other in named)]
+    order = [name for name in first if name in files] + named + related + list(files)
+    shown: dict[str, str] = {}
+    left: list[str] = []
+    size = 2
+    for name in dict.fromkeys(order):
+        entry = len(json.dumps({name: files[name]}, ensure_ascii=False))
+        if size + entry > limit:
+            left.append(name)
+            continue
+        shown[name] = files[name]
+        size += entry
+    text = json.dumps(shown, ensure_ascii=False)
+    if left:
+        text += ("\nThese files exist too but are not shown, to keep the prompt short: " + ", ".join(left) + ". "
+                 "Do not return any of them unless you write its complete, real content; never return a placeholder.")
+    return text
+
+
 def _parse_file_bundle(raw: str) -> dict[str, str]:
     value = _extract_json(raw)
     files = value.get("files") if isinstance(value, dict) else None
@@ -488,10 +524,11 @@ class CrewAIEngine:
         return self._ask(stage, idea=idea, context=context[:24000])
 
     def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]:
+        # The tests are left out: the failure output shows what they expect, and they would crowd out the code.
         current = (
             "Files under tests/ and test/ belong to the Test Agent and must not be changed. Return only changed or new files.\n"
-            "Existing files (including tests):\n"
-            f"{json.dumps(self.current_files, ensure_ascii=False)[:30000]}\n"
+            "Existing application files:\n"
+            f"{_files_for_prompt(self.current_files, 40000, focus=(feedback or '') + (change or ''), skip=('tests/', 'test/'))}\n"
         )
         if change:
             # Change request: the existing application is kept, only the files the request requires change.
@@ -528,7 +565,12 @@ class CrewAIEngine:
                 "(e.g. FR-07) into the test names. If the request is a bug, write a regression test that "
                 "reproduces the bug and is EXPECTED TO FAIL with the current code."
             )
-        values = {"idea": idea, "context": docs[:16000], "files": json.dumps(files, ensure_ascii=False)[:30000]}
+        # project.yaml decides the runner the tests are written for, and the files its commands name (a test script)
+        # say which test files run, so they always come first.
+        manifest = files.get("project.yaml", "")
+        listing = _files_for_prompt(files, 30000, focus=(feedback or "") + (change or "") + manifest,
+                                    first=("project.yaml",))
+        values = {"idea": idea, "context": docs[:16000], "files": listing}
         if extra:
             return self._ask_files("testing", extra=extra, **values)
         # The first test suite in one response makes a reasoning model design every file at once before writing a

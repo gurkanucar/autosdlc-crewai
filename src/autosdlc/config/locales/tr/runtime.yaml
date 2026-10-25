@@ -198,6 +198,8 @@
 "fix rounds: {count}": "düzeltme turu: {count}"
 "after the packaging fix": "paketleme düzeltmesinden sonra"
 "from the compile check": "derleme kontrolünden"
+"the application server did not start": "uygulama sunucusu açılmadı"
+"The tests did not pass after {attempts} attempts; see the test report": "Testler {attempts} denemede geçmedi; test raporuna bak"
 "from the packaging build": "paketleme derlemesinden"
 "The launchers run the source code, so the language runtime (e.g. Python or Node.js) must be installed on the computer.": "Başlatıcılar kaynak kodu çalıştırır; bu yüzden bilgisayarda dilin çalışma ortamı (ör. Python veya Node.js) kurulu olmalı."
 "PostgreSQL is not installed here; DATABASE_URL is not set for the tests": "PostgreSQL burada kurulu değil; testler için DATABASE_URL ayarlanmadı"
