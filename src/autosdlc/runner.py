@@ -122,11 +122,13 @@ def _stop_process(process: subprocess.Popen) -> None:
         process.wait()
 
 
-def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, timeout: int) -> tuple[str, int | None]:
+def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, timeout: int,
+                should_stop: Callable[[], bool] | None = None) -> tuple[str, int | None]:
     """Runs a build command with its output in a file; the code is None when it could not start or timed out.
 
     The command runs in its own process group: on a timeout the compilers it started are stopped too, and nothing
     waits for pipes that a leftover child still holds open (cargo -> rustc, sh build.sh -> go build).
+    When should_stop turns true (the user pressed Stop) the command is stopped and RunPaused is raised.
     """
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -135,12 +137,18 @@ def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, t
                                        start_new_session=os.name != "nt")
     except OSError as exc:
         return str(exc), None
-    try:
-        code = process.wait(timeout=timeout)
-        return _tail(log, 20_000), code
-    except subprocess.TimeoutExpired:
-        _stop_process(process)
-        return f"timed out after {timeout} seconds\n{_tail(log, 2500)}", None
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            code = process.wait(timeout=0.5)
+            return _tail(log, 20_000), code
+        except subprocess.TimeoutExpired:
+            if should_stop is not None and should_stop():
+                _stop_process(process)
+                raise RunPaused() from None
+            if time.monotonic() > deadline:
+                _stop_process(process)
+                return f"timed out after {timeout} seconds\n{_tail(log, 2500)}", None
 
 
 def with_display(command: list[str], env: dict[str, str], platform: str = sys.platform) -> list[str]:
@@ -161,6 +169,30 @@ def _project_files(project_dir: Path, suffixes: set[str]) -> list[str]:
         if path.suffix in suffixes and path.is_file() and not any(part in SNAPSHOT_SKIP or part.startswith(".") for part in folders):
             found.append(relative.as_posix())
     return found
+
+
+NODE_SCRIPTS = {".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"}
+# The file names Node's test runner picks up on its own: x.test.js, x-test.js, x_test.js, x.spec.js, test-x.js, test.js.
+NODE_TEST_NAME = re.compile(r"(?:[._-]test|\.spec)\.[cm]?[jt]s$|^test(?:[-_].+)?\.[cm]?[jt]s$")
+
+
+def expand_node_test_folders(args: list[str], project_dir: Path) -> list[str]:
+    """`node --test tests/api` fails with "Cannot find module": Node 22 runs a folder argument as a file. A folder is
+    replaced with its test files (with every script in it when none has a test name), found when the command runs,
+    so tests added later run too."""
+    expanded = []
+    for arg in args:
+        folder = project_dir / arg
+        if arg.startswith("-") or not folder.is_dir():
+            expanded.append(arg)
+            continue
+        scripts = sorted(path for path in folder.rglob("*") if path.is_file() and path.suffix in NODE_SCRIPTS
+                         and "node_modules" not in path.relative_to(folder).parts)
+        named = [path for path in scripts if NODE_TEST_NAME.search(path.name)]
+        expanded.extend(path.relative_to(project_dir).as_posix() for path in named or scripts)
+        if not scripts:
+            expanded.append(arg)
+    return expanded
 
 
 def compile_commands(project_dir: Path) -> list[list[str]]:
@@ -434,11 +466,13 @@ class RunSession:
         self.completed_stages: set[str] = set()
         self._live_written = 0.0
         self._activity_written = 0.0
+        self._stop_checked, self._stopping = 0.0, False
         if hasattr(engine, "output_listener"):
             engine.output_listener = self._live_output
         if hasattr(getattr(engine, "llm", None), "call_log"):
             engine.llm.call_log = self._log_call
             engine.llm.activity = self._activity
+            engine.llm.should_stop = self._stop_requested
         if resume:
             self._load_checkpoint(existing)
             if not self.history.resume(self.run_id):
@@ -511,12 +545,21 @@ class RunSession:
         except OSError:
             pass  # Only a convenience; the UI may be reading the file at that moment.
 
+    def _stop_requested(self) -> bool:
+        """Whether the user pressed Stop; asked while a model answer streams or a command runs, so the database is
+        read at most once a second."""
+        moment = time.monotonic()
+        if moment - self._stop_checked >= 1:
+            self._stop_checked = moment
+            self._stopping = self.history.pause_requested(self.run_id)
+        return self._stopping
+
     def _run_reported(self, label: str, command: list[str], env: dict[str, str], log: Path, timeout: int) -> tuple[str, int | None]:
         """_run_logged, with the command shown in the live activity view while it runs."""
         current = {"kind": "command", "label": label, "command": " ".join(command), "started_at": now(),
                    "log": log.relative_to(self.output_dir).as_posix()}
         self._activity({**current, "phase": "running"})
-        output, code = _run_logged(command, self.project_dir, env, log, timeout=timeout)
+        output, code = _run_logged(command, self.project_dir, env, log, timeout=timeout, should_stop=self._stop_requested)
         self._activity({**current, "phase": "done" if code == 0 else "failed", "exit": code})
         return output, code
 
@@ -1151,6 +1194,8 @@ class RunSession:
             return [self.python_executable, *args]
         if executable in {"pip", "pip3"}:
             return [self.python_executable, "-m", "pip", *args]
+        if executable == "node" and "--test" in args:
+            args = expand_node_test_folders(args, self.project_dir)
         # On Windows npm/pnpm are .cmd files; the full path is resolved to run without a shell (harmless on macOS/Linux too).
         return [shutil.which(executable, path=env.get("PATH")) or executable, *args]
 
@@ -1403,6 +1448,9 @@ def run_project(
     except RunPaused:
         return session.pause()
     except Exception as exc:
+        # A model call cut off by Stop can surface wrapped in the agent framework's own error.
+        if session.history.pause_requested(session.run_id):
+            return session.pause()
         session.record_failure(exc)
         session._event("workflow", "failed", str(exc))
         return session.result(error=str(exc))

@@ -325,7 +325,7 @@ def describe_activity(row: dict, states: dict[str, str]) -> str:
         return (t("The process was interrupted; you can resume where it stopped.") if interrupted
                 else t("The run is paused; completed stages are kept."))
     if row["pause_requested"]:
-        return t("Stop requested; the run will pause when the current agent call finishes.")
+        return t("Stop requested; the running model call or command is being cut off, the run pauses within a few seconds.")
     waiting = next((key for key in STAGE_KEYS if states[key] == "question"), None)
     if waiting:
         return t("The {stage} agent is waiting for a decision — type your answer in the chat box below.", stage=stage_label(waiting))
@@ -681,7 +681,7 @@ def activity_panel(row: dict) -> None:
         except ValueError:
             activity = {}  # Caught while being replaced; the next refresh reads it.
         phase = activity.get("phase")
-        finished = phase in {"done", "failed"}
+        finished = phase in {"done", "failed", "stopped"}
         elapsed = format_duration(seconds_since(activity.get("updated_at" if finished else "started_at")))
         if activity.get("kind") == "model":
             stage = stage_label(activity.get("stage", ""))
@@ -691,6 +691,7 @@ def activity_panel(row: dict) -> None:
                 "writing": t("✍️ The model ({model}) is writing the {stage} agent's answer. Running for {elapsed}."),
                 "done": t("✅ The last model call of the {stage} agent finished {elapsed} ago."),
                 "failed": t("⚠️ The last model call of the {stage} agent failed {elapsed} ago: {error}"),
+                "stopped": t("⏸ The model call of the {stage} agent was cut off by Stop."),
             }.get(phase, "")
             st.markdown(text.format(stage=stage, model=activity.get("model", ""), elapsed=elapsed,
                                     error=translate_stored(str(activity.get("error") or activity.get("outcome", "")))[:300]))

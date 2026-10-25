@@ -9,6 +9,7 @@ import platform
 import re
 import sys
 import zipfile
+from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -218,7 +219,9 @@ def diagnostics_text(row: dict) -> str:
     for title, paths, limit in [("Latest compile check", latest[0], 3000), ("Latest test attempt", latest[1], 3000),
                                 ("Traceback", [output / "failure.txt"], 2500)]:
         if paths and paths[0].is_file():
-            text += f"\n\n## {title} ({paths[0].name}, end)\n\n```\n{_tail(paths[0], limit).strip()}\n```"
+            # The time shows when an older file (e.g. a compile check from before the tests) is not the latest step.
+            written = clock(datetime.fromtimestamp(paths[0].stat().st_mtime, timezone.utc).isoformat(), True)
+            text += f"\n\n## {title} ({paths[0].name}, {written}, end)\n\n```\n{_tail(paths[0], limit).strip()}\n```"
     return text + "\n"
 
 

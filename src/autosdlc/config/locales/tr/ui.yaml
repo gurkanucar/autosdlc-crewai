@@ -162,7 +162,7 @@
 "Started": "Başladı"
 "Starting stage": "Başlangıç aşaması"
 "Starting the run…": "Çalışma başlatılıyor…"
-"Stop requested; the run will pause when the current agent call finishes.": "Durdurma istendi; süren ajan çağrısı bitince çalışma duraklayacak."
+"Stop requested; the running model call or command is being cut off, the run pauses within a few seconds.": "Durdurma istendi; süren model çağrısı veya komut kesiliyor, çalışma birkaç saniye içinde duraklayacak."
 "Stop the run first to edit, regenerate or delete.": "Düzenleme, yeniden üretme ve silme için önce çalışmayı durdur."
 "Subfolders": "Alt klasörler"
 "Take an idea through every stage of the software lifecycle with eight agents. After you start, you follow it live on the **Projects** page.": "Bir fikri sekiz ajanla yazılım yaşam döngüsünün tüm aşamalarından geçir. Başlatınca **Projeler** sayfasında canlı izlersin."
@@ -368,3 +368,4 @@
 "Model per stage (optional)": "Aşamaya özel model (isteğe bağlı)"
 "A model that thinks very long (e.g. glm-5.3) can use up its output on reasoning and return an empty answer; a faster model can be picked for that stage only.": "Çok uzun düşünen bir model (ör. glm-5.3) çıktısını düşünmeye harcayıp boş yanıt dönebilir; sadece o aşama için daha hızlı bir model seçebilirsin."
 "Main model ({model})": "Ana model ({model})"
+"⏸ The model call of the {stage} agent was cut off by Stop.": "⏸ {stage} ajanının model çağrısı Durdur ile kesildi."

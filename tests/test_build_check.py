@@ -102,3 +102,19 @@ def test_test_compile_error_goes_back_to_the_test_agent_without_an_attempt(tmp_p
     assert engine.code_feedback == [None]
     assert engine.test_feedback[0] is None and "tests/test_calc.py" in engine.test_feedback[1]
     assert ("testing", "build_failed") in events and ("testing", "tests_repaired") in events
+
+
+def test_a_test_folder_given_to_node_test_runs_the_test_files_in_it(tmp_path):
+    from autosdlc.runner import expand_node_test_folders
+
+    (tmp_path / "tests" / "api" / "helpers").mkdir(parents=True)
+    for name in ("events.test.js", "auth.test.mjs", "helpers/server.js"):
+        (tmp_path / "tests" / "api" / name).write_text("", encoding="utf-8")
+    (tmp_path / "tests" / "ui").mkdir()
+    (tmp_path / "tests" / "ui" / "flow.js").write_text("", encoding="utf-8")
+    args = ["--test", "--test-concurrency=1", "tests/api", "tests/ui", "tests/missing"]
+    assert expand_node_test_folders(args, tmp_path) == [
+        "--test", "--test-concurrency=1", "tests/api/auth.test.mjs", "tests/api/events.test.js",
+        "tests/ui/flow.js",  # no test-named file: every script in the folder
+        "tests/missing",
+    ]

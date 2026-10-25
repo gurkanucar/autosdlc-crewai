@@ -23,8 +23,13 @@ DEFAULT_MODEL = "glm-5.3-flash"
 RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
+class StopRequested(RuntimeError):
+    """The user pressed Stop while a model call was running; the call is abandoned."""
+
+
 def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None],
-                       stats: dict | None = None, on_progress: Callable[[dict], None] | None = None) -> tuple[str, str | None]:
+                       stats: dict | None = None, on_progress: Callable[[dict], None] | None = None,
+                       should_stop: Callable[[], bool] | None = None) -> tuple[str, str | None]:
     """Reads the SSE stream and passes the accumulated text to on_text on every chunk; falls back to plain JSON if the server does not stream.
 
     Returns (text, finish_reason). stats, if given, receives how many reasoning and answer characters the model
@@ -46,6 +51,8 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
         parts: list[str] = []
         finish = None
         for line in response.iter_lines():
+            if should_stop is not None and should_stop():
+                raise StopRequested("Stopped at the user's request")
             if not line.startswith("data:"):
                 continue
             data = line[5:].strip()
@@ -197,6 +204,8 @@ class CrewAIEngine:
                 # here while it runs, for the live activity view.
                 inner.activity = None
                 inner.current = {}
+                # If set and true, the current call is abandoned (the user pressed Stop).
+                inner.should_stop = None
 
             def _report(inner, phase: str, **fields: Any) -> None:
                 if inner.activity is None:
@@ -236,6 +245,8 @@ class CrewAIEngine:
                     messages = [{"role": "user", "content": messages}]
                 # Three attempts with exponential backoff on temporary network/rate-limit errors.
                 for attempt in range(3):
+                    if inner.should_stop is not None and inner.should_stop():
+                        raise StopRequested("Stopped at the user's request")
                     url = f"{GO_BASE_URL}/chat/completions"
                     headers = {"Authorization": f"Bearer {inner.key}", "x-opencode-session": inner.session_id}
                     payload = {"model": inner.model, "messages": messages}
@@ -247,7 +258,8 @@ class CrewAIEngine:
                         if inner.listener is not None:
                             content, finish = _stream_completion(
                                 url, headers, payload, inner.listener, stats,
-                                lambda progress: inner._report("writing" if progress["content_chars"] else "reasoning", **progress))
+                                lambda progress: inner._report("writing" if progress["content_chars"] else "reasoning", **progress),
+                                inner.should_stop)
                         else:
                             response = httpx.post(url, headers=headers, json=payload, timeout=300)
                             response.raise_for_status()
@@ -255,6 +267,9 @@ class CrewAIEngine:
                             content, finish = choice["message"]["content"], choice.get("finish_reason")
                             stats["reasoning_chars"] = len(choice["message"].get("reasoning_content") or "")
                         break
+                    except StopRequested:
+                        inner._report("stopped")
+                        raise
                     except httpx.HTTPStatusError as exc:
                         # A 400 is normally permanent, but a gateway can return a temporary 400 too, so it is retried once.
                         status_code = exc.response.status_code

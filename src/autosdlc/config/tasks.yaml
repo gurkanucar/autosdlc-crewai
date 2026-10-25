@@ -111,8 +111,8 @@ development:
     Do not write test files: the Test Agent writes the tests under the tests/ folder.
     The test commands must run the tests folder, not a single file (e.g. pytest -q tests),
     so tests added later run too.
-    For a Node.js ESM TypeScript project using tsx, use a Node test glob such as
-    `node --import tsx --test tests/*.test.ts`; do not pass `tests/` as a directory.
+    Node's test runner does not accept a folder: pass test files or a glob such as
+    `node --test tests/api/*.test.js` (with tsx: `node --import tsx --test tests/*.test.ts`), never `node --test tests/api`.
     When using pnpm, pin a compatible packageManager version. On pnpm 10.26+ allow only the
     specific native dependencies that need install scripts through `allowBuilds` in
     pnpm-workspace.yaml; never enable all dependency scripts. Include that file in Docker's
