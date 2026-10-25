@@ -179,7 +179,7 @@
 "Fail instead of asking when a decision is missing": "Eksik karar varsa soru sormadan hata ver"
 "List the latest runs": "Son çalışmaları listele"
 "Show a run and its stage events": "Bir çalışmayı ve aşama olaylarını göster"
-"The request YAML file may only contain idea, decisions, output and model": "İstek YAML dosyasında yalnızca idea, decisions, output ve model olabilir"
+"The request YAML file may only contain idea, decisions, output, model and stage_models": "İstek YAML dosyasında yalnızca idea, decisions, output, model ve stage_models olabilir"
 "Which project should be created? ": "Hangi proje oluşturulsun? "
 "decisions in the request YAML file must be a mapping": "İstek YAML dosyasındaki decisions bir sözlük olmalı"
 "Enter one of the options: {options}": "Seçeneklerden birini gir: {options}"
@@ -203,3 +203,4 @@
 "Redis did not start for the tests": "Redis testler için başlatılamadı"
 "Write a failure report ZIP of a run (traceback, model calls, logs)": "Bir çalışmanın hata raporunu ZIP olarak yaz (traceback, model çağrıları, loglar)"
 "Target ZIP file": "Hedef ZIP dosyası"
+"Model for one stage only, e.g. testing=glm-5.3-flash (repeatable)": "Sadece bir aşamanın modeli, ör. testing=glm-5.3-flash (birden çok kez verilebilir)"

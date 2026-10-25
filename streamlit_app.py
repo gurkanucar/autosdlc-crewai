@@ -35,7 +35,7 @@ from autosdlc.runner import (
 from autosdlc.sections import (
     delete_section, insert_after, replace_section, split_sections, strip_fences, unified_diff,
 )
-from autosdlc.storage import TITLE_LIMIT, History, clock, local_time, project_title, suggested_title
+from autosdlc.storage import TITLE_LIMIT, History, clock, local_time, project_title, stage_models, suggested_title
 from autosdlc.ui_jobs import WORKER_ERRORS
 
 
@@ -206,9 +206,11 @@ def _spawn(job_id: str, name: str, **kwargs) -> None:
     threading.Thread(target=worker, daemon=True, name=f"autosdlc-{name}-{job_id}").start()
 
 
-def start_run(idea: str, decisions: dict[str, str], output: Path | None, model: str, api_key: str | None) -> str:
+def start_run(idea: str, decisions: dict[str, str], output: Path | None, model: str, api_key: str | None,
+              stage_models: dict[str, str] | None = None) -> str:
     run_id = uuid.uuid4().hex[:12]
-    _spawn(run_id, "run", idea=idea, model=model, api_key=api_key, decisions=decisions, output=output, run_id=run_id)
+    _spawn(run_id, "run", idea=idea, model=model, api_key=api_key, decisions=decisions, output=output, run_id=run_id,
+           stage_models=stage_models)
     return run_id
 
 
@@ -224,15 +226,33 @@ def regenerate(db: History, run_id: str, stage: str, api_key: str | None) -> Non
 
 # ---------------------------------------------------------------- small helpers
 
-def continue_model_field(row: dict, prefix: str) -> str:
-    """The model to continue a paused or failed run with; defaults to the one it used so far."""
+def model_fields(prefix: str, row: dict | None = None) -> tuple[str, dict[str, str]]:
+    """(main model, per-stage models). Every stage uses the main model unless another one is picked for it, e.g. a
+    strong model for the analysis and a faster one for the tests. For an existing run the choices so far are preselected."""
     models = model_options()
-    current = row.get("model")
-    if current and current not in models:
-        models = [current, *models]
-    return st.selectbox(t("OpenCode Go model"), models, index=models.index(current) if current else models.index(default_model(models)),
-                        key=f"{prefix}_model", help=t("A model that thinks very long (e.g. glm-5.3) can use up its output on reasoning "
-                                                      "and return an empty answer; a faster model can be picked here."))
+    current = (row or {}).get("model")
+    chosen = stage_models(row) if row else {}
+    for model in [current, *chosen.values()]:
+        if model and model not in models:
+            models = [*models, model]
+    main = st.selectbox(t("OpenCode Go model"), models, index=models.index(current or default_model(models)), key=f"{prefix}_model",
+                        help=t("Used by every stage that has no model of its own."))
+    picked: dict[str, str] = {}
+    with st.expander(t("Model per stage (optional)") + (f" · {len(chosen)}" if chosen else "")):
+        st.caption(t("A model that thinks very long (e.g. glm-5.3) can use up its output on reasoning and return an empty answer; "
+                     "a faster model can be picked for that stage only."))
+        for stage in STAGE_KEYS:
+            options = ["", *models]
+            value = st.selectbox(stage_label(stage), options, index=options.index(chosen.get(stage, "")), key=f"{prefix}_model_{stage}",
+                                 format_func=lambda model: model or t("Main model ({model})", model=main))
+            if value and value != main:
+                picked[stage] = value
+    return main, picked
+
+
+def continue_with(db: History, run_id: str, models: tuple[str, dict[str, str]]) -> None:
+    db.set_model(run_id, models[0])
+    db.set_stage_models(run_id, models[1])
 
 
 def api_key_field(prefix: str) -> tuple[bool, str | None]:
@@ -501,7 +521,9 @@ def stage_context(row: dict, stage: str) -> str:
 
 
 def make_engine(row: dict, api_key: str | None) -> CrewAIEngine:
-    return CrewAIEngine(api_key=api_key, model=row["model"] or None)
+    engine = CrewAIEngine(api_key=api_key, model=row["model"] or None)
+    engine.stage_models = stage_models(row)
+    return engine
 
 
 def document_language(row: dict) -> str:
@@ -1077,7 +1099,7 @@ def header(db: History, row: dict) -> None:
         # The full path spreads the header over several lines; only the folder name (the full path is in the README view and Manage menu).
         iterations = db.iterations(run_id)
         version = iteration_label(db, run_id, iterations[-1]) if iterations else t("no version yet")
-        st.caption(f"🏷️ **{version}** · `{run_id}` · {t('model')} `{row['model'] or '—'}` · 📁 `{Path(row['project_dir']).name}`")
+        st.caption(f"🏷️ **{version}** · `{run_id}` · {t('model')} `{row['model'] or '—'}`{''.join(f" · {stage_label(stage)}: `{model}`" for stage, model in stage_models(row).items())} · 📁 `{Path(row['project_dir']).name}`")
     with status:
         icon, label, color = STATUS_LABELS.get(row["status"], ("⚪", row["status"], "gray"))
         st.badge(t(label), icon=icon, color=color)
@@ -1137,10 +1159,10 @@ def header(db: History, row: dict) -> None:
                 st.rerun()
         elif row["status"] == "paused":
             with primary.popover(t("▶ Resume"), width="stretch"):
-                model = continue_model_field(row, f"resume_{run_id}")
+                models = model_fields(f"resume_{run_id}", row)
                 ready, key = api_key_field(f"resume_{run_id}")
                 if st.button(t("Resume where it stopped"), key=f"resume_{run_id}", type="primary", disabled=not ready):
-                    db.set_model(run_id, model)
+                    continue_with(db, run_id, models)
                     resume_run(run_id, key)
                     st.rerun()
         elif row["status"] == "failed":
@@ -1148,10 +1170,10 @@ def header(db: History, row: dict) -> None:
             failed_at = next((stage for stage in STAGE_KEYS if stage not in completed_from_events(row["events"])), STAGE_KEYS[-1])
             with primary.popover(t("↻ Retry"), width="stretch"):
                 st.caption(t("Continues from the {stage} stage; completed stages are kept.", stage=stage_label(failed_at)))
-                model = continue_model_field(row, f"retry_{run_id}")
+                models = model_fields(f"retry_{run_id}", row)
                 ready, key = api_key_field(f"retry_{run_id}")
                 if st.button(t("Retry"), key=f"retry_{run_id}", type="primary", disabled=not ready):
-                    db.set_model(run_id, model)
+                    continue_with(db, run_id, models)
                     regenerate(db, run_id, failed_at, key)
                     st.rerun()
         with manage.popover(t("⚙️ Manage"), width="stretch"):
@@ -1383,8 +1405,7 @@ def home_page() -> None:
         decisions["constraints"] = st.text_area(question_text("constraints"), key="constraints_input", height=80,
                                                 placeholder=t("E.g. Use pnpm, keep the frontend plain HTML, write the UI texts in Turkish."))
     with right:
-        models = model_options()
-        model = st.selectbox(t("OpenCode Go model"), models, index=models.index(default_model(models)))
+        model, chosen_models = model_fields("new")
         ready, api_key = api_key_field("new")
         path_col, browse_col = st.columns([3, 1], vertical_alignment="bottom")
         output_path = path_col.text_input(t("Project folder (optional)"), key="output_path", placeholder="projects/<name>-<id>")
@@ -1400,7 +1421,7 @@ def home_page() -> None:
                 target = Path(output_path).expanduser().resolve() if output_path.strip() else None
                 if target and target.exists():
                     raise ValueError(t("Project folder already exists: {path}", path=target))
-                st.session_state["starting_run"] = start_run(idea.strip(), validated, target, model, api_key)
+                st.session_state["starting_run"] = start_run(idea.strip(), validated, target, model, api_key, chosen_models)
                 st.switch_page(PROJECTS_PAGE)
             except (ValueError, OSError) as exc:
                 st.error(translate_stored(str(exc)))

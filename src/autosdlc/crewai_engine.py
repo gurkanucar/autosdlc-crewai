@@ -306,6 +306,8 @@ class CrewAIEngine:
         self.output_listener: Callable[[str, str], None] | None = None
         # Language of every document the agents write; RunSession sets it from the project's decisions.
         self.language = "en"
+        # Optional model per agent stage (e.g. a faster one for testing); a stage not listed uses self.model.
+        self.stage_models: dict[str, str] = {}
         config_dir = resource_files("autosdlc").joinpath("config")
         self.agents = yaml.safe_load(config_dir.joinpath("agents.yaml").read_text(encoding="utf-8"))
         self.tasks = yaml.safe_load(config_dir.joinpath("tasks.yaml").read_text(encoding="utf-8"))
@@ -321,6 +323,7 @@ class CrewAIEngine:
             language=document_language, terms=jargon_rule(language or self.language))
         listener = self.output_listener
         self.llm.stage = stage
+        self.llm.model = self.stage_models.get(stage) or self.model
         self.llm.listener = (lambda text: listener(stage, text)) if listener else None
         if ask_user:
             prompt += (

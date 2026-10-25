@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone, tzinfo
@@ -51,6 +52,15 @@ def suggested_title(idea: str) -> str:
     cut = idea[:TITLE_LIMIT]
     space = cut.rfind(" ")
     return (cut[:space] if space >= TITLE_LIMIT // 2 else cut).rstrip(" ,.;:-")
+
+
+def stage_models(row: dict) -> dict[str, str]:
+    """The run's per-stage model choices; {} for a run that uses one model everywhere."""
+    try:
+        value = json.loads(row.get("stage_models") or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def project_title(row: dict) -> str:
@@ -129,6 +139,9 @@ class History:
                 db.execute("ALTER TABLE runs ADD COLUMN heartbeat_at TEXT")
             if "title" not in columns:
                 db.execute("ALTER TABLE runs ADD COLUMN title TEXT")
+            # Optional model per stage as JSON ({"testing": "glm-5.3-flash"}); a stage not listed uses the run's model.
+            if "stage_models" not in columns:
+                db.execute("ALTER TABLE runs ADD COLUMN stage_models TEXT")
             change_columns = {row[1] for row in db.execute("PRAGMA table_info(changes)")}
             if "clarifications" not in change_columns:
                 db.execute("ALTER TABLE changes ADD COLUMN clarifications TEXT")
@@ -158,13 +171,21 @@ class History:
         db.execute("PRAGMA foreign_keys = ON")
         return db
 
-    def create(self, run_id: str, idea: str, output_dir: Path, project_dir: Path, model: str | None = None) -> None:
+    def create(self, run_id: str, idea: str, output_dir: Path, project_dir: Path, model: str | None = None,
+               stage_models: dict[str, str] | None = None) -> None:
         with self._connect() as db:
             db.execute(
-                "INSERT INTO runs (id, idea, provider, status, output_dir, project_dir, created_at, model, heartbeat_at) "
-                "VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)",
-                (run_id, idea, "opencode-go", str(output_dir), str(project_dir), now(), model, now()),
+                "INSERT INTO runs (id, idea, provider, status, output_dir, project_dir, created_at, model, heartbeat_at, stage_models) "
+                "VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)",
+                (run_id, idea, "opencode-go", str(output_dir), str(project_dir), now(), model, now(),
+                 json.dumps(stage_models) if stage_models else None),
             )
+
+    def set_stage_models(self, run_id: str, stage_models: dict[str, str]) -> None:
+        """The per-stage models a paused or finished run continues with; empty means every stage uses the run's model."""
+        with self._connect() as db:
+            db.execute("UPDATE runs SET stage_models=? WHERE id=? AND status != 'running'",
+                       (json.dumps(stage_models) if stage_models else None, run_id))
 
     def event(self, run_id: str, stage: str, status: str, detail: str = "") -> None:
         with self._connect() as db:

@@ -364,4 +364,7 @@
 "⚙️ Running {label}: `{command}` for {elapsed}.": "⚙️ {label} çalışıyor: `{command}` ({elapsed})."
 "Latest output:": "Son çıktı:"
 "Latest model calls": "Son model çağrıları"
-"A model that thinks very long (e.g. glm-5.3) can use up its output on reasoning and return an empty answer; a faster model can be picked here.": "Çok uzun düşünen bir model (ör. glm-5.3) çıktısını düşünmeye harcayıp boş yanıt dönebilir; buradan daha hızlı bir model seçebilirsin."
+"Used by every stage that has no model of its own.": "Kendine ait modeli olmayan her aşama bunu kullanır."
+"Model per stage (optional)": "Aşamaya özel model (isteğe bağlı)"
+"A model that thinks very long (e.g. glm-5.3) can use up its output on reasoning and return an empty answer; a faster model can be picked for that stage only.": "Çok uzun düşünen bir model (ör. glm-5.3) çıktısını düşünmeye harcayıp boş yanıt dönebilir; sadece o aşama için daha hızlı bir model seçebilirsin."
+"Main model ({model})": "Ana model ({model})"

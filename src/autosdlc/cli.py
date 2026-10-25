@@ -27,6 +27,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--idea", help=t("Short project idea"))
     run.add_argument("--config", type=Path, help=t("YAML file with the idea, decisions and target folder"))
     run.add_argument("--model", help=t("OpenCode Go model id"))
+    run.add_argument("--stage-model", action="append", default=[], metavar="STAGE=MODEL",
+                     help=t("Model for one stage only, e.g. testing=glm-5.3-flash (repeatable)"))
     run.add_argument("--max-repairs", type=int, default=2)
     run.add_argument("--output", type=Path, help=t("New folder the project is created in"))
     run.add_argument("--no-prompt", action="store_true", help=t("Fail instead of asking when a decision is missing"))
@@ -48,13 +50,19 @@ def main(argv: list[str] | None = None) -> int:
             request = {}
             if args.config:
                 request = yaml.safe_load(args.config.read_text(encoding="utf-8"))
-                if not isinstance(request, dict) or set(request) - {"idea", "decisions", "output", "model"}:
-                    raise ValueError("The request YAML file may only contain idea, decisions, output and model")
+                if not isinstance(request, dict) or set(request) - {"idea", "decisions", "output", "model", "stage_models"}:
+                    raise ValueError("The request YAML file may only contain idea, decisions, output, model and stage_models")
             idea = args.idea or request.get("idea", "")
             if not idea and not args.no_prompt:
                 idea = input(t("Which project should be created? ") + " ").strip()
             output = args.output or request.get("output")
             model = args.model or request.get("model")
+            stage_models = dict(request.get("stage_models") or {})
+            for item in args.stage_model:
+                stage, separator, value = item.partition("=")
+                if not separator:
+                    raise ValueError(f"--stage-model must look like STAGE=MODEL: {item}")
+                stage_models[stage.strip()] = value.strip()
             raw_decisions = request.get("decisions", {})
             if not isinstance(raw_decisions, dict):
                 raise ValueError("decisions in the request YAML file must be a mapping")
@@ -86,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                 model=model,
                 decisions=selected,
                 output=output,
+                stage_models=stage_models,
                 on_question=(lambda _run_id, stage, question: input(t("The {stage} agent is asking: {question}", stage=stage, question=question) + "\n" + t("Answer") + ": ")) if not args.no_prompt else None,
             )
         except (RuntimeError, ValueError, EOFError, OSError, yaml.YAMLError) as exc:

@@ -30,7 +30,7 @@ from .files import write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
 from .sections import NO_CHANGE, NO_CHANGE_TOKENS, apply_patch
-from .storage import History, local_time, now
+from .storage import History, local_time, now, stage_models as read_stage_models
 from .traceability import build_matrix
 
 
@@ -259,6 +259,20 @@ def suggested_skips(report: str) -> list[str]:
     return [name for name in SKIPPABLE_STAGES if name in names]
 
 
+def validate_stage_models(stage_models: dict[str, str] | None) -> dict[str, str]:
+    """Optional model per SDLC stage; empty choices are dropped, so those stages use the run's model."""
+    result = {}
+    for stage, model in (stage_models or {}).items():
+        if stage not in SDLC_STAGES:
+            raise ValueError(f"Unknown stage for a model choice: {stage}")
+        model = str(model or "").strip()
+        if len(model) > 100:
+            raise ValueError("A model id must be at most 100 characters")
+        if model:
+            result[stage] = model
+    return result
+
+
 def skip_stages(change: dict | None) -> set[str]:
     """The unaffected stages (to be skipped) that the user approved for a change request."""
     if not change or not change.get("skip_stages"):
@@ -361,6 +375,7 @@ class RunSession:
         on_question: Callable[[str, str, str], str] | None = None,
         run_id: str | None = None,
         resume: bool = False,
+        stage_models: dict[str, str] | None = None,
     ):
         self.idea = idea.strip()
         self.workspace = Path(workspace).resolve()
@@ -382,7 +397,7 @@ class RunSession:
             self.output_dir.mkdir(parents=True)
             self.project_dir.mkdir(parents=True)
             (self.project_dir / "docs").mkdir()
-            self.history.create(self.run_id, self.idea, self.output_dir, self.project_dir, getattr(engine, "model", None))
+            self.history.create(self.run_id, self.idea, self.output_dir, self.project_dir, getattr(engine, "model", None), stage_models)
         self.engine = engine
         self.on_event = on_event
         self.on_question = on_question
@@ -1351,6 +1366,7 @@ def run_project(
     on_question: Callable[[str, str, str], str] | None = None,
     run_id: str | None = None,
     resume_run_id: str | None = None,
+    stage_models: dict[str, str] | None = None,
 ) -> RunResult:
     workspace = Path(workspace or Path.cwd()).resolve()
     if resume_run_id:
@@ -1361,14 +1377,18 @@ def run_project(
         decisions = yaml.safe_load((Path(row["output_dir"]) / "decisions.yaml").read_text(encoding="utf-8"))
         output = Path(row["project_dir"])
         model = model or row["model"]
+        stage_models = read_stage_models(row) if stage_models is None else stage_models
         run_id = resume_run_id
     if not idea.strip() or len(idea) > 1000:
         raise ValueError("The project idea must be 1–1000 characters")
     if not 0 <= max_repairs <= 3:
         raise ValueError("max_repairs must be between 0 and 3")
     decisions = validate_decisions(decisions)
+    stage_models = validate_stage_models(stage_models)
     engine = engine or CrewAIEngine(api_key=api_key, model=model)
-    session = RunSession(idea, workspace, engine, max_repairs, decisions, Path(output) if output is not None else None, on_event, on_question, run_id, bool(resume_run_id))
+    if hasattr(engine, "stage_models"):
+        engine.stage_models = stage_models
+    session = RunSession(idea, workspace, engine, max_repairs, decisions, Path(output) if output is not None else None, on_event, on_question, run_id, bool(resume_run_id), stage_models)
     # Heartbeat: if the process dies the UI can pause the run as "interrupted".
     stop = threading.Event()
 
