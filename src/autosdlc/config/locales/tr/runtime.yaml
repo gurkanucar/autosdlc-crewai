@@ -160,6 +160,8 @@
 "The agent must return 1–40 files": "Ajan 1–40 dosya döndürmeli"
 "Generated file names and contents must be text": "Üretilen dosya adları ve içerikleri metin olmalı"
 "Generated file not allowed: {name}": "İzin verilmeyen üretilmiş dosya: {name}"
+"Generated file too large: {name} ({size} KB, at most {limit} KB)": "Üretilen dosya çok büyük: {name} ({size} KB, en fazla {limit} KB)"
+"The {model} model kept repeating the same text in its answer; choose another model for the {stage} stage and continue": "{model} modeli cevabında aynı metni tekrarlayıp durdu; {stage} aşaması için başka bir model seçip devam et"
 "The generated file escapes the project folder: {name}": "Üretilen dosya proje klasörünün dışına çıkıyor: {name}"
 "Folder not found: {folder}": "Klasör bulunamadı: {folder}"
 "Could not open the folder ({exc}). Path: {folder}": "Klasör açılamadı ({exc}). Yol: {folder}"

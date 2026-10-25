@@ -27,7 +27,7 @@ from .i18n import normalize, t
 from .deployment import write_deployment_files
 from .services import LocalServices
 from .exports import is_compiled_binary, plain
-from .files import write_generated_files
+from .files import MAX_FILE_BYTES, write_generated_files
 from .intake import validate_decisions
 from .project import read_project_manifest
 from .sections import NO_CHANGE, NO_CHANGE_TOKENS, apply_patch
@@ -694,6 +694,11 @@ def test_placement_problem(tests: dict[str, str]) -> str | None:
         return "Test files must be under tests/ or test/" + (f" (received: {', '.join(outside)})" if outside else "")
     if outside:
         return f"The Test Agent may only write under tests/ or test/ (outside: {', '.join(outside)})"
+    # A test that wrote a "larger than 5 MB" upload out literally made a file far over the limit and ended the run.
+    large = sorted(name for name, content in tests.items() if len(content.encode("utf-8")) > MAX_FILE_BYTES)
+    if large:
+        return (f"These test files are larger than {MAX_FILE_BYTES // 1000} KB: {', '.join(large)}; generate large "
+                "test data in code (e.g. Buffer.alloc(6 * 1024 * 1024)) instead of writing it out")
     return None
 
 
@@ -1498,9 +1503,10 @@ class RunSession:
                     break
                 # Like the other quality gates: the reason is given to the Test Agent, which is asked to fix it once.
                 self._event("testing", "gate_failed", problem)
-                gate_feedback = (
-                    f"YOUR PREVIOUS TEST OUTPUT WAS REJECTED: {problem}. Write all test files under the tests/ folder "
-                    "(e.g. tests/test_x.py); rewrite test files at the root under tests/ as well.\n\n"
+                gate_feedback = f"YOUR PREVIOUS TEST OUTPUT WAS REJECTED: {problem}. " + (
+                    "Return the complete test suite again with this fixed.\n\n" if "larger than" in problem else
+                    "Write all test files under the tests/ folder (e.g. tests/test_x.py); rewrite test files at the "
+                    "root under tests/ as well.\n\n"
                 )
             else:
                 raise ValueError(problem)

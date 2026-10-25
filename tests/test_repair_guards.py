@@ -344,6 +344,15 @@ def test_a_test_helper_called_in_a_way_that_cannot_work_is_reported(tmp_path):
     ]
 
 
+def test_a_test_file_over_the_size_limit_is_sent_back_instead_of_ending_the_run():
+    from autosdlc.runner import test_placement_problem
+
+    problem = test_placement_problem({"tests/uploads.test.js": "'" + "f" * 60_000 + "'", "tests/a.test.js": "ok"})
+    assert problem.startswith("These test files are larger than 50 KB: tests/uploads.test.js")
+    assert "Buffer.alloc" in problem
+    assert test_placement_problem({"tests/a.test.js": "ok"}) is None
+
+
 def test_a_long_output_keeps_its_start_and_its_end():
     from autosdlc.runner import _clip
 

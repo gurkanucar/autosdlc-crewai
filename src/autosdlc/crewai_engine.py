@@ -31,6 +31,11 @@ BUDGET_NUDGE = (
     "You have already reasoned enough about this task. Do not re-check the rules or the plan again; "
     "write the final answer now, in the required format."
 )
+REPEAT_NUDGE = (
+    "Your previous answer got stuck repeating the same text. Never write large data out literally (a big file, a "
+    "long string, many rows): generate it in code, e.g. Buffer.alloc(6 * 1024 * 1024) or 'x'.repeat(n). Write the "
+    "answer again, complete and without repetition."
+)
 DRIFT_NUDGE = (
     "Your previous answer drifted into other languages and scripts (Chinese, Cyrillic, Arabic) in the middle of the "
     "text. Write the whole answer again, only in the language these instructions ask for."
@@ -65,6 +70,24 @@ class StopRequested(RuntimeError):
     """The user pressed Stop while a model call was running; the call is abandoned."""
 
 
+class RepetitionDetected(RuntimeError):
+    """The answer ended in the same short piece repeated over and over: the model is stuck in a loop."""
+
+
+# A tail this long that is one piece of at most REPEAT_PERIOD characters repeated means a loop; checked every
+# REPEAT_CHECK new characters. A test wrote a "larger than 5 MB" file out as 'ffff…' + lines for 190k characters.
+REPEAT_TAIL = 4000
+REPEAT_PERIOD = 200
+REPEAT_CHECK = 2000
+
+
+def _repeating(text: str) -> bool:
+    if len(text) < REPEAT_TAIL:
+        return False
+    tail = text[-REPEAT_TAIL:]
+    return any(tail[period:] == tail[:-period] for period in range(1, REPEAT_PERIOD + 1))
+
+
 def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None],
                        stats: dict | None = None, on_progress: Callable[[dict], None] | None = None,
                        should_stop: Callable[[], bool] | None = None,
@@ -91,6 +114,7 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
             return choice["message"]["content"], choice.get("finish_reason")
         parts: list[str] = []
         finish = None
+        checked = 0
         for line in response.iter_lines():
             if should_stop is not None and should_stop():
                 raise StopRequested("Stopped at the user's request")
@@ -115,6 +139,10 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
                 on_progress(stats)
             if reasoning_budget and not parts and stats["reasoning_chars"] > reasoning_budget:
                 raise ReasoningBudgetExceeded(f"The model reasoned {stats['reasoning_chars']} characters without answering")
+            if stats["content_chars"] - checked >= REPEAT_CHECK:
+                checked = stats["content_chars"]
+                if _repeating("".join(parts)[-REPEAT_TAIL:]):
+                    raise RepetitionDetected(f"The answer repeats itself after {checked} characters")
         return "".join(parts), finish
 
 
@@ -355,7 +383,7 @@ class CrewAIEngine:
                 if isinstance(messages, str):
                     messages = [{"role": "user", "content": messages}]
                 # Three attempts with exponential backoff on temporary network/rate-limit errors.
-                nudged = False
+                nudged = repeated = False
                 # The prompt's own foreign scripts (an idea written in Russian) are not drift.
                 prompt_scripts = _scripts_in("".join(str(message.get("content", "")) for message in messages))
                 for attempt in range(3):
@@ -404,6 +432,18 @@ class CrewAIEngine:
                         raise RuntimeError(f"The {model} model reasoned more than {REASONING_BUDGET} characters "
                                            f"without answering; choose another model for the {stage} stage and "
                                            "continue") from None
+                    except RepetitionDetected:
+                        inner._log(attempt, started, messages, "repetition",
+                                   response_chars=stats.get("content_chars", 0))
+                        if not repeated and attempt < 2:
+                            # Asked once more with the likely cause named: large data written out literally.
+                            repeated = True
+                            last = messages[-1]
+                            messages = [*messages[:-1], {**last, "content": f"{last.get('content', '')}\n\n{REPEAT_NUDGE}"}]
+                            continue
+                        model, stage = inner.model, inner.stage
+                        raise RuntimeError(f"The {model} model kept repeating the same text in its answer; choose "
+                                           f"another model for the {stage} stage and continue") from None
                     except httpx.HTTPStatusError as exc:
                         # A 400 is normally permanent, but a gateway can return a temporary 400 too, so it is retried once.
                         status_code = exc.response.status_code

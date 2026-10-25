@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 
 
 RESERVED_DIRECTORIES = {"docs", "node_modules", "runs", ".venv", ".git"}
+MAX_FILE_BYTES = 50_000
 # Common dotfiles such as .gitignore and .github/ are allowed; secrets and environment folders are not.
 FORBIDDEN_PARTS = {".git", ".venv", ".autosdlc-venv", ".env", ".ssh"}
 
@@ -33,9 +34,11 @@ def write_generated_files(project_dir: Path, files: dict[str, str]) -> None:
             or any(char in name for char in '<>"|?*')
             or any(part in {".", ".."} or _forbidden_part(part) for part in path.parts)
             or path.parts[0] in RESERVED_DIRECTORIES
-            or len(content.encode("utf-8")) > 50_000
         ):
             raise ValueError(f"Generated file not allowed: {name}")
+        size = len(content.encode("utf-8"))
+        if size > MAX_FILE_BYTES:
+            raise ValueError(f"Generated file too large: {name} ({size // 1000} KB, at most {MAX_FILE_BYTES // 1000} KB)")
         target = project_dir.joinpath(*path.parts)
         if not target.resolve().is_relative_to(project_dir.resolve()):
             raise ValueError(f"The generated file escapes the project folder: {name}")

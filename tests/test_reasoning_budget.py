@@ -88,6 +88,31 @@ def test_scripts_the_prompt_uses_are_not_drift(monkeypatch):
     assert len(payloads) == 1
 
 
+def _looping():
+    line = "'" + "f" * 70 + "' +\\n"
+    return ["data: " + json.dumps({"choices": [{"delta": {"content": line}}]})] * 400
+
+
+def test_an_answer_stuck_in_a_loop_is_cut_and_asked_again(monkeypatch):
+    from autosdlc.crewai_engine import REPEAT_NUDGE
+
+    engine, payloads = _engine(monkeypatch, [_looping(), _answer("OK")])
+    assert engine.llm.call("write tests") == "OK"
+    assert payloads[1]["messages"][-1]["content"].endswith(REPEAT_NUDGE)
+    engine, _payloads = _engine(monkeypatch, [_looping(), _looping()])
+    with pytest.raises(RuntimeError, match="kept repeating the same text.*testing stage"):
+        engine.llm.call("write tests")
+
+
+def test_ordinary_long_answers_are_not_taken_for_a_loop():
+    from autosdlc.crewai_engine import _repeating
+
+    code = "".join(f"test('FR-{n:02d} case {n}', async () => {{ assert.equal(add({n}, 1), {n + 1}); }});\n"
+                   for n in range(200))
+    assert not _repeating(code)
+    assert _repeating(code + "x" * 5000)
+
+
 def test_overthinking_is_cut_and_the_model_is_told_to_answer(monkeypatch):
     engine, payloads = _engine(monkeypatch, [_overthinking(), _answer("OK")])
     assert engine.llm.call("write tests") == "OK"
