@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 import uuid
 from importlib.resources import files as resource_files
 from string import Template
@@ -30,6 +31,30 @@ BUDGET_NUDGE = (
     "You have already reasoned enough about this task. Do not re-check the rules or the plan again; "
     "write the final answer now, in the required format."
 )
+DRIFT_NUDGE = (
+    "Your previous answer drifted into other languages and scripts (Chinese, Cyrillic, Arabic) in the middle of the "
+    "text. Write the whole answer again, only in the language these instructions ask for."
+)
+# Letters in a script neither the prompt nor the document language uses; past this many an answer is asked again.
+DRIFT_LETTERS = 8
+DRIFT_SCRIPTS = ("CJK", "CYRILLIC", "ARABIC", "HANGUL", "HIRAGANA", "KATAKANA", "THAI", "DEVANAGARI", "TIBETAN",
+                 "HEBREW", "GEORGIAN", "ARMENIAN")
+
+
+def _script(char: str) -> str | None:
+    if char.isascii() or not char.isalpha():
+        return None
+    name = unicodedata.name(char, "")
+    return next((script for script in DRIFT_SCRIPTS if name.startswith(script)), None)
+
+
+def _scripts_in(text: str) -> set[str]:
+    return {script for char in set(text) if (script := _script(char))}
+
+
+def _foreign_letters(text: str, allowed: set[str]) -> int:
+    """How many letters of the text are in a drift script that is not allowed (the prompt's own scripts are)."""
+    return sum(1 for char in text if (script := _script(char)) and script not in allowed)
 
 
 class ReasoningBudgetExceeded(RuntimeError):
@@ -289,8 +314,9 @@ class CrewAIEngine:
                 inner.current = {}
                 # If set and true, the current call is abandoned (the user pressed Stop).
                 inner.should_stop = None
-                # Models whose requests were rejected with reasoning_effort; they are called without it.
+                # Models whose requests were rejected with reasoning_effort or temperature; they are called without them.
                 inner.no_effort: set[str] = set()
+                inner.no_temperature: set[str] = set()
 
             def _report(inner, phase: str, **fields: Any) -> None:
                 if inner.activity is None:
@@ -330,6 +356,8 @@ class CrewAIEngine:
                     messages = [{"role": "user", "content": messages}]
                 # Three attempts with exponential backoff on temporary network/rate-limit errors.
                 nudged = False
+                # The prompt's own foreign scripts (an idea written in Russian) are not drift.
+                prompt_scripts = _scripts_in("".join(str(message.get("content", "")) for message in messages))
                 for attempt in range(3):
                     if inner.should_stop is not None and inner.should_stop():
                         raise StopRequested("Stopped at the user's request")
@@ -339,6 +367,10 @@ class CrewAIEngine:
                     effort = REASONING_EFFORT.get(inner.stage)
                     if effort and inner.model not in inner.no_effort:
                         payload["reasoning_effort"] = effort
+                    if inner.model not in inner.no_temperature:
+                        # Set on the LLM but never sent before: the gateway's default temperature let a flash model
+                        # drift into Chinese and Cyrillic in the middle of a Turkish document.
+                        payload["temperature"] = inner.temperature
                     started, stats = time.monotonic(), {}
                     inner.current = {"stage": inner.stage, "model": inner.model, "attempt": attempt + 1, "started_at": now(),
                                      "prompt_chars": sum(len(str(message.get("content", ""))) for message in messages)}
@@ -380,9 +412,14 @@ class CrewAIEngine:
                         except httpx.ResponseNotRead:
                             reason = ""
                         inner._log(attempt, started, messages, f"http_{status_code}", error=reason)
-                        if status_code == 400 and "reasoning_effort" in payload and attempt < 2:
-                            # The gateway or model does not accept the parameter: the request is repeated without it.
-                            inner.no_effort.add(inner.model)
+                        if status_code == 400 and ("reasoning_effort" in payload or "temperature" in payload) and attempt < 2:
+                            # The gateway or model does not accept a parameter: the request is repeated without the
+                            # one the reason names, or without both when it names neither.
+                            named = [name for name in ("reasoning_effort", "temperature") if name in reason]
+                            if not named or "reasoning_effort" in named:
+                                inner.no_effort.add(inner.model)
+                            if not named or "temperature" in named:
+                                inner.no_temperature.add(inner.model)
                             continue
                         if (status_code in RETRY_STATUSES or (status_code == 400 and attempt == 0)) and attempt < 2:
                             time.sleep(2 ** (attempt + 1))
@@ -399,6 +436,14 @@ class CrewAIEngine:
                     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
                         inner._log(attempt, started, messages, "bad_response", error=repr(exc)[:400])
                         raise RuntimeError("The OpenCode Go request or response failed") from exc
+                if (isinstance(content, str) and not _kwargs.get("drift_retried")
+                        and _foreign_letters(content, prompt_scripts) >= DRIFT_LETTERS):
+                    # The model drifted into other scripts (Chinese, Cyrillic, Arabic) mid-answer: asked once more.
+                    inner._log(attempt, started, messages, "language_drift", finish_reason=finish,
+                               response_chars=len(content))
+                    last = messages[-1]
+                    retry = [*messages[:-1], {**last, "content": f"{last.get('content', '')}\n\n{DRIFT_NUDGE}"}]
+                    return inner.call(retry, drift_retried=True)
                 inner.truncated = finish == "length"
                 empty = not isinstance(content, str) or not content.strip()
                 inner._log(attempt, started, messages, "empty" if empty else "ok", finish_reason=finish,

@@ -57,6 +57,37 @@ def _engine(monkeypatch, responses, stage="testing"):
     return engine, payloads
 
 
+def test_the_temperature_is_sent_and_dropped_when_the_gateway_rejects_it(monkeypatch):
+    request = httpx.Request("POST", "https://example.test")
+    rejected = httpx.HTTPStatusError("bad", request=request,
+                                     response=httpx.Response(400, request=request, text="temperature must be 1"))
+    engine, payloads = _engine(monkeypatch, [rejected, _answer("OK")])
+    assert engine.llm.call("write tests") == "OK"
+    assert payloads[0]["temperature"] == 0.2 and "temperature" not in payloads[1]
+    # Only the rejected parameter is dropped.
+    assert payloads[1]["reasoning_effort"] == "low"
+
+
+GARBLED = "## 9. Bakım\nBil الإنسan discharge了打工作报告 планируемый таблица 和 birdecimal"
+
+
+def test_an_answer_that_drifts_into_other_scripts_is_asked_again(monkeypatch):
+    from autosdlc.crewai_engine import DRIFT_NUDGE
+
+    engine, payloads = _engine(monkeypatch, [_answer(GARBLED), _answer("## 9. Bakım\nTemiz metin")], stage="maintenance")
+    assert engine.llm.call("Türkçe yaz") == "## 9. Bakım\nTemiz metin"
+    assert payloads[1]["messages"][-1]["content"].endswith(DRIFT_NUDGE)
+    # Asked once: a second drift is returned as it is rather than looping.
+    engine, payloads = _engine(monkeypatch, [_answer(GARBLED), _answer(GARBLED)], stage="maintenance")
+    assert engine.llm.call("Türkçe yaz") == GARBLED and len(payloads) == 2
+
+
+def test_scripts_the_prompt_uses_are_not_drift(monkeypatch):
+    engine, payloads = _engine(monkeypatch, [_answer("Приложение для регистрации на мероприятия")], stage="analysis")
+    assert engine.llm.call("Идея: приложение для мероприятий") == "Приложение для регистрации на мероприятия"
+    assert len(payloads) == 1
+
+
 def test_overthinking_is_cut_and_the_model_is_told_to_answer(monkeypatch):
     engine, payloads = _engine(monkeypatch, [_overthinking(), _answer("OK")])
     assert engine.llm.call("write tests") == "OK"
