@@ -328,6 +328,8 @@
 "Repair rolled back": "Onarım geri alındı"
 "Extra test attempt": "Ek test denemesi"
 "Tests kept": "Testler korundu"
+"Repair broke tests": "Onarım testleri bozdu"
+"⚠️ The last repair broke tests that passed before; the developer is told to restore them: {detail}": "⚠️ Son onarım önceden geçen testleri bozdu; geliştiriciden bunları geri getirmesi isteniyor: {detail}"
 "📌 The tests of the last try are kept and run again ({detail}).": "📌 Son denemenin testleri korunuyor ve yeniden çalıştırılıyor ({detail})."
 "Keep the current tests": "Mevcut testleri koru"
 "The tests written last time run again and only the failures are repaired. Clear it to have the Test Agent write a new suite.": "Son yazılan testler yeniden çalışır ve yalnızca hatalar onarılır. Test Agent'ın yeni bir paket yazması için işareti kaldır."

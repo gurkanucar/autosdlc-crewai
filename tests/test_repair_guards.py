@@ -453,6 +453,65 @@ def test_failures_in_the_tests_own_code_go_to_the_test_agent():
     assert failures_by_author("crash without TAP\n") == ("", "crash without TAP\n")
 
 
+def _tap(results):
+    lines = []
+    for number, (name, ok) in enumerate(results, 1):
+        if ok:
+            lines.append(f"    ok {number} - {name}")
+        else:
+            lines += [f"    not ok {number} - {name}", "      ---", "      location: '/p/tests/upload.test.js:9:3'",
+                      "      name: 'AssertionError'", "      expected: 201", "      actual: 400", "      ..."]
+    return "### API tests (exit 1)\n" + "\n".join(lines) + "\n"
+
+
+def test_a_test_the_last_code_repair_broke_is_found_and_stays_the_developers():
+    from autosdlc.runner import failures_by_author, regressed_tests
+
+    before = _tap([("FR-02 a GIF is refused", True), ("FR-02 a PNG is accepted", False)])
+    after = _tap([("FR-02 a GIF is refused", False), ("FR-02 a PNG is accepted", True)])
+    same = {"tests/upload.test.js": "v1"}
+    assert regressed_tests(before, after, same, same) == ["FR-02 a GIF is refused"]
+    # A test whose file the Test Agent rewrote in between may fail for its own reasons.
+    assert regressed_tests(before, after, same, {"tests/upload.test.js": "v2"}) == []
+    # 201 expected, 400 answered would go to the Test Agent; a regressed test stays with the developer.
+    in_tests, in_app = failures_by_author(after, {"FR-02 a GIF is refused"})
+    assert "FR-02 a GIF is refused" in in_app and not in_tests
+
+
+class TradingEngine(RepairEngine):
+    """The first repair fixes add() and sub() but breaks mul(); the total goes up, the broken test must be named."""
+
+    def code(self, idea, docs, feedback=None, change=None):
+        body = {None: "a - b; } export function sub(a, b) { return a + b; } export function mul(a, b) { return a * b; }",
+                1: "a + b; } export function sub(a, b) { return a - b; } export function mul(a, b) { return a + b; }",
+                2: "a + b; } export function sub(a, b) { return a - b; } export function mul(a, b) { return a * b; }"}
+        if feedback is not None:
+            self.reasons.append(feedback)
+        key = None if feedback is None else min(len(self.reasons), 2)
+        files = {"src/calc.js": "export function add(a, b) { return " + body[key] + "\n"}
+        if feedback is None:
+            files["package.json"] = '{"name": "calc", "type": "module"}\n'
+            files["project.yaml"] = "unit_test: [node, --test, tests/calc.test.js]\n"
+        return files
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        return {"tests/calc.test.js": "import test from 'node:test';\nimport assert from 'node:assert/strict';\n"
+                                      "import { add, sub, mul } from '../src/calc.js';\n\n"
+                                      "test('FR-01 add', () => { assert.equal(add(1, 2), 3); });\n"
+                                      "test('FR-01 sub', () => { assert.equal(sub(3, 2), 1); });\n"
+                                      "test('FR-01 mul', () => { assert.equal(mul(2, 3), 6); });\n"}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node.js")
+def test_a_repair_that_trades_a_passing_test_for_others_is_told_which_it_broke(tmp_path, monkeypatch):
+    engine = TradingEngine(tmp_path, [])
+    result, events = _run(tmp_path, monkeypatch, engine, {
+        "project_type": "library", "stack": "Node.js", "delivery": "none", "scale": "small"})
+    assert result.status == "completed", result.error
+    assert ("development", "repair_regressed", "FR-01 mul") in events
+    assert "YOUR LAST REPAIR BROKE THESE TESTS" in engine.reasons[1] and "- FR-01 mul" in engine.reasons[1]
+
+
 def test_the_developer_sees_the_start_of_a_long_test_output():
     from autosdlc.crewai_engine import _ends
 

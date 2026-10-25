@@ -87,6 +87,11 @@ TEST_CODE_NOTE = (
     "rejected as invalid (the server log above says why, e.g. a required field the test did not send). Fix these "
     "test files; send what the design requires.\n"
 )
+REGRESSED_NOTE = (
+    "\n\nYOUR LAST REPAIR BROKE THESE TESTS: they passed before it and their test files did not change:\n{tests}\n"
+    "Restore the behaviour they check (look at what your last repair changed, e.g. a validation you loosened) "
+    "while you fix the other failures; do not trade one passing test for another.\n"
+)
 REVERTED_NOTE = (
     "\n\nYOUR LAST REPAIR WAS ROLLED BACK: with it {count} tests passed instead of {best}. It broke: {broken}. The output "
     "above is from the restored code. Change only what the failing tests above need, and keep the code the passing "
@@ -200,23 +205,63 @@ def _leaf_failure(block: list[str]) -> bool:
     return not any(re.search(r"error: '\d+ subtests? failed'", line) for line in block)
 
 
-def failures_by_author(output: str) -> tuple[str, str]:
+def failures_by_author(output: str, regressed: set[str] = frozenset()) -> tuple[str, str]:
     """(the failures in the tests' own code, the other failures) as digests of the output; "" for a side without a
-    failure. An output without TAP failures is the application's as a whole."""
+    failure. An output without TAP failures is the application's as a whole. A regressed test (it passed before the
+    last code repair, and its file did not change) is the application's whatever its error looks like."""
     counts = {True: 0, False: 0}
+
+    def side(block: list[str]) -> bool:
+        match = _TAP_NOT_OK.match(block[0])
+        return not (match and match.group(2) in regressed) and failure_in_test_code(block)
 
     def in_tests(block: list[str]) -> bool:
         if not _leaf_failure(block):
             return False
-        side = failure_in_test_code(block)
-        counts[side] += 1
-        return side
+        result = side(block)
+        counts[result] += 1
+        return result
 
     tests = failure_digest(output, in_tests)
     if not counts[True] and not counts[False]:
         return "", failure_digest(output)
-    app = failure_digest(output, lambda block: not (_leaf_failure(block) and failure_in_test_code(block)))
+    app = failure_digest(output, lambda block: not (_leaf_failure(block) and side(block)))
     return (tests if counts[True] else ""), (app if counts[False] else "")
+
+
+_TAP_OK = re.compile(r"^\s*ok \d+ - (.+?)\s*$")
+_TAP_LOCATION = re.compile(r"^\s+location: ['\"]?(.*?):\d+:\d+['\"]?\s*$")
+
+
+def _test_file(location: str) -> str:
+    """tests/x.test.js from an absolute location such as /data/projects/app/tests/x.test.js."""
+    location = re.sub(r"[\\/]+", "/", location)  # TAP escapes Windows separators as \\
+    for folder in TEST_DIRS:
+        if location.startswith(folder):
+            return location
+        if "/" + folder in location:
+            return folder + location.split("/" + folder, 1)[1]
+    return location
+
+
+def regressed_tests(before: str, after: str, tests_before: dict[str, str], tests_after: dict[str, str]) -> list[str]:
+    """Tests that passed in the attempt before and fail now although their test file did not change: the code repair
+    in between broke them. A repair once loosened the upload checks to make other tests pass, and the tests that
+    rejected a GIF, a PDF and a too large file failed from then on while the total stayed the same."""
+    passed = {match.group(1) for line in before.splitlines() if (match := _TAP_OK.match(line))}
+    found: list[str] = []
+
+    def collect(block: list[str]) -> bool:
+        match = _TAP_NOT_OK.match(block[0])
+        location = next((m.group(1) for line in block if (m := _TAP_LOCATION.match(line))), "")
+        name = _test_file(location)
+        if (match and _leaf_failure(block) and match.group(2) in passed and name
+                and tests_before.get(name) is not None and tests_before.get(name) == tests_after.get(name)):
+            found.append(match.group(2))
+        return False
+
+    failure_digest(after, collect)
+    return found
 
 
 def failing_test_names(output: str) -> set[str]:
@@ -1369,10 +1414,13 @@ class RunSession:
         best: dict | None = None
         # Attempts run while there are repairs left; a run that keeps improving earns up to EXTRA_ATTEMPTS more.
         limit, extra, previous = self.max_repairs + 1, 0, None
+        # The output of the last attempt and the test files it ran, to find tests the code repair after it broke.
+        last_run: tuple[str, dict[str, str]] | None = None
         number = 0
         while number < limit:
             number += 1
             self.attempts = number
+            tests_run = dict(self.test_files)
             output, code = self._run_checks(self._test_env())
             # A server that does not even start ran no test; like a compile error it goes back to the developer
             # without using up an attempt (a repair that broke an import cost two attempts this way). Once per
@@ -1417,6 +1465,15 @@ class RunSession:
             elif count is not None and (best is None or best["tests"] != self.test_files or count >= best["passes"]):
                 best = {"number": number, "passes": count, "output": output,
                         "code": dict(self.code_files), "tests": dict(self.test_files)}
+            regressed: list[str] = []
+            if not note and last_run:
+                # The total can stay the same while the repair fixed some tests and broke others; the broken ones
+                # are named to the developer, and the rules that send failures to the Test Agent skip them.
+                regressed = regressed_tests(last_run[0], output, last_run[1], tests_run)
+                if regressed:
+                    self._event("development", "repair_regressed", "; ".join(regressed[:10]))
+                    note = REGRESSED_NOTE.format(tests="\n".join(f"- {name}" for name in regressed[:20]))
+            last_run = (output, tests_run)
             if number >= limit:
                 continue
             if failure_is_in_tests(output):
@@ -1424,7 +1481,7 @@ class RunSession:
                 if self._repair_tests(failure_digest(base) + note, f"from test attempt {number}"):
                     continue
             # Each failure goes to its author: one in the test's own code to the Test Agent, the rest to the developer.
-            in_tests, in_app = failures_by_author(base)
+            in_tests, in_app = failures_by_author(base, set(regressed))
             repaired = bool(in_tests) and self._repair_tests(in_tests + TEST_CODE_NOTE, f"from test attempt {number}")
             if in_app and self._repair_code(in_app + note, f"from test attempt {number}"):
                 repaired = True

@@ -113,7 +113,7 @@ EVENT_NAMES = {
     "tests_repair_started": "Test repair started", "tests_repaired": "Tests repaired",
     "old_tests_removed": "Old tests removed", "stubs_rejected": "Placeholder file rejected",
     "test_issues_reported": "Tests reported as wrong", "repair_reverted": "Repair rolled back",
-    "attempt_added": "Extra test attempt", "tests_kept": "Tests kept",
+    "attempt_added": "Extra test attempt", "tests_kept": "Tests kept", "repair_regressed": "Repair broke tests",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
@@ -375,6 +375,7 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "old_tests_removed": t("🧹 Test files of the earlier suite were removed: {detail}", detail=detail),
             "repair_reverted": t("↩️ The last repair made more tests fail, so it was rolled back ({detail}).", detail=detail),
             "tests_kept": t("📌 The tests of the last try are kept and run again ({detail}).", detail=detail),
+            "repair_regressed": t("⚠️ The last repair broke tests that passed before; the developer is told to restore them: {detail}", detail=detail),
             "attempt_added": t("➕ The repairs are working, so the tests get one more attempt ({detail}).", detail=detail),
             "stubs_rejected": t("🛡️ A placeholder that would have replaced a real file was rejected: {detail}", detail=detail),
             "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
