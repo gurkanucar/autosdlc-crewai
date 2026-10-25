@@ -361,6 +361,83 @@ def test_the_repair_sees_the_failing_tests_not_the_passing_ones():
     assert passed_test_count("1 failed, 4 passed in 0.1s") == 4 and passed_test_count("crash") is None
 
 
+AUTHORS = """### API tests (exit 1)
+# Subtest: registrations
+    not ok 1 - FR-04 registers
+      ---
+      location: '/p/tests/registrations.test.js:63:3'
+      error: "Cannot read properties of undefined (reading 'token')"
+      code: 'ERR_TEST_FAILURE'
+      name: 'TypeError'
+      stack: |-
+        TestContext.<anonymous> (file:///p/tests/registrations.test.js:65:49)
+        async Test.run (node:internal/test_runner/test:1054:7)
+      ...
+    not ok 2 - FR-03 full event
+      ---
+      location: '/p/tests/eventList.test.js:77:3'
+      error: 'null value in column "event_id" of relation "registrations" violates not-null constraint'
+      code: '23502'
+      name: 'error'
+      stack: |-
+        /p/node_modules/.pnpm/pg-pool@3.14.0/node_modules/pg-pool/index.js:45:11
+        process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+        async registerViaSql (file:///p/tests/helpers.js:125:3)
+      ...
+    not ok 3 - FR-02 uploads a cover
+      ---
+      location: '/p/tests/upload.test.js:37:3'
+      error: |-
+        Expected values to be strictly equal:
+        400 !== 201
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 201
+      actual: 400
+      stack: |-
+        TestContext.<anonymous> (file:///p/tests/upload.test.js:52:12)
+      ...
+    not ok 4 - FR-03 the server is down
+      ---
+      location: '/p/tests/eventList.test.js:90:3'
+      error: 'fetch failed'
+      name: 'TypeError'
+      stack: |-
+        node:internal/deps/undici/undici:13510:13
+        async TestContext.<anonymous> (file:///p/tests/eventList.test.js:91:5)
+      ...
+not ok 1 - registrations
+  ---
+  error: '4 subtests failed'
+  ...
+not ok 2 - tests/organizerRegistrations.test.js
+  ---
+  location: '/p/tests/organizerRegistrations.test.js:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  error: 'test failed'
+  ...
+# pass 30
+# fail 5
+### Application server log
+{"err":"INVALID_FILE"}
+"""
+
+
+def test_failures_in_the_tests_own_code_go_to_the_test_agent():
+    from autosdlc.runner import failures_by_author
+
+    in_tests, in_app = failures_by_author(AUTHORS)
+    # A TypeError thrown in a test, the test's own SQL and a test file that does not load are the tests'.
+    assert "FR-04 registers" in in_tests and "FR-03 full event" in in_tests
+    assert "organizerRegistrations.test.js" in in_tests
+    # A wrong answer of the application and an unreachable server are the application's.
+    assert "FR-02 uploads a cover" in in_app and "FR-03 the server is down" in in_app
+    assert "FR-02 uploads a cover" not in in_tests and "FR-04 registers" not in in_app
+    assert "INVALID_FILE" in in_app
+    assert failures_by_author("crash without TAP\n") == ("", "crash without TAP\n")
+
+
 def test_the_developer_sees_the_start_of_a_long_test_output():
     from autosdlc.crewai_engine import _ends
 

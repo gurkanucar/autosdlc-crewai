@@ -634,7 +634,8 @@ class CrewAIEngine:
         if feedback:
             # The developer cannot edit tests, so a test that does not even compile is repaired by its author.
             extra = (
-                "\nYOUR TESTS NEED A FIX: they do not compile or load, or the developer reported them as wrong. "
+                "\nYOUR TESTS NEED A FIX: they do not compile or load, fail in their own code, or the developer "
+                "reported them as wrong. "
                 "Fix ONLY the test files named in this output; the application "
                 "files above are correct and cannot be changed by you. Do not call anything that is not in the "
                 f"application files. Return only the corrected test files, complete:\n{_ends(feedback, 10000)}\n"

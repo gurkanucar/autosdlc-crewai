@@ -81,6 +81,10 @@ SERVER_START_REPAIR = "the application server did not start"
 TESTS_REPORTED = "reported as wrong by the developer"
 # Attempts beyond max_repairs + 1 a run earns by passing more tests after each repair.
 EXTRA_ATTEMPTS = 2
+TEST_CODE_NOTE = (
+    "\n\nTHESE TESTS FAIL IN THEIR OWN CODE, not because of the application: an error thrown in a test file or helper "
+    "(a value that is undefined), the test's own SQL, or a test file that does not load. Fix these test files.\n"
+)
 REVERTED_NOTE = (
     "\n\nYOUR LAST REPAIR WAS ROLLED BACK: with it {count} tests passed instead of {best}. It broke: {broken}. The output "
     "above is from the restored code. Change only what the failing tests above need, and keep the code the passing "
@@ -130,10 +134,10 @@ _TAP_NOT_OK = re.compile(r"^(\s*)not ok \d+ - (.+?)\s*$")
 _TAP_COUNT = re.compile(r"^# (?:tests|suites|pass|fail|cancelled|skipped|todo) \d+\s*$")
 
 
-def failure_digest(output: str) -> str:
+def failure_digest(output: str, keep_failure: Callable[[list[str]], bool] = lambda block: True) -> str:
     """The failing tests of a node:test (TAP) output with their errors, the counts and the logs; the output unchanged
     when it has no failing TAP test. The passing tests filled most of the output, and a repair that saw only its
-    end saw the server log but not which tests failed."""
+    end saw the server log but not which tests failed. keep_failure picks the failure blocks that are kept."""
     lines = output.splitlines()
     keep: list[str] = []
     found = in_log = False
@@ -152,10 +156,60 @@ def failure_digest(output: str) -> str:
             if i + 1 < len(lines) and lines[i + 1].strip() == "---":
                 closing = " " * (len(match.group(1)) + 2) + "..."
                 end = next((j for j in range(i + 2, min(len(lines), i + 120)) if lines[j].rstrip() == closing), i)
-            keep.extend(lines[i:end + 1])
+            if keep_failure(lines[i:end + 1]):
+                keep.extend(lines[i:end + 1])
             i = end
         i += 1
     return "\n".join(keep) + "\n" if found else output
+
+
+_TAP_FIELD = re.compile(r"^\s+(name|code|error|location): ['\"]?(.*?)['\"]?\s*$")
+_STACK_FRAME = re.compile(r"(?:^|[\s(])(?:file://)?(/[^\s():]+|[A-Za-z]:[^\s():]+):\d+:\d+")
+
+
+def failure_in_test_code(block: list[str]) -> bool:
+    """A failure the test's own code caused, which only its author can fix: a TypeError or ReferenceError thrown in a
+    test file (a helper that returned undefined), a database error from the test's own SQL, or a test file that did
+    not even load. An assertion that the application answered wrongly is the application's.
+
+    Seven tests that read `.token` of undefined went to the developer three times, who rewrote the application."""
+    fields = {match.group(1): match.group(2) for line in block if (match := _TAP_FIELD.match(line))}
+    frames = [path for line in block if not line.strip().startswith("location:")
+              for path in _STACK_FRAME.findall(line) if "node_modules" not in path]
+    # A stack cut where a long output was clipped falls back to where the test is.
+    thrown_in_tests = _in_tests(frames[0]) if frames else _in_tests(fields.get("location", ""))
+    if fields.get("location", "").endswith(":1:1") and fields.get("error") == "test failed":
+        return _in_tests(fields["location"])  # the whole file failed: it did not load or crashed outside a test
+    if fields.get("name") in {"TypeError", "ReferenceError", "SyntaxError", "RangeError"}:
+        return thrown_in_tests and "fetch failed" not in fields.get("error", "")
+    # node-postgres errors carry the 5-character SQLSTATE as their code; only the test's own queries count here.
+    if fields.get("name") == "error" and re.fullmatch(r"[0-9A-Z]{5}", fields.get("code", "")):
+        return any(_in_tests(path) for path in frames)
+    return False
+
+
+def _leaf_failure(block: list[str]) -> bool:
+    # A suite's own block only says how many of its subtests failed; the subtests are reported on their own.
+    return not any(re.search(r"error: '\d+ subtests? failed'", line) for line in block)
+
+
+def failures_by_author(output: str) -> tuple[str, str]:
+    """(the failures in the tests' own code, the other failures) as digests of the output; "" for a side without a
+    failure. An output without TAP failures is the application's as a whole."""
+    counts = {True: 0, False: 0}
+
+    def in_tests(block: list[str]) -> bool:
+        if not _leaf_failure(block):
+            return False
+        side = failure_in_test_code(block)
+        counts[side] += 1
+        return side
+
+    tests = failure_digest(output, in_tests)
+    if not counts[True] and not counts[False]:
+        return "", failure_digest(output)
+    app = failure_digest(output, lambda block: not (_leaf_failure(block) and failure_in_test_code(block)))
+    return (tests if counts[True] else ""), (app if counts[False] else "")
 
 
 def failing_test_names(output: str) -> set[str]:
@@ -1331,7 +1385,7 @@ class RunSession:
                 self.test_passed = True
                 break
             count = passed_test_count(output)
-            feedback = failure_digest(output)
+            base, note = output, ""
             if (number == limit and extra < EXTRA_ATTEMPTS and self.max_repairs and count is not None
                     and previous is not None and count > previous):
                 # The last repair fixed tests (0, 1, 2 of 4 UI tests passed over three attempts, then no attempt was
@@ -1351,16 +1405,23 @@ class RunSession:
                 reports.append("> " + self._t(
                     "The repair before this attempt made it worse; the code was rolled back to the version of attempt {best}.",
                     best=best["number"]) + "\n")
-                feedback = failure_digest(best["output"]) + REVERTED_NOTE.format(
-                    count=count, best=best["passes"], broken="; ".join(broken[:15]) or "-")
+                base = best["output"]
+                note = REVERTED_NOTE.format(count=count, best=best["passes"], broken="; ".join(broken[:15]) or "-")
             elif count is not None and (best is None or best["tests"] != self.test_files or count >= best["passes"]):
                 best = {"number": number, "passes": count, "output": output,
                         "code": dict(self.code_files), "tests": dict(self.test_files)}
-            if number < limit and failure_is_in_tests(output):
+            if number >= limit:
+                continue
+            if failure_is_in_tests(output):
                 # The error is in the Test Agent's own files; the developer is not allowed to touch them, so the author repairs them.
-                if self._repair_tests(feedback, f"from test attempt {number}"):
+                if self._repair_tests(failure_digest(base) + note, f"from test attempt {number}"):
                     continue
-            if number < limit and self._repair_code(feedback, f"from test attempt {number}"):
+            # Each failure goes to its author: one in the test's own code to the Test Agent, the rest to the developer.
+            in_tests, in_app = failures_by_author(base)
+            repaired = bool(in_tests) and self._repair_tests(in_tests + TEST_CODE_NOTE, f"from test attempt {number}")
+            if in_app and self._repair_code(in_app + note, f"from test attempt {number}"):
+                repaired = True
+            if repaired:
                 # A repair that broke the build or an import is sent back before it costs the next attempt.
                 self._fix_build(with_tests=True)
         summary = "PASSED" if self.test_passed else "FAILED"
