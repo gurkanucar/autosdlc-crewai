@@ -325,6 +325,8 @@
 "Tests repaired": "Testler onarıldı"
 "Old tests removed": "Eski testler silindi"
 "Placeholder file rejected": "Yer tutucu dosya reddedildi"
+"Repair rolled back": "Onarım geri alındı"
+"↩️ The last repair made more tests fail, so it was rolled back ({detail}).": "↩️ Son onarım daha fazla testi bozdu, bu yüzden geri alındı ({detail})."
 "🛠️ The tests themselves do not compile; I am fixing my own test files.": "🛠️ Testlerin kendisi derlenmiyor; kendi test dosyalarımı düzeltiyorum."
 "✅ Test files fixed: {detail}": "✅ Test dosyaları düzeltildi: {detail}"
 "Desktop app": "Masaüstü uygulaması"
@@ -377,3 +379,4 @@
 "🛠️ The developer reported some tests as wrong; I am fixing my own test files.": "🛠️ Geliştirici bazı testleri hatalı buldu; kendi test dosyalarımı düzeltiyorum."
 "🔎 These tests look wrong, not the application; they go back to the Test Agent: {detail}": "🔎 Hata uygulamada değil bu testlerde görünüyor; Test Ajanına geri gidiyor: {detail}"
 "Tests reported as wrong": "Hatalı bulunan testler"
+"⏳ Starting…": "⏳ Başlatılıyor…"

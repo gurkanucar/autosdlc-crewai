@@ -823,6 +823,41 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
     assert any("Architecture Review Agent" in md.value for md in app.markdown)
 
 
+def test_no_resume_is_offered_while_the_worker_of_a_run_is_starting(tmp_path, monkeypatch):
+    """Retry leaves the run paused until its worker has loaded; a Resume offered in that window started a second worker."""
+    import time
+
+    from autosdlc import runner
+    from autosdlc.ui_jobs import ACTIVE_JOBS
+
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
+    real_run = runner.run_project
+    monkeypatch.setattr("autosdlc.runner.run_project", lambda idea, **kw: real_run(
+        idea, engine=StubEngine(), **{k: v for k, v in kw.items() if k not in {"model", "api_key"}}))
+    app = _app(tmp_path, monkeypatch).run()
+    app.selectbox(key="template_choice").select("task-api").run()
+    app.button(key="apply_template").click().run()
+    next(button for button in app.button if "Create the project" in button.label).click().run()
+    db = History(tmp_path / "runs" / "history.sqlite3")
+    run_id = db.list()[0]["id"]
+    for _ in range(300):
+        if db.get(run_id)["status"] != "running" and run_id not in ACTIVE_JOBS:
+            break
+        time.sleep(0.1)
+    assert db.reset_from(run_id, "testing")
+    ACTIVE_JOBS.add(run_id)  # a Retry whose worker has not claimed the run yet
+    try:
+        app.run()
+        assert not app.exception, [e.value for e in app.exception]
+        assert app.button(key=f"starting_{run_id}").disabled
+        assert not any(button.key == f"resume_{run_id}" for button in app.button)
+    finally:
+        ACTIVE_JOBS.discard(run_id)
+    app.run()
+    assert any(button.key == f"resume_{run_id}" for button in app.button)
+
+
 def test_gateway_400_is_retried_once_and_reason_is_reported(monkeypatch):
     import httpx
 

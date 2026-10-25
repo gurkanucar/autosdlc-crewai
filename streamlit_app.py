@@ -36,7 +36,7 @@ from autosdlc.sections import (
     delete_section, insert_after, replace_section, split_sections, strip_fences, unified_diff,
 )
 from autosdlc.storage import TITLE_LIMIT, History, clock, local_time, project_title, stage_models, suggested_title
-from autosdlc.ui_jobs import WORKER_ERRORS
+from autosdlc.ui_jobs import ACTIVE_JOBS, WORKER_ERRORS
 
 
 # AUTOSDLC_WORKSPACE lets tests use a temporary folder; normally it is the repository root.
@@ -112,7 +112,7 @@ EVENT_NAMES = {
     "package_skipped": "Packaging skipped", "files_skipped": "Files skipped",
     "tests_repair_started": "Test repair started", "tests_repaired": "Tests repaired",
     "old_tests_removed": "Old tests removed", "stubs_rejected": "Placeholder file rejected",
-    "test_issues_reported": "Tests reported as wrong",
+    "test_issues_reported": "Tests reported as wrong", "repair_reverted": "Repair rolled back",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
@@ -198,12 +198,15 @@ def wait_for_answer(current_id: str, stage: str, prompt: str) -> str:
 def _spawn(job_id: str, name: str, **kwargs) -> None:
     # job_id is the same value as the run_id/resume_run_id passed to run_project but is named apart to avoid a clash.
     WORKER_ERRORS.pop(job_id, None)
+    ACTIVE_JOBS.add(job_id)
 
     def worker() -> None:
         try:
             run_project(workspace=ROOT, on_question=wait_for_answer, **kwargs)
         except Exception as exc:
             WORKER_ERRORS[job_id] = str(exc)
+        finally:
+            ACTIVE_JOBS.discard(job_id)
 
     threading.Thread(target=worker, daemon=True, name=f"autosdlc-{name}-{job_id}").start()
 
@@ -369,6 +372,7 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
                     "🛠️ The application server did not start; I am fixing the code (this does not use up a test attempt)."),
             }.get(event["detail"], t("🛠️ I am fixing the code according to the test failures.")),
             "old_tests_removed": t("🧹 Test files of the earlier suite were removed: {detail}", detail=detail),
+            "repair_reverted": t("↩️ The last repair made more tests fail, so it was rolled back ({detail}).", detail=detail),
             "stubs_rejected": t("🛡️ A placeholder that would have replaced a real file was rejected: {detail}", detail=detail),
             "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
             "traceability": t("🔗 Traceability matrix produced: {detail}.", detail=detail),
@@ -881,7 +885,8 @@ def overview(run_id: str) -> None:
         stale_banner(db, row, stale)
     # When a stage is clicked, or the status or a pending question changes, the detail, chat and top bar refresh too.
     pending = db.pending_question(run_id) if row["status"] == "running" else None
-    signature = (row["status"], row["pause_requested"], pending and pending["id"], run_id in WORKER_ERRORS, choice)
+    signature = (row["status"], row["pause_requested"], pending and pending["id"], run_id in WORKER_ERRORS,
+                 run_id in ACTIVE_JOBS, choice)
     key = f"signature_{run_id}"
     previous = st.session_state.get(key)
     st.session_state[key] = signature
@@ -1168,6 +1173,9 @@ def header(db: History, row: dict) -> None:
             if primary.button(t("⏸ Stop"), key=f"pause_{run_id}", width="stretch", disabled=bool(row["pause_requested"])):
                 db.request_pause(run_id)
                 st.rerun()
+        elif run_id in ACTIVE_JOBS:
+            # The worker is still loading (or winding down); Resume/Retry would start a second one.
+            primary.button(t("⏳ Starting…"), key=f"starting_{run_id}", width="stretch", disabled=True)
         elif row["status"] == "paused":
             with primary.popover(t("▶ Resume"), width="stretch"):
                 models = model_fields(f"resume_{run_id}", row)
@@ -1290,7 +1298,8 @@ def projects_page() -> None:
         focus_view(focus)
         return
     handle_chat(db, row)
-    every = 1.5 if row["status"] == "running" else None
+    # A worker that is starting has not marked the run as running yet; refresh until it has.
+    every = 1.5 if row["status"] == "running" or row["id"] in ACTIVE_JOBS else None
     st.fragment(overview, run_every=every)(row["id"])
     left, right = st.columns([3, 2], gap="medium")
     with left:

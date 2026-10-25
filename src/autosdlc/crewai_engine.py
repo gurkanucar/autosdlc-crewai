@@ -223,6 +223,15 @@ def _files_for_prompt(files: dict[str, str], limit: int, focus: str = "", first:
     return text
 
 
+def _ends(text: str, limit: int) -> str:
+    """The start and the end of a long test output: the failures are reported at the top, the summary and the logs
+    at the bottom. Only the end once showed a repair the server log and none of the failing tests."""
+    if len(text) <= limit:
+        return text
+    head = limit // 2
+    return f"{text[:head]}\n[... {len(text) - limit} characters left out ...]\n{text[-(limit - head):]}"
+
+
 def _test_issues(raw: str) -> dict[str, str]:
     """The test files the developer reported as wrong ({"test_issues": {"tests/x": "reason"}}); {} when none."""
     try:
@@ -552,11 +561,12 @@ class CrewAIEngine:
             # Change request: the existing application is kept, only the files the request requires change.
             instruction = f"UPDATE THE EXISTING APPLICATION FOR THIS CHANGE:\n{change[:6000]}\n"
             if feedback:
-                instruction += f"Output of the test that reproduces the bug:\n{feedback[-6000:]}\n"
+                instruction += f"Output of the test that reproduces the bug:\n{_ends(feedback, 6000)}\n"
             instruction += current
         elif feedback:
-            # The error summary is usually at the end of the output, so it is taken from the end.
-            instruction = f"Fix the application according to this test output:\n{feedback[-8000:]}\n" + current + (
+            instruction = f"Fix the application according to this test output:\n{_ends(feedback, 14000)}\n" + current + (
+                "Change only what the failing tests need; keep the code the passing tests rely on, and do not rewrite "
+                "files that have nothing to do with the failures.\n"
                 "A failure can also come from a wrong test: one that calls an endpoint or function that neither the "
                 "design nor the code has, or prepares its data wrongly. Do not bend the application to such a test; "
                 'name it next to "files" instead, e.g. {"files": {...}, "test_issues": {"tests/x.test.js": "calls '
@@ -582,7 +592,7 @@ class CrewAIEngine:
                 "\nYOUR TESTS NEED A FIX: they do not compile or load, or the developer reported them as wrong. "
                 "Fix ONLY the test files named in this output; the application "
                 "files above are correct and cannot be changed by you. Do not call anything that is not in the "
-                f"application files. Return only the corrected test files, complete:\n{feedback[-6000:]}\n"
+                f"application files. Return only the corrected test files, complete:\n{_ends(feedback, 10000)}\n"
             )
         if change:
             extra = (

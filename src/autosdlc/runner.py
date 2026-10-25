@@ -79,6 +79,11 @@ SERVER_START_FAILURES = ("The application server exited before the tests",
                          "The application server did not start within 60 seconds")
 SERVER_START_REPAIR = "the application server did not start"
 TESTS_REPORTED = "reported as wrong by the developer"
+REVERTED_NOTE = (
+    "\n\nYOUR LAST REPAIR WAS ROLLED BACK: with it {count} tests passed instead of {best}. It broke: {broken}. The output "
+    "above is from the restored code. Change only what the failing tests above need, and keep the code the passing "
+    "tests rely on.\n"
+)
 
 
 @dataclass
@@ -117,6 +122,50 @@ def _clip(text: str, limit: int) -> str:
         return text
     head = limit * 3 // 10
     return f"{text[:head]}\n[... {len(text) - limit} characters left out ...]\n{text[-(limit - head):]}"
+
+
+_TAP_NOT_OK = re.compile(r"^(\s*)not ok \d+ - (.+?)\s*$")
+_TAP_COUNT = re.compile(r"^# (?:tests|suites|pass|fail|cancelled|skipped|todo) \d+\s*$")
+
+
+def failure_digest(output: str) -> str:
+    """The failing tests of a node:test (TAP) output with their errors, the counts and the logs; the output unchanged
+    when it has no failing TAP test. The passing tests filled most of the output, and a repair that saw only its
+    end saw the server log but not which tests failed."""
+    lines = output.splitlines()
+    keep: list[str] = []
+    found = in_log = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("### "):
+            in_log = "log" in line.lower()
+            keep.append(line)
+        elif in_log or _TAP_COUNT.match(line):
+            keep.append(line)
+        elif match := _TAP_NOT_OK.match(line):
+            found = True
+            end = i
+            # The YAML block of a failure (error, expected, actual, location) ends with "..." one level deeper.
+            if i + 1 < len(lines) and lines[i + 1].strip() == "---":
+                closing = " " * (len(match.group(1)) + 2) + "..."
+                end = next((j for j in range(i + 2, min(len(lines), i + 120)) if lines[j].rstrip() == closing), i)
+            keep.extend(lines[i:end + 1])
+            i = end
+        i += 1
+    return "\n".join(keep) + "\n" if found else output
+
+
+def failing_test_names(output: str) -> set[str]:
+    return {match.group(2) for line in output.splitlines() if (match := _TAP_NOT_OK.match(line))} | set(
+        re.findall(r"^FAILED (\S+)", output, re.M))
+
+
+def passed_test_count(output: str) -> int | None:
+    """How many tests passed (node:test, pytest, jest, cargo, Playwright summaries); None when the output says nothing."""
+    counts = [int(n) for n in re.findall(r"^# pass (\d+)\s*$", output, re.M)]
+    counts += [int(n) for n in re.findall(r"\b(\d+) passed\b", output)]
+    return sum(counts) if counts else None
 
 
 def _stop_process(process: subprocess.Popen) -> None:
@@ -1215,6 +1264,8 @@ class RunSession:
         attempt_dir = self.output_dir / "test_attempts"
         attempt_dir.mkdir(exist_ok=True)
         reports = []
+        # The attempt with the most passing tests on the current test files, and the code it ran.
+        best: dict | None = None
         for number in range(1, self.max_repairs + 2):
             self.attempts = number
             output, code = self._run_checks(self._test_env())
@@ -1235,11 +1286,29 @@ class RunSession:
             if passed:
                 self.test_passed = True
                 break
+            count = passed_test_count(output)
+            feedback = failure_digest(output)
+            if best and best["tests"] == self.test_files and count is not None and count < best["passes"]:
+                # The last repair broke tests that passed before (54 passing fell to 35 once, and the run ended on the
+                # worse code): its code is rolled back and the next repair starts from the better version.
+                broken = sorted(failing_test_names(output) - failing_test_names(best["output"]))
+                self._restore_code(best["code"])
+                self.last_test_output = best["output"]
+                self._event("development", "repair_reverted",
+                            f"attempt {number}: {count} passed, attempt {best['number']}: {best['passes']} passed")
+                reports.append("> " + self._t(
+                    "The repair before this attempt made it worse; the code was rolled back to the version of attempt {best}.",
+                    best=best["number"]) + "\n")
+                feedback = failure_digest(best["output"]) + REVERTED_NOTE.format(
+                    count=count, best=best["passes"], broken="; ".join(broken[:15]) or "-")
+            elif count is not None and (best is None or best["tests"] != self.test_files or count >= best["passes"]):
+                best = {"number": number, "passes": count, "output": output,
+                        "code": dict(self.code_files), "tests": dict(self.test_files)}
             if number <= self.max_repairs and failure_is_in_tests(output):
                 # The error is in the Test Agent's own files; the developer is not allowed to touch them, so the author repairs them.
-                if self._repair_tests(output, f"from test attempt {number}"):
+                if self._repair_tests(feedback, f"from test attempt {number}"):
                     continue
-            if number <= self.max_repairs and self._repair_code(output, f"from test attempt {number}"):
+            if number <= self.max_repairs and self._repair_code(feedback, f"from test attempt {number}"):
                 # A repair that broke the build or an import is sent back before it costs the next attempt.
                 self._fix_build(with_tests=True)
         summary = "PASSED" if self.test_passed else "FAILED"
@@ -1269,6 +1338,24 @@ class RunSession:
             self.engine.current_files.update(fixed)
         self._event("testing", "tests_repaired", ", ".join(fixed))
         return True
+
+    def _restore_code(self, code: dict[str, str]) -> None:
+        """Puts the application files back as they were; files added since then are removed."""
+        current = hasattr(self.engine, "current_files")
+        for name in set(self.code_files) - set(code):
+            (self.project_dir / name).unlink(missing_ok=True)
+            if current:
+                self.engine.current_files.pop(name, None)
+        changed = {name: content for name, content in code.items() if self.code_files.get(name) != content}
+        if changed:
+            write_generated_files(self.project_dir, changed)
+        self.code_files.clear()
+        self.code_files.update(code)
+        if current:
+            self.engine.current_files.update(code)
+        self._save_code_files()
+        self._load_manifest()
+        self.setup_done = False
 
     def _repair_code(self, output: str, reason: str) -> bool:
         """The Development Agent fixes the application from the failure output; False when nothing was changed."""

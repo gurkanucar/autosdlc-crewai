@@ -195,6 +195,84 @@ def test_a_long_output_keeps_its_start_and_its_end():
     assert _clip("short", 20_000) == "short"
 
 
+TAP = """### API tests (exit 1)
+# Subtest: events
+    # Subtest: FR-02 creates an event
+    ok 1 - FR-02 creates an event
+      ---
+      duration_ms: 5
+      ...
+    # Subtest: FR-02 missing title answers 400
+    not ok 2 - FR-02 missing title answers 400
+      ---
+      location: 'tests/events.test.js:60:3'
+      expected: 400
+      actual: 201
+      ...
+not ok 1 - events
+  ---
+  error: '1 subtest failed'
+  ...
+""" + "ok 9 - padding\n" * 500 + """# tests 3
+# pass 2
+# fail 1
+### Application server log
+{"err":"INVALID_FILE"}
+"""
+
+
+def test_the_repair_sees_the_failing_tests_not_the_passing_ones():
+    from autosdlc.runner import failing_test_names, failure_digest, passed_test_count
+
+    digest = failure_digest(TAP)
+    assert "expected: 400" in digest and "actual: 201" in digest and "tests/events.test.js:60:3" in digest
+    assert "padding" not in digest and "duration_ms" not in digest
+    assert "# pass 2" in digest and '{"err":"INVALID_FILE"}' in digest
+    assert failure_digest("no tap here\n") == "no tap here\n"
+    assert failing_test_names(TAP) == {"FR-02 missing title answers 400", "events"}
+    assert passed_test_count(TAP) == 2
+    assert passed_test_count("1 failed, 4 passed in 0.1s") == 4 and passed_test_count("crash") is None
+
+
+def test_the_developer_sees_the_start_of_a_long_test_output():
+    from autosdlc.crewai_engine import _ends
+
+    text = "FAILING TEST " + "x" * 30_000 + " SERVER LOG"
+    assert _ends(text, 14_000).startswith("FAILING TEST") and _ends(text, 14_000).endswith("SERVER LOG")
+
+
+class RegressingEngine(RepairEngine):
+    """The first repair fixes add() but breaks sub() and mul() and adds a file; it is rolled back, the second fixes add()."""
+
+    GOOD = "def sub(a, b):\n    return a - b\n\ndef mul(a, b):\n    return a * b\n"
+
+    def code(self, idea, docs, feedback=None, change=None):
+        if feedback is None:
+            return {"calc.py": "def add(a, b):\n    return a - b\n\n" + self.GOOD,
+                    "project.yaml": "unit_test: [python, -m, pytest, -q, tests]\n"}
+        self.reasons.append(feedback)
+        if len(self.reasons) == 1:
+            return {"calc.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return 0\n\ndef mul(a, b):\n    return 0\n",
+                    "extra.py": "x = 1\n"}
+        return {"calc.py": "def add(a, b):\n    return a + b\n\n" + self.GOOD}
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        return {"tests/test_calc.py": "from calc import add, sub, mul\n\n"
+                                      "def test_fr01_add():\n    assert add(1, 2) == 3\n\n"
+                                      "def test_fr01_sub():\n    assert sub(3, 2) == 1\n\n"
+                                      "def test_fr01_mul():\n    assert mul(2, 3) == 6\n"}
+
+
+def test_a_repair_that_breaks_passing_tests_is_rolled_back(tmp_path, monkeypatch):
+    engine = RegressingEngine(tmp_path, [])
+    result, events = _run(tmp_path, monkeypatch, engine)
+    assert result.status == "completed", result.error
+    assert result.attempts == 3
+    assert ("development", "repair_reverted", "attempt 2: 1 passed, attempt 1: 2 passed") in events
+    assert "YOUR LAST REPAIR WAS ROLLED BACK" in engine.reasons[1] and "test_fr01_sub" in engine.reasons[1]
+    assert not (result.project_dir / "extra.py").exists()
+
+
 def test_the_developer_can_report_a_wrong_test():
     from autosdlc.crewai_engine import _test_issues
 
