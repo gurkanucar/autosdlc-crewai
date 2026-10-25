@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from autosdlc.auth import auth_enabled, password_matches
 from autosdlc.crewai_engine import CrewAIEngine
 from autosdlc.exports import ANSI_ESCAPE, diagnostics_text, diagnostics_zip, export_files, export_zip, project_zip
-from autosdlc.desktop import open_folder
+from autosdlc.desktop import can_open_folders, open_folder
 from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
 from autosdlc.intake import applies, choice_label, default_delivery, question_text, templates, questions, validate_decisions
 from autosdlc.lifecycle import (
@@ -1136,8 +1136,9 @@ def header(db: History, row: dict) -> None:
                            help=t("First version, every CR and bugfix: the state, documents, code and diffs at that point")):
             iterations_dialog(run_id)
         project_dir = Path(row["project_dir"])
-        if folder.button(t("📂 Folder"), key=f"open_folder_{run_id}", width="stretch", disabled=not project_dir.is_dir(),
-                         help=t("Open the project folder in the file manager (Explorer / Finder): {path}", path=project_dir)):
+        if can_open_folders() and folder.button(
+                t("📂 Folder"), key=f"open_folder_{run_id}", width="stretch", disabled=not project_dir.is_dir(),
+                help=t("Open the project folder in the file manager (Explorer / Finder): {path}", path=project_dir)):
             try:
                 open_folder(project_dir)
             except ValueError as exc:

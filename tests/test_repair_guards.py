@@ -169,7 +169,7 @@ def test_a_package_installed_only_for_another_workspace_package_is_reported(tmp_
 
 
 def test_a_playwright_spec_run_by_node_test_is_reported(tmp_path):
-    from autosdlc.runner import playwright_specs_run_by_node
+    from autosdlc.runner import test_runner_mismatches
 
     _write(tmp_path, {
         "scripts/api-test.sh": "#!/bin/sh\nset -e\nnode --test --test-concurrency=1 tests/*.test.js\n",
@@ -178,12 +178,57 @@ def test_a_playwright_spec_run_by_node_test_is_reported(tmp_path):
         "tests/ui/flow.spec.js": "import { test } from \"@playwright/test\";\n",
     })
     manifest = {"api_test": ["sh", "scripts/api-test.sh"], "ui_test": ["npx", "playwright", "test", "tests/ui"]}
-    assert playwright_specs_run_by_node(tmp_path, manifest) == [
+    assert test_runner_mismatches(tmp_path, manifest) == [
         "tests/ui.test.js:1: uses @playwright/test but a `node --test` command in project.yaml runs it; write it "
         "with node:test (and Playwright's library API from 'playwright'), or move it where only a `playwright test` "
         "command runs it"]
     # A bare `node --test` runs every file with a test name, the spec under tests/ui too.
-    assert len(playwright_specs_run_by_node(tmp_path, {"unit_test": ["node", "--test"]})) == 2
+    assert len(test_runner_mismatches(tmp_path, {"unit_test": ["node", "--test"]})) == 2
+
+
+def test_a_node_test_file_run_by_playwright_test_is_reported(tmp_path):
+    from autosdlc.runner import test_runner_mismatches
+
+    _write(tmp_path, {
+        "scripts/ui-test.sh": "#!/bin/sh\nset -e\nplaywright install chromium\nplaywright test tests/ui\n",
+        "tests/ui.test.js": "import test from 'node:test';\nimport { chromium } from '@playwright/test';\n",
+        "tests/api.test.js": "import test from 'node:test';\n",
+    })
+    problems = test_runner_mismatches(tmp_path, {"ui_test": ["sh", "scripts/ui-test.sh"]})
+    assert len(problems) == 1 and problems[0].startswith("tests/ui.test.js:1: is written with node:test")
+
+
+class SuitesEngine(RepairEngine):
+    """The unit tests fail and the API suite after them has its own failure; both are in the first attempt's output."""
+
+    def __init__(self, workspace, port):
+        super().__init__(workspace, [])
+        self.port = port
+
+    def code(self, idea, docs, feedback=None, change=None):
+        if feedback is None:
+            return {"calc.py": "def add(a, b):\n    return a - b\n", "server.py": ServerEngine.SERVER,
+                    "project.yaml": f"port: {self.port}\nstart: [python, server.py]\n"
+                                    "unit_test: [python, -m, pytest, -q, tests/unit]\n"
+                                    "api_test: [python, -m, pytest, -q, tests/api]\n"}
+        self.reasons.append(feedback)
+        return {"calc.py": "def add(a, b):\n    return a + b\n"}
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        return {"tests/unit/test_calc.py": "from calc import add\n\ndef test_fr01_add():\n    assert add(1, 2) == 3\n",
+                "tests/api/test_api.py": "def test_fr01_api():\n    assert 'API SUITE RAN' == ''\n"}
+
+
+def test_a_failing_suite_does_not_hide_the_suites_after_it(tmp_path, monkeypatch):
+    port = _free_port()
+    monkeypatch.setenv("PORT", str(port))
+    engine = SuitesEngine(tmp_path, port)
+    result, _events = _run(tmp_path, monkeypatch, engine, {
+        "project_type": "backend", "stack": "Python", "database": "none", "cache": "none",
+        "observability": "none", "ui": "none", "delivery": "none", "scale": "small"})
+    attempt = (result.output_dir / "test_attempts" / "attempt-1.txt").read_text(encoding="utf-8")
+    assert "### Unit tests (exit 1)" in attempt and "### API tests (exit 1)" in attempt
+    assert "API SUITE RAN" in engine.reasons[0]
 
 
 def test_a_long_output_keeps_its_start_and_its_end():

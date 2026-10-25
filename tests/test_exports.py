@@ -80,9 +80,16 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
     assert activity["outcome"] == "empty" and activity["reasoning_chars"] > 0
     (result.output_dir / "tmp").mkdir(exist_ok=True)
     (result.output_dir / "tmp" / "compile.log").write_text("Authorization: Bearer abcdefghijkl\nerror: boom", encoding="utf-8")
+    for name, content in {"project.yaml": "api_test: [sh, scripts/api.sh]\n", "scripts/api.sh": "pytest tests\n",
+                          "tests/test_api.py": "def test_x():\n    pass\n", "app.py": "SECRET_APP_CODE = 1\n"}.items():
+        (result.project_dir / name).parent.mkdir(parents=True, exist_ok=True)
+        (result.project_dir / name).write_text(content, encoding="utf-8")
     db = History(tmp_path / "runs" / "history.sqlite3")
     with zipfile.ZipFile(io.BytesIO(diagnostics_zip(db.get(result.id)))) as archive:
         names = archive.namelist()
+        # The tests and the commands that run them are included; the application code is not.
+        assert {"project/project.yaml", "project/scripts/api.sh", "project/tests/test_api.py"} <= set(names)
+        assert "project/app.py" not in names
         summary = archive.read("summary.md").decode()
         assert "Stopped at stage: **planning**" in summary and "empty response" in summary
         assert "Traceback" in archive.read("failure.txt").decode()

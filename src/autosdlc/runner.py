@@ -389,17 +389,51 @@ def missing_js_packages(project_dir: Path) -> list[str]:
 
 
 _NODE_TEST_CALL = re.compile(r"\bnode\b[^\n;&|]*?--test\b([^\n;&|]*)")
+_PLAYWRIGHT_TEST_CALL = re.compile(r"\bplaywright\s+test\b([^\n;&|]*)")
 
 
-def playwright_specs_run_by_node(project_dir: Path, manifest: dict) -> list[str]:
-    """Playwright Test specs that a `node --test` command runs: @playwright/test's test() then throws "did not
-    expect test() to be called here" and the whole file fails (this repeated in three runs in a row)."""
+def test_runner_mismatches(project_dir: Path, manifest: dict) -> list[str]:
+    """Test files written for another runner than the project.yaml command that runs them.
+
+    A Playwright Test spec run by `node --test` throws "did not expect test() to be called here" (this repeated in
+    three runs in a row). A node:test file run by `playwright test` finds "No tests found", and Playwright closes the
+    browser under the node:test tests while they run."""
     commands = [manifest.get(key) or [] for key in ("unit_test", "api_test", "ui_test")]
     texts = [" ".join(command) for command in commands]
     for arg in (arg for command in commands for arg in command):
         if arg.endswith((".sh", ".bash")) and (project_dir / arg).is_file():
             texts.append((project_dir / arg).read_text(encoding="utf-8", errors="replace"))
     scripts = _project_files(project_dir, NODE_SCRIPTS)
+    return _playwright_specs_run_by_node(project_dir, texts, scripts) + _node_tests_run_by_playwright(
+        project_dir, texts, scripts)
+
+
+def _source(project_dir: Path, name: str) -> str:
+    try:
+        return (project_dir / name).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _node_tests_run_by_playwright(project_dir: Path, texts: list[str], scripts: list[str]) -> list[str]:
+    # Playwright Test picks *.test.* / *.spec.* files; its arguments are regular expressions matched against the paths.
+    candidates = [name for name in scripts if re.search(r"\.(?:test|spec)\.[cm]?[jt]sx?$", name)]
+    run: set[str] = set()
+    for text in texts:
+        for match in _PLAYWRIGHT_TEST_CALL.finditer(text):
+            filters = [token.strip("'\"") for token in match.group(1).split() if not token.startswith("-")]
+            for name in candidates:
+                try:
+                    if not filters or any(re.search(pattern, name) for pattern in filters):
+                        run.add(name)
+                except re.error:
+                    continue
+    return [f"{name}:1: is written with node:test but a `playwright test` command in project.yaml runs it (\"No tests "
+            "found\", and Playwright closes the browser under it); write it with @playwright/test's test() and expect()"
+            for name in sorted(run) if re.search(r"['\"]node:test['\"]", _source(project_dir, name))]
+
+
+def _playwright_specs_run_by_node(project_dir: Path, texts: list[str], scripts: list[str]) -> list[str]:
     run: set[str] = set()
     for text in texts:
         for match in _NODE_TEST_CALL.finditer(text):
@@ -417,11 +451,7 @@ def playwright_specs_run_by_node(project_dir: Path, manifest: dict) -> list[str]
                     continue  # an absolute path or a shell variable, not a pattern of this project
     problems = []
     for name in sorted(run):
-        try:
-            source = (project_dir / name).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        if re.search(r"['\"]@playwright/test['\"]", source):
+        if re.search(r"['\"]@playwright/test['\"]", _source(project_dir, name)):
             problems.append(f"{name}:1: uses @playwright/test but a `node --test` command in project.yaml runs it; "
                             "write it with node:test (and Playwright's library API from 'playwright'), or move it where "
                             "only a `playwright test` command runs it")
@@ -1427,7 +1457,7 @@ class RunSession:
             if code:
                 return f"[build failed] {' '.join(command)} (exit {code})\n{output}", code
         problems = (missing_js_imports(self.project_dir) + missing_js_packages(self.project_dir)
-                    + playwright_specs_run_by_node(self.project_dir, self.manifest))
+                    + test_runner_mismatches(self.project_dir, self.manifest))
         # The application's problems alone first: the developer cannot fix the tests, and the tests may be right.
         problems = [problem for problem in problems if not _in_tests(problem.split(":", 1)[0])] or problems
         if problems:
@@ -1457,6 +1487,7 @@ class RunSession:
                     (("Setup", "setup"), ("Unit", "unit_test"), ("API", "api_test"), ("UI", "ui_test"))
                     if key in keys and self.manifest.get(key) and (key != "setup" or not self.setup_done)]
         logs = []
+        failed = 0
         server_log = temp_dir / "server.log"
         for label, command in commands:
             server = None
@@ -1489,7 +1520,12 @@ class RunSession:
                 if code:
                     if server is not None:
                         logs.append("### Application server log\n" + _tail(server_log))
-                    return "\n".join(logs), code
+                    if label == "Setup":
+                        return "\n".join(logs), code
+                    # The other suites still run: UI tests left out while the API tests failed showed their own
+                    # problem only on the last attempt, with no repair left.
+                    failed = failed or code
+                    continue
                 if label == "Setup":
                     self.setup_done = True
             except (subprocess.TimeoutExpired, OSError) as exc:
@@ -1497,7 +1533,7 @@ class RunSession:
             finally:
                 if server is not None:
                     _stop_process(server)
-        return "\n".join(logs), 0
+        return "\n".join(logs), failed
 
     def _command(self, command: list[str], env: dict[str, str]) -> list[str]:
         executable, *args = command

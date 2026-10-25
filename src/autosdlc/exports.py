@@ -242,6 +242,16 @@ def diagnostics_zip(row: dict, changes: list[dict] | None = None, iterations: li
         archive.writestr("run.json", redact(json.dumps(record, ensure_ascii=False, indent=2, default=str)))
         archive.writestr("timeline.txt", redact(timeline) + "\n")
         archive.writestr("project_files.txt", listing + "\n")
+        if project and project.is_dir():
+            # The tests and the commands that run them: a failure often comes from how the two fit together.
+            for path in export_files(project):
+                name = path.as_posix()
+                if (name == "project.yaml" or name.startswith(("tests/", "test/", "scripts/"))) and (
+                        (project / path).stat().st_size <= 100_000):
+                    try:
+                        archive.writestr(f"project/{name}", redact((project / path).read_text(encoding="utf-8")))
+                    except (OSError, UnicodeDecodeError):
+                        continue
         for name, path in files.items():
             try:
                 archive.writestr(name, _tail(path))

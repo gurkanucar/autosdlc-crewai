@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+def can_open_folders() -> bool:
+    """False on a server (a Linux container without a display or xdg-open), where the button only showed an error."""
+    if sys.platform in {"win32", "darwin"}:
+        return True
+    return bool(shutil.which("xdg-open")) and bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
 def open_folder(path: Path | str) -> None:
