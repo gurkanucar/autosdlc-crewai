@@ -397,6 +397,19 @@ AUTHORS = """### API tests (exit 1)
       stack: |-
         TestContext.<anonymous> (file:///p/tests/upload.test.js:52:12)
       ...
+    not ok 5 - FR-04 a second registration is refused
+      ---
+      location: '/p/tests/registrations.test.js:86:3'
+      error: |-
+        Expected values to be strictly equal:
+        201 !== 409
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 409
+      actual: 201
+      stack: |-
+        TestContext.<anonymous> (file:///p/tests/registrations.test.js:90:12)
+      ...
     not ok 4 - FR-03 the server is down
       ---
       location: '/p/tests/eventList.test.js:90:3'
@@ -428,12 +441,14 @@ def test_failures_in_the_tests_own_code_go_to_the_test_agent():
     from autosdlc.runner import failures_by_author
 
     in_tests, in_app = failures_by_author(AUTHORS)
-    # A TypeError thrown in a test, the test's own SQL and a test file that does not load are the tests'.
+    # A TypeError thrown in a test, the test's own SQL, a test file that does not load and a request the application
+    # rejected as invalid (201 expected, 400 answered) are the tests'; the server log with the reason goes along.
     assert "FR-04 registers" in in_tests and "FR-03 full event" in in_tests
     assert "organizerRegistrations.test.js" in in_tests
-    # A wrong answer of the application and an unreachable server are the application's.
-    assert "FR-02 uploads a cover" in in_app and "FR-03 the server is down" in in_app
-    assert "FR-02 uploads a cover" not in in_tests and "FR-04 registers" not in in_app
+    assert "FR-02 uploads a cover" in in_tests and "INVALID_FILE" in in_tests
+    # A wrong answer of the application (it accepted what it should refuse) and an unreachable server are its own.
+    assert "FR-04 a second registration is refused" in in_app and "FR-03 the server is down" in in_app
+    assert "FR-02 uploads a cover" not in in_app and "FR-04 registers" not in in_app
     assert "INVALID_FILE" in in_app
     assert failures_by_author("crash without TAP\n") == ("", "crash without TAP\n")
 

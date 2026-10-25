@@ -83,7 +83,9 @@ TESTS_REPORTED = "reported as wrong by the developer"
 EXTRA_ATTEMPTS = 2
 TEST_CODE_NOTE = (
     "\n\nTHESE TESTS FAIL IN THEIR OWN CODE, not because of the application: an error thrown in a test file or helper "
-    "(a value that is undefined), the test's own SQL, or a test file that does not load. Fix these test files.\n"
+    "(a value that is undefined), the test's own SQL, a test file that does not load, or a request the application "
+    "rejected as invalid (the server log above says why, e.g. a required field the test did not send). Fix these "
+    "test files; send what the design requires.\n"
 )
 REVERTED_NOTE = (
     "\n\nYOUR LAST REPAIR WAS ROLLED BACK: with it {count} tests passed instead of {best}. It broke: {broken}. The output "
@@ -163,7 +165,7 @@ def failure_digest(output: str, keep_failure: Callable[[list[str]], bool] = lamb
     return "\n".join(keep) + "\n" if found else output
 
 
-_TAP_FIELD = re.compile(r"^\s+(name|code|error|location): ['\"]?(.*?)['\"]?\s*$")
+_TAP_FIELD = re.compile(r"^\s+(name|code|error|location|expected|actual): ['\"]?(.*?)['\"]?\s*$")
 _STACK_FRAME = re.compile(r"(?:^|[\s(])(?:file://)?(/[^\s():]+|[A-Za-z]:[^\s():]+):\d+:\d+")
 
 
@@ -185,6 +187,11 @@ def failure_in_test_code(block: list[str]) -> bool:
     # node-postgres errors carry the 5-character SQLSTATE as their code; only the test's own queries count here.
     if fields.get("name") == "error" and re.fullmatch(r"[0-9A-Z]{5}", fields.get("code", "")):
         return any(_in_tests(path) for path in frames)
+    # A request the test expected to succeed was rejected as invalid: the test sent data the validation refuses (six
+    # events were created without a date, and the developer could not change anything about it). The server log
+    # with the rejection reason goes along.
+    if fields.get("name") == "AssertionError" and fields.get("expected") in {"200", "201", "204"}:
+        return fields.get("actual") in {"400", "422"}
     return False
 
 
