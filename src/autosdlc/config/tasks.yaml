@@ -211,6 +211,11 @@ testing:
     a file run by `node --test` uses node:test (with Playwright's library API for a browser), never the test() of
     @playwright/test; a file a `playwright test` command picks up (its arguments are path filters) uses the test()
     and expect() of @playwright/test, never node:test.
+    Browser (UI) tests share the database with the API tests, so the page lists many events that are not theirs. A UI
+    test creates its own data with a unique title and then acts only inside the card or row that contains that
+    title (find the card first, then the button inside it); it never takes the first button on the page. It tests
+    only what the UI offers: a button that turns "Register" into "Cancel" cannot send a duplicate registration, so
+    the duplicate case belongs to the API tests.
     Work decisively: decide what each test checks, then write it. Do not draft the files in your head first and do
     not re-verify the same rule or import more than once; a test that turns out wrong is fixed in a later step.
   expected_output: Valid JSON containing complete test files suited to the chosen technology.

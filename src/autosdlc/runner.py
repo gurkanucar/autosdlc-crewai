@@ -79,6 +79,8 @@ SERVER_START_FAILURES = ("The application server exited before the tests",
                          "The application server did not start within 60 seconds")
 SERVER_START_REPAIR = "the application server did not start"
 TESTS_REPORTED = "reported as wrong by the developer"
+# Attempts beyond max_repairs + 1 a run earns by passing more tests after each repair.
+EXTRA_ATTEMPTS = 2
 REVERTED_NOTE = (
     "\n\nYOUR LAST REPAIR WAS ROLLED BACK: with it {count} tests passed instead of {best}. It broke: {broken}. The output "
     "above is from the restored code. Change only what the failing tests above need, and keep the code the passing "
@@ -1296,7 +1298,11 @@ class RunSession:
         reports = []
         # The attempt with the most passing tests on the current test files, and the code it ran.
         best: dict | None = None
-        for number in range(1, self.max_repairs + 2):
+        # Attempts run while there are repairs left; a run that keeps improving earns up to EXTRA_ATTEMPTS more.
+        limit, extra, previous = self.max_repairs + 1, 0, None
+        number = 0
+        while number < limit:
+            number += 1
             self.attempts = number
             output, code = self._run_checks(self._test_env())
             # A server that does not even start ran no test; like a compile error it goes back to the developer
@@ -1318,6 +1324,14 @@ class RunSession:
                 break
             count = passed_test_count(output)
             feedback = failure_digest(output)
+            if (number == limit and extra < EXTRA_ATTEMPTS and self.max_repairs and count is not None
+                    and previous is not None and count > previous):
+                # The last repair fixed tests (0, 1, 2 of 4 UI tests passed over three attempts, then no attempt was
+                # left): one more repair is worth it while the run keeps getting better.
+                limit += 1
+                extra += 1
+                self._event("testing", "attempt_added", f"{previous} → {count} passed")
+            previous = count
             if best and best["tests"] == self.test_files and count is not None and count < best["passes"]:
                 # The last repair broke tests that passed before (54 passing fell to 35 once, and the run ended on the
                 # worse code): its code is rolled back and the next repair starts from the better version.
@@ -1334,11 +1348,11 @@ class RunSession:
             elif count is not None and (best is None or best["tests"] != self.test_files or count >= best["passes"]):
                 best = {"number": number, "passes": count, "output": output,
                         "code": dict(self.code_files), "tests": dict(self.test_files)}
-            if number <= self.max_repairs and failure_is_in_tests(output):
+            if number < limit and failure_is_in_tests(output):
                 # The error is in the Test Agent's own files; the developer is not allowed to touch them, so the author repairs them.
                 if self._repair_tests(feedback, f"from test attempt {number}"):
                     continue
-            if number <= self.max_repairs and self._repair_code(feedback, f"from test attempt {number}"):
+            if number < limit and self._repair_code(feedback, f"from test attempt {number}"):
                 # A repair that broke the build or an import is sent back before it costs the next attempt.
                 self._fix_build(with_tests=True)
         summary = "PASSED" if self.test_passed else "FAILED"
@@ -1438,7 +1452,11 @@ class RunSession:
             if round_number == BUILD_FIXES:
                 return
             reason = "from the compile check"
-            if with_tests and failure_is_in_tests(output):
+            if failure_is_in_tests(output):
+                if not with_tests:
+                    # The tests of an earlier generation, which the Test Agent replaces next; the developer cannot
+                    # fix them (three repair rounds were spent on a stale spec once).
+                    return
                 if not self._repair_tests(output, reason):
                     return
             elif not self._repair_code(output, reason):

@@ -219,6 +219,58 @@ class SuitesEngine(RepairEngine):
                 "tests/api/test_api.py": "def test_fr01_api():\n    assert 'API SUITE RAN' == ''\n"}
 
 
+class SlowFixEngine(RepairEngine):
+    """Five functions, four of them wrong; every repair fixes one more (1, 2, 3, 4 and then all 5 tests pass)."""
+
+    @staticmethod
+    def source(fixed):
+        return "".join(f"def f{n}():\n    return {n if n == 1 or n <= fixed else 0}\n\n" for n in range(1, 6))
+
+    def code(self, idea, docs, feedback=None, change=None):
+        if feedback is None:
+            return {"calc.py": self.source(1), "project.yaml": "unit_test: [python, -m, pytest, -q, tests]\n"}
+        self.reasons.append(feedback)
+        return {"calc.py": self.source(len(self.reasons) + 1)}
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        return {"tests/test_calc.py": "import calc\n\n" + "".join(
+            f"def test_fr01_f{n}():\n    assert calc.f{n}() == {n}\n\n" for n in range(1, 6))}
+
+
+def test_a_run_that_keeps_improving_earns_extra_attempts(tmp_path, monkeypatch):
+    result, events = _run(tmp_path, monkeypatch, SlowFixEngine(tmp_path, []))
+    assert result.status == "completed", result.error
+    assert result.attempts == 5
+    assert [detail for _stage, status, detail in events if status == "attempt_added"] == ["2 → 3 passed", "3 → 4 passed"]
+
+
+def test_a_run_that_does_not_improve_gets_no_extra_attempts(tmp_path, monkeypatch):
+    result, events = _run(tmp_path, monkeypatch, RepairEngine(tmp_path, []))
+    assert result.status == "failed" and result.attempts == 3
+    assert "attempt_added" not in [status for _stage, status, _detail in events]
+
+
+def test_a_stale_test_that_fails_the_build_before_the_new_suite_is_not_the_developers_to_fix(tmp_path, monkeypatch):
+    from autosdlc.runner import RunSession
+
+    stale = ("[build failed] import check: modules or packages that cannot be loaded as written\n"
+             "tests/ui.test.js:1: is written with node:test but a `playwright test` command runs it")
+    real = RunSession._compile_check
+    calls = []
+
+    def compile_check(self, env):
+        calls.append(len(calls))
+        # Only the check before the new tests are written (the first one) sees the earlier generation's file.
+        return (stale, 1) if len(calls) == 1 else real(self, env)
+
+    monkeypatch.setattr(RunSession, "_compile_check", compile_check)
+    engine = RepairEngine(tmp_path, [{"calc.py": "def add(a, b):\n    return a + b\n"}])
+    result, _events = _run(tmp_path, monkeypatch, engine)
+    assert result.status == "completed", result.error
+    # The developer was asked only once, for the failing test run, never for the stale test.
+    assert len(engine.reasons) == 1 and "tests/ui.test.js" not in engine.reasons[0]
+
+
 def test_a_failing_suite_does_not_hide_the_suites_after_it(tmp_path, monkeypatch):
     port = _free_port()
     monkeypatch.setenv("PORT", str(port))

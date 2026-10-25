@@ -326,6 +326,8 @@
 "Old tests removed": "Eski testler silindi"
 "Placeholder file rejected": "Yer tutucu dosya reddedildi"
 "Repair rolled back": "Onarım geri alındı"
+"Extra test attempt": "Ek test denemesi"
+"➕ The repairs are working, so the tests get one more attempt ({detail}).": "➕ Onarımlar işe yarıyor, bu yüzden testlere bir deneme daha verildi ({detail})."
 "↩️ The last repair made more tests fail, so it was rolled back ({detail}).": "↩️ Son onarım daha fazla testi bozdu, bu yüzden geri alındı ({detail})."
 "🛠️ The tests themselves do not compile; I am fixing my own test files.": "🛠️ Testlerin kendisi derlenmiyor; kendi test dosyalarımı düzeltiyorum."
 "✅ Test files fixed: {detail}": "✅ Test dosyaları düzeltildi: {detail}"

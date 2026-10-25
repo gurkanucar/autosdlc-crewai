@@ -113,6 +113,7 @@ EVENT_NAMES = {
     "tests_repair_started": "Test repair started", "tests_repaired": "Tests repaired",
     "old_tests_removed": "Old tests removed", "stubs_rejected": "Placeholder file rejected",
     "test_issues_reported": "Tests reported as wrong", "repair_reverted": "Repair rolled back",
+    "attempt_added": "Extra test attempt",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
@@ -373,6 +374,7 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             }.get(event["detail"], t("🛠️ I am fixing the code according to the test failures.")),
             "old_tests_removed": t("🧹 Test files of the earlier suite were removed: {detail}", detail=detail),
             "repair_reverted": t("↩️ The last repair made more tests fail, so it was rolled back ({detail}).", detail=detail),
+            "attempt_added": t("➕ The repairs are working, so the tests get one more attempt ({detail}).", detail=detail),
             "stubs_rejected": t("🛡️ A placeholder that would have replaced a real file was rejected: {detail}", detail=detail),
             "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
             "traceability": t("🔗 Traceability matrix produced: {detail}.", detail=detail),

@@ -89,6 +89,7 @@
 "review round {number}": "inceleme turu {number}"
 "attempt {number}": "deneme {number}"
 "from test attempt {number}": "{number}. test denemesinden"
+"{previous} → {count} passed": "{previous} → {count} geçti"
 "attempt {number}: {count} passed, attempt {best}: {passes} passed": "deneme {number}: {count} geçti, deneme {best}: {passes} geçti"
 "The repair before this attempt made it worse; the code was rolled back to the version of attempt {best}.": "Bu denemeden önceki onarım durumu kötüleştirdi; kod {best}. denemedeki haline geri alındı."
 "no change needed": "değişiklik gerekmedi"
