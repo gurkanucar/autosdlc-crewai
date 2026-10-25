@@ -150,6 +150,87 @@ def test_a_renamed_export_is_reported_with_what_the_module_exports(tmp_path):
         "(it exports: getCached, ttl)"]
 
 
+def test_a_package_installed_only_for_another_workspace_package_is_reported(tmp_path):
+    from autosdlc.runner import missing_js_packages
+
+    _write(tmp_path, {
+        "node_modules/node-fetch/package.json": "{}",
+        "node_modules/@scope/lib/package.json": "{}",
+        "server/node_modules/express/package.json": "{}",
+        "server/src/app.js": "import express from 'express';\nimport fs from 'node:fs';\nimport path from 'path';\n",
+        "tests/helpers.js": "import fetch from 'node-fetch';\nimport x from '@scope/lib/sub';\n\nimport express from 'express';\n",
+        "web/src/main.jsx": "import '@/styles.css';\nimport v from 'virtual:pwa';\n",
+    })
+    assert missing_js_packages(tmp_path) == [
+        "tests/helpers.js:4: imports the package 'express', which is not installed where this file is loaded from; "
+        "add it to the package.json that covers this file, or do not use it here"]
+    # Before the dependencies are installed nothing can be told.
+    assert missing_js_packages(tmp_path / "server" / "src") == []
+
+
+def test_a_playwright_spec_run_by_node_test_is_reported(tmp_path):
+    from autosdlc.runner import playwright_specs_run_by_node
+
+    _write(tmp_path, {
+        "scripts/api-test.sh": "#!/bin/sh\nset -e\nnode --test --test-concurrency=1 tests/*.test.js\n",
+        "tests/api.test.js": "import test from 'node:test';\n",
+        "tests/ui.test.js": "import { test } from '@playwright/test';\n",
+        "tests/ui/flow.spec.js": "import { test } from \"@playwright/test\";\n",
+    })
+    manifest = {"api_test": ["sh", "scripts/api-test.sh"], "ui_test": ["npx", "playwright", "test", "tests/ui"]}
+    assert playwright_specs_run_by_node(tmp_path, manifest) == [
+        "tests/ui.test.js:1: uses @playwright/test but a `node --test` command in project.yaml runs it; write it "
+        "with node:test (and Playwright's library API from 'playwright'), or move it where only a `playwright test` "
+        "command runs it"]
+    # A bare `node --test` runs every file with a test name, the spec under tests/ui too.
+    assert len(playwright_specs_run_by_node(tmp_path, {"unit_test": ["node", "--test"]})) == 2
+
+
+def test_a_long_output_keeps_its_start_and_its_end():
+    from autosdlc.runner import _clip
+
+    text = "FIRST FAILURE " + "x" * 50_000 + " SUMMARY"
+    clipped = _clip(text, 20_000)
+    assert clipped.startswith("FIRST FAILURE") and clipped.endswith("SUMMARY") and len(clipped) < 20_100
+    assert _clip("short", 20_000) == "short"
+
+
+def test_the_developer_can_report_a_wrong_test():
+    from autosdlc.crewai_engine import _test_issues
+
+    raw = json.dumps({"files": {}, "test_issues": {"tests/a.test.js": "calls /api/nope", "src/app.js": "no"}})
+    assert _test_issues(raw) == {"tests/a.test.js": "calls /api/nope"}
+    assert _test_issues('{"files": {}}') == {} and _test_issues("not json") == {}
+
+
+class WrongTestEngine(RepairEngine):
+    """The test asserts something the design does not ask for; the developer reports it and the Test Agent fixes it."""
+
+    def code(self, idea, docs, feedback=None, change=None):
+        self.test_issues = {}
+        if feedback is None:
+            return {"calc.py": "def add(a, b):\n    return a + b\n",
+                    "project.yaml": "unit_test: [python, -m, pytest, -q, tests]\n"}
+        self.reasons.append(feedback)
+        self.test_issues = {"tests/test_calc.py": "expects add(1, 2) == 4, which FR-01 does not say"}
+        return {}
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        self.test_feedback = getattr(self, "test_feedback", []) + [feedback]
+        expected = 4 if feedback is None else 3
+        return {"tests/test_calc.py": f"from calc import add\n\ndef test_fr01_add():\n    assert add(1, 2) == {expected}\n"}
+
+
+def test_a_test_the_developer_reports_as_wrong_goes_back_to_its_author(tmp_path, monkeypatch):
+    engine = WrongTestEngine(tmp_path, [])
+    result, events = _run(tmp_path, monkeypatch, engine)
+    assert result.status == "completed", result.error
+    assert result.attempts == 2
+    assert ("development", "test_issues_reported", "tests/test_calc.py") in events
+    assert "THE DEVELOPER REPORTS THESE TESTS AS WRONG" in engine.test_feedback[1]
+    assert "which FR-01 does not say" in engine.test_feedback[1]
+
+
 class ImportEngine(RepairEngine):
     """Node library: the first repair renames an export without updating its importer; the compile check sends it back."""
 

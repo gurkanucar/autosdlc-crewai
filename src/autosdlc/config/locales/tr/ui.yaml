@@ -374,3 +374,6 @@
 "🛠️ The application server did not start; I am fixing the code (this does not use up a test attempt).": "🛠️ Uygulama sunucusu açılmadı; kodu düzeltiyorum (bu bir test denemesi harcamaz)."
 "🧹 Test files of the earlier suite were removed: {detail}": "🧹 Önceki test paketinin dosyaları silindi: {detail}"
 "🛡️ A placeholder that would have replaced a real file was rejected: {detail}": "🛡️ Gerçek bir dosyanın yerine geçecek yer tutucu reddedildi: {detail}"
+"🛠️ The developer reported some tests as wrong; I am fixing my own test files.": "🛠️ Geliştirici bazı testleri hatalı buldu; kendi test dosyalarımı düzeltiyorum."
+"🔎 These tests look wrong, not the application; they go back to the Test Agent: {detail}": "🔎 Hata uygulamada değil bu testlerde görünüyor; Test Ajanına geri gidiyor: {detail}"
+"Tests reported as wrong": "Hatalı bulunan testler"

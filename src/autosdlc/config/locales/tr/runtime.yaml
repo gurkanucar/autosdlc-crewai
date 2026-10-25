@@ -208,3 +208,4 @@
 "Write a failure report ZIP of a run (traceback, model calls, logs)": "Bir çalışmanın hata raporunu ZIP olarak yaz (traceback, model çağrıları, loglar)"
 "Target ZIP file": "Hedef ZIP dosyası"
 "Model for one stage only, e.g. testing=glm-5.3-flash (repeatable)": "Sadece bir aşamanın modeli, ör. testing=glm-5.3-flash (birden çok kez verilebilir)"
+"reported as wrong by the developer": "geliştirici tarafından hatalı bulundu"

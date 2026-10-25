@@ -131,4 +131,4 @@ def test_test_repairs_still_use_a_single_response():
 
     engine._ask = ask
     assert engine.tests("Book tracker", "docs", {}, feedback="SyntaxError") == {"tests/t.py": "def test(): pass\n"}
-    assert len(asked) == 1 and "DO NOT COMPILE" in asked[0]
+    assert len(asked) == 1 and "YOUR TESTS NEED A FIX" in asked[0]

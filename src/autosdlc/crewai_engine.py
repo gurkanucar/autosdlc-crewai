@@ -223,6 +223,19 @@ def _files_for_prompt(files: dict[str, str], limit: int, focus: str = "", first:
     return text
 
 
+def _test_issues(raw: str) -> dict[str, str]:
+    """The test files the developer reported as wrong ({"test_issues": {"tests/x": "reason"}}); {} when none."""
+    try:
+        value = _extract_json(raw)
+    except ValueError:
+        return {}
+    issues = value.get("test_issues") if isinstance(value, dict) else None
+    if not isinstance(issues, dict):
+        return {}
+    return {path: str(reason)[:500] for path, reason in issues.items()
+            if isinstance(path, str) and path.startswith(("tests/", "test/"))}
+
+
 def _parse_file_bundle(raw: str) -> dict[str, str]:
     value = _extract_json(raw)
     files = value.get("files") if isinstance(value, dict) else None
@@ -413,6 +426,9 @@ class CrewAIEngine:
         self.language = "en"
         # Optional model per agent stage (e.g. a faster one for testing); a stage not listed uses self.model.
         self.stage_models: dict[str, str] = {}
+        # The last raw agent answer, and the test files the developer's last repair reported as wrong.
+        self.last_raw = ""
+        self.test_issues: dict[str, str] = {}
         config_dir = resource_files("autosdlc").joinpath("config")
         self.agents = yaml.safe_load(config_dir.joinpath("agents.yaml").read_text(encoding="utf-8"))
         self.tasks = yaml.safe_load(config_dir.joinpath("tasks.yaml").read_text(encoding="utf-8"))
@@ -460,6 +476,7 @@ class CrewAIEngine:
         match = re.fullmatch(r"(?:USER_QUESTION|KULLANICI_SORUSU):\s*(.{1,1000})", raw, re.DOTALL)
         if match:
             raise ClarificationNeeded(match.group(1).strip())
+        self.last_raw = raw
         return raw
 
     def _ask_files(self, stage: str, extra: str = "", **values: str) -> dict[str, str]:
@@ -524,6 +541,7 @@ class CrewAIEngine:
         return self._ask(stage, idea=idea, context=context[:24000])
 
     def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]:
+        self.test_issues = {}
         # The tests are left out: the failure output shows what they expect, and they would crowd out the code.
         current = (
             "Files under tests/ and test/ belong to the Test Agent and must not be changed. Return only changed or new files.\n"
@@ -538,13 +556,21 @@ class CrewAIEngine:
             instruction += current
         elif feedback:
             # The error summary is usually at the end of the output, so it is taken from the end.
-            instruction = f"Fix the application according to this test output:\n{feedback[-8000:]}\n" + current
+            instruction = f"Fix the application according to this test output:\n{feedback[-8000:]}\n" + current + (
+                "A failure can also come from a wrong test: one that calls an endpoint or function that neither the "
+                "design nor the code has, or prepares its data wrongly. Do not bend the application to such a test; "
+                'name it next to "files" instead, e.g. {"files": {...}, "test_issues": {"tests/x.test.js": "calls '
+                'GET /api/users/:id/history, which the design does not have"}}. The Test Agent fixes those files.\n'
+            )
         else:
             files = self._ask_files_batched("development", idea=idea, context=docs[:20000], feedback="Create the first version of the application.\n")
             self.current_files.update(files)
             return files
+        self.last_raw = ""
         files = self._ask_files("development", idea=idea, context=docs[:20000], feedback=instruction)
         self.current_files.update(files)
+        if feedback and not change:
+            self.test_issues = _test_issues(self.last_raw)
         return files
 
     def tests(self, idea: str, docs: str, files: dict[str, str], change: str | None = None,
@@ -553,7 +579,8 @@ class CrewAIEngine:
         if feedback:
             # The developer cannot edit tests, so a test that does not even compile is repaired by its author.
             extra = (
-                "\nYOUR TESTS DO NOT COMPILE OR LOAD. Fix ONLY the test files named in this output; the application "
+                "\nYOUR TESTS NEED A FIX: they do not compile or load, or the developer reported them as wrong. "
+                "Fix ONLY the test files named in this output; the application "
                 "files above are correct and cannot be changed by you. Do not call anything that is not in the "
                 f"application files. Return only the corrected test files, complete:\n{feedback[-6000:]}\n"
             )

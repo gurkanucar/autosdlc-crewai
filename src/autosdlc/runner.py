@@ -78,6 +78,7 @@ BUILD_FIXES = 2
 SERVER_START_FAILURES = ("The application server exited before the tests",
                          "The application server did not start within 60 seconds")
 SERVER_START_REPAIR = "the application server did not start"
+TESTS_REPORTED = "reported as wrong by the developer"
 
 
 @dataclass
@@ -107,6 +108,15 @@ def _tail(path: Path, limit: int = 4000) -> str:
         return plain(path.read_text(encoding="utf-8", errors="replace"))[-limit:]
     except OSError:
         return ""
+
+
+def _clip(text: str, limit: int) -> str:
+    """The start and the end of a long output: test runners report the first failures in detail at the top and the
+    summary at the bottom, so keeping only the end lost what failed first."""
+    if len(text) <= limit:
+        return text
+    head = limit * 3 // 10
+    return f"{text[:head]}\n[... {len(text) - limit} characters left out ...]\n{text[-(limit - head):]}"
 
 
 def _stop_process(process: subprocess.Popen) -> None:
@@ -282,6 +292,91 @@ def missing_js_imports(project_dir: Path) -> list[str]:
                                     f"export it (it exports: {', '.join(sorted(exports)) or 'nothing'})")
     in_app = [problem for problem in problems if not _in_tests(problem.split(":", 1)[0])]
     return in_app or problems
+
+
+# `import x from 'pkg'`, `import 'pkg'`, `import('pkg')`: a bare specifier names a package, not a file.
+_JS_PACKAGE_IMPORT = re.compile(r"(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['\"]([^'\"./#~][^'\"]*)['\"]")
+NODE_BUILTINS = {
+    "assert", "async_hooks", "buffer", "child_process", "cluster", "console", "constants", "crypto", "dgram",
+    "diagnostics_channel", "dns", "domain", "events", "fs", "http", "http2", "https", "inspector", "module", "net",
+    "os", "path", "perf_hooks", "process", "punycode", "querystring", "readline", "repl", "stream", "string_decoder",
+    "sys", "test", "timers", "tls", "trace_events", "tty", "url", "util", "v8", "vm", "wasi", "worker_threads", "zlib",
+}
+
+
+def missing_js_packages(project_dir: Path) -> list[str]:
+    """Packages a JS file imports that are not installed where Node looks for them from that file.
+
+    In a workspace a test at the root cannot load a package installed only for server/ ("Cannot find package
+    'express'"), and every test file failed that way. Checked only once the dependencies are installed.
+    """
+    if not (project_dir / "node_modules").is_dir():
+        return []
+    problems = []
+    for name in _project_files(project_dir, _JS_SOURCES):
+        try:
+            source = _JS_COMMENTS.sub(lambda match: "\n" * match.group().count("\n"),
+                                      (project_dir / name).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        for match in _JS_PACKAGE_IMPORT.finditer(source):
+            specifier = match.group(1)
+            if ":" in specifier or specifier.startswith("@/"):
+                continue  # node:fs, virtual: modules, bundler aliases
+            parts = specifier.split("/")
+            package = "/".join(parts[:2]) if specifier.startswith("@") else parts[0]
+            if package in NODE_BUILTINS:
+                continue
+            folder = (project_dir / name).parent
+            while not (folder / "node_modules" / package).exists():
+                if folder == project_dir:
+                    line = source[:match.start()].count("\n") + 1
+                    problems.append(f"{name}:{line}: imports the package '{package}', which is not installed where "
+                                    "this file is loaded from; add it to the package.json that covers this file, "
+                                    "or do not use it here")
+                    break
+                folder = folder.parent
+    return problems
+
+
+_NODE_TEST_CALL = re.compile(r"\bnode\b[^\n;&|]*?--test\b([^\n;&|]*)")
+
+
+def playwright_specs_run_by_node(project_dir: Path, manifest: dict) -> list[str]:
+    """Playwright Test specs that a `node --test` command runs: @playwright/test's test() then throws "did not
+    expect test() to be called here" and the whole file fails (this repeated in three runs in a row)."""
+    commands = [manifest.get(key) or [] for key in ("unit_test", "api_test", "ui_test")]
+    texts = [" ".join(command) for command in commands]
+    for arg in (arg for command in commands for arg in command):
+        if arg.endswith((".sh", ".bash")) and (project_dir / arg).is_file():
+            texts.append((project_dir / arg).read_text(encoding="utf-8", errors="replace"))
+    scripts = _project_files(project_dir, NODE_SCRIPTS)
+    run: set[str] = set()
+    for text in texts:
+        for match in _NODE_TEST_CALL.finditer(text):
+            patterns = [token.strip("'\"") for token in match.group(1).split() if not token.startswith("-")]
+            if not patterns:
+                run.update(name for name in scripts if NODE_TEST_NAME.search(name.rsplit("/", 1)[-1]))
+            for pattern in patterns:
+                try:
+                    if (project_dir / pattern).is_dir():
+                        run.update(name for name in scripts if name.startswith(pattern.rstrip("/") + "/"))
+                    else:
+                        run.update(path.relative_to(project_dir).as_posix() for path in project_dir.glob(pattern)
+                                   if path.is_file())
+                except (ValueError, NotImplementedError, OSError):
+                    continue  # an absolute path or a shell variable, not a pattern of this project
+    problems = []
+    for name in sorted(run):
+        try:
+            source = (project_dir / name).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if re.search(r"['\"]@playwright/test['\"]", source):
+            problems.append(f"{name}:1: uses @playwright/test but a `node --test` command in project.yaml runs it; "
+                            "write it with node:test (and Playwright's library API from 'playwright'), or move it where "
+                            "only a `playwright test` command runs it")
+    return problems
 
 
 # Lines of the impact analysis's open-questions section: the request is not applied until the user answers them.
@@ -1042,6 +1137,8 @@ class RunSession:
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
         env.update({"NO_COLOR": "1", "FORCE_COLOR": "0"})
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        # Without a TTY pnpm aborts instead of recreating node_modules (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY).
+        env["CI"] = "true"
         return env
 
     def _load_manifest(self) -> None:
@@ -1187,15 +1284,24 @@ class RunSession:
             self.engine.current_files.update(self.test_files)
         if rejected:
             self._event("development", "tests_protected", ", ".join(rejected))
-        if not replacements:
-            return False
-        write_generated_files(self.project_dir, replacements)
-        self.code_files.update(replacements)
-        self._save_code_files()
-        self._load_manifest()
-        self.setup_done = False
-        self._event("development", "repair_completed", ", ".join(replacements))
-        return True
+        issues = {name: reason for name, reason in (getattr(self.engine, "test_issues", None) or {}).items()
+                  if name in self.test_files}
+        if replacements:
+            write_generated_files(self.project_dir, replacements)
+            self.code_files.update(replacements)
+            self._save_code_files()
+            self._load_manifest()
+            self.setup_done = False
+            self._event("development", "repair_completed", ", ".join(replacements))
+        if issues:
+            # A wrong test (an endpoint the design does not have, a broken setup) cannot be fixed by the developer;
+            # its author fixes it. The report goes last, so it survives when the output is cut to its end.
+            self._event("development", "test_issues_reported", ", ".join(issues))
+            report = "\n".join(f"- {name}: {reason}" for name, reason in issues.items())
+            if self._repair_tests(f"{output}\n\nTHE DEVELOPER REPORTS THESE TESTS AS WRONG (the application is right "
+                                  f"here); fix them:\n{report}\n", TESTS_REPORTED):
+                return True
+        return bool(replacements)
 
     def _fix_build(self, with_tests: bool) -> None:
         """Compile-only check before the test attempts: a compile error goes back to its author (the developer, or the
@@ -1233,10 +1339,13 @@ class RunSession:
                 continue  # the toolchain is missing or too slow here; the test commands report it themselves
             if code:
                 return f"[build failed] {' '.join(command)} (exit {code})\n{output}", code
-        missing = missing_js_imports(self.project_dir)
-        if missing:
-            return "[build failed] import check: names imported from project modules that do not export them\n" + \
-                "\n".join(missing[:30]), 1
+        problems = (missing_js_imports(self.project_dir) + missing_js_packages(self.project_dir)
+                    + playwright_specs_run_by_node(self.project_dir, self.manifest))
+        # The application's problems alone first: the developer cannot fix the tests, and the tests may be right.
+        problems = [problem for problem in problems if not _in_tests(problem.split(":", 1)[0])] or problems
+        if problems:
+            return "[build failed] import check: modules or packages that cannot be loaded as written\n" + \
+                "\n".join(problems[:30]), 1
         return "", 0
 
     def _run_checks(self, env: dict[str, str], keys: tuple[str, ...] = ("setup", "unit_test", "api_test", "ui_test")) -> tuple[str, int]:
@@ -1289,7 +1398,7 @@ class RunSession:
                 output, code = self._run_reported(label, resolved, env, temp_dir / f"{label.lower()}.log", timeout=300)
                 if code is None:
                     return "\n".join(logs + [f"The {label} command failed: {output}"]), -1
-                logs.append(f"### {label} tests (exit {code})\n{output}"[-20_000:])
+                logs.append(_clip(f"### {label} tests (exit {code})\n{output}", 20_000))
                 if code:
                     if server is not None:
                         logs.append("### Application server log\n" + _tail(server_log))
