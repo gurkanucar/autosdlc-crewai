@@ -13,7 +13,8 @@ language_rules: |
   - All code is English: variable, function/method, class, module, file and folder names, comments inside the code,
     docstrings, log and error messages, test names and commit messages. Do not use identifiers made of non-English
     words or containing non-ASCII letters (e.g. addProduct, not urunEkle). Only the UI texts the end user sees may
-    be in the language the user asked for.
+    be in the language the user asked for; string literals and patterns in tests that match those UI texts may be
+    in that language too. These rules are complete: apply them directly, do not deliberate over them.
 
 planning:
   description: |
@@ -187,8 +188,7 @@ testing:
     names or emails per test). If there is a web UI, open BASE_URL with Playwright
     and verify a visible interaction. Keep the test data isolated and deterministic.
     For Node.js ESM TypeScript projects using tsx, use `node --import tsx --test tests/*.test.ts`;
-    `node --test tests/` is not a valid directory invocation. Check that every imported helper and
-    exported function exists in the supplied application files before returning tests.
+    `node --test tests/` is not a valid directory invocation.
     Use ONLY functions, types and constants that appear in the application files above; never call a helper
     that is not there. If a test needs a helper, define it inside the test file itself. The developer cannot
     edit tests, so a test that references something missing can never pass. Go tests under tests/ form a
@@ -197,9 +197,10 @@ testing:
     imported package name (e.g. a function called exec while another file imports os/exec).
     Rust tests in tests/ are integration tests: they use the library crate by name and only its public items.
     Node.js and Python tests import the application's modules; they never start a window or a real GUI.
-    Double-check that every file you return is complete, valid source (imports first, balanced braces, no "..."
-    placeholders) before you answer.
+    Every file you return is complete, valid source (imports first, balanced braces, no "..." placeholders).
     The test commands are specified in the application's project.yaml.
+    Work decisively: decide what each test checks, then write it. Do not draft the files in your head first and do
+    not re-verify the same rule or import more than once; a test that turns out wrong is fixed in a later step.
   expected_output: Valid JSON containing complete test files suited to the chosen technology.
 
 deployment:

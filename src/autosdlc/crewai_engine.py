@@ -21,6 +21,19 @@ from .storage import now
 GO_BASE_URL = "https://opencode.ai/inference/go/openai/v1"
 DEFAULT_MODEL = "glm-5.3-flash"
 RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
+# How many reasoning characters a model may stream before its first answer word. A reasoning model can otherwise
+# deliberate for half an hour (241k characters were seen on a single test-writing call); about 6 minutes on a fast model.
+REASONING_BUDGET = int(os.getenv("AUTOSDLC_REASONING_BUDGET", "60000"))
+# Stages whose output is code: the plan is already in the prompt, so long hidden reasoning adds little.
+REASONING_EFFORT = {"development": "low", "testing": "low"}
+BUDGET_NUDGE = (
+    "You have already reasoned enough about this task. Do not re-check the rules or the plan again; "
+    "write the final answer now, in the required format."
+)
+
+
+class ReasoningBudgetExceeded(RuntimeError):
+    """The model streamed more reasoning than REASONING_BUDGET without starting its answer."""
 
 
 class StopRequested(RuntimeError):
@@ -29,12 +42,15 @@ class StopRequested(RuntimeError):
 
 def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text: Callable[[str], None],
                        stats: dict | None = None, on_progress: Callable[[dict], None] | None = None,
-                       should_stop: Callable[[], bool] | None = None) -> tuple[str, str | None]:
+                       should_stop: Callable[[], bool] | None = None,
+                       reasoning_budget: int | None = None) -> tuple[str, str | None]:
     """Reads the SSE stream and passes the accumulated text to on_text on every chunk; falls back to plain JSON if the server does not stream.
 
     Returns (text, finish_reason). stats, if given, receives how many reasoning and answer characters the model
     streamed and the end of its reasoning: a reasoning model can think for many minutes before the first answer word,
     or spend its whole output on reasoning and return no content. on_progress gets stats after every chunk.
+    With reasoning_budget the call is abandoned (ReasoningBudgetExceeded) once the model has reasoned that many
+    characters without writing any answer; an answer already being written is never cut.
     """
     stats = {} if stats is None else stats
     stats.update(reasoning_chars=0, content_chars=0, reasoning_tail="")
@@ -72,6 +88,8 @@ def _stream_completion(url: str, headers: dict[str, str], payload: dict, on_text
                 on_text("".join(parts))
             if on_progress is not None and (reasoning or delta):
                 on_progress(stats)
+            if reasoning_budget and not parts and stats["reasoning_chars"] > reasoning_budget:
+                raise ReasoningBudgetExceeded(f"The model reasoned {stats['reasoning_chars']} characters without answering")
         return "".join(parts), finish
 
 
@@ -84,6 +102,13 @@ PLAN_INSTRUCTION = (
     '{"plan": [{"path": "relative/path", "purpose": "one-sentence purpose"}]}. '
     "List every file needed, including project.yaml and the packaging files the delivery decision asks for; "
     "at most 30 files, no lock files."
+)
+
+TEST_PLAN_INSTRUCTION = (
+    "\nDO NOT WRITE TESTS IN THIS STEP. Instead of the JSON format above, return ONLY the test file plan: "
+    '{"plan": [{"path": "tests/...", "purpose": "one sentence: what it tests and which FR/NFR ids it covers"}]}. '
+    "Every FR must appear in at least one purpose. A helper file shared by several tests comes first in the list. "
+    "At most 12 files, all under tests/ (or test/)."
 )
 
 
@@ -206,6 +231,8 @@ class CrewAIEngine:
                 inner.current = {}
                 # If set and true, the current call is abandoned (the user pressed Stop).
                 inner.should_stop = None
+                # Models whose requests were rejected with reasoning_effort; they are called without it.
+                inner.no_effort: set[str] = set()
 
             def _report(inner, phase: str, **fields: Any) -> None:
                 if inner.activity is None:
@@ -244,12 +271,16 @@ class CrewAIEngine:
                 if isinstance(messages, str):
                     messages = [{"role": "user", "content": messages}]
                 # Three attempts with exponential backoff on temporary network/rate-limit errors.
+                nudged = False
                 for attempt in range(3):
                     if inner.should_stop is not None and inner.should_stop():
                         raise StopRequested("Stopped at the user's request")
                     url = f"{GO_BASE_URL}/chat/completions"
                     headers = {"Authorization": f"Bearer {inner.key}", "x-opencode-session": inner.session_id}
                     payload = {"model": inner.model, "messages": messages}
+                    effort = REASONING_EFFORT.get(inner.stage)
+                    if effort and inner.model not in inner.no_effort:
+                        payload["reasoning_effort"] = effort
                     started, stats = time.monotonic(), {}
                     inner.current = {"stage": inner.stage, "model": inner.model, "attempt": attempt + 1, "started_at": now(),
                                      "prompt_chars": sum(len(str(message.get("content", ""))) for message in messages)}
@@ -259,7 +290,7 @@ class CrewAIEngine:
                             content, finish = _stream_completion(
                                 url, headers, payload, inner.listener, stats,
                                 lambda progress: inner._report("writing" if progress["content_chars"] else "reasoning", **progress),
-                                inner.should_stop)
+                                inner.should_stop, REASONING_BUDGET)
                         else:
                             response = httpx.post(url, headers=headers, json=payload, timeout=300)
                             response.raise_for_status()
@@ -270,6 +301,19 @@ class CrewAIEngine:
                     except StopRequested:
                         inner._report("stopped")
                         raise
+                    except ReasoningBudgetExceeded:
+                        inner._log(attempt, started, messages, "reasoning_budget",
+                                   reasoning_chars=stats.get("reasoning_chars", 0))
+                        if not nudged and attempt < 2:
+                            # Asked once more with an instruction to stop deliberating and answer.
+                            nudged = True
+                            last = messages[-1]
+                            messages = [*messages[:-1], {**last, "content": f"{last.get('content', '')}\n\n{BUDGET_NUDGE}"}]
+                            continue
+                        model, stage = inner.model, inner.stage
+                        raise RuntimeError(f"The {model} model reasoned more than {REASONING_BUDGET} characters "
+                                           f"without answering; choose another model for the {stage} stage and "
+                                           "continue") from None
                     except httpx.HTTPStatusError as exc:
                         # A 400 is normally permanent, but a gateway can return a temporary 400 too, so it is retried once.
                         status_code = exc.response.status_code
@@ -278,6 +322,10 @@ class CrewAIEngine:
                         except httpx.ResponseNotRead:
                             reason = ""
                         inner._log(attempt, started, messages, f"http_{status_code}", error=reason)
+                        if status_code == 400 and "reasoning_effort" in payload and attempt < 2:
+                            # The gateway or model does not accept the parameter: the request is repeated without it.
+                            inner.no_effort.add(inner.model)
+                            continue
                         if (status_code in RETRY_STATUSES or (status_code == 400 and attempt == 0)) and attempt < 2:
                             time.sleep(2 ** (attempt + 1))
                             continue
@@ -393,16 +441,23 @@ class CrewAIEngine:
                 'return only valid JSON in the form {"files": {...}}.'
             ), **values))
 
-    def _ask_files_batched(self, stage: str, batch_size: int = 4, **values: str) -> dict[str, str]:
+    def _ask_files_batched(self, stage: str, batch_size: int = 4, plan_instruction: str = PLAN_INSTRUCTION,
+                           **values: str) -> dict[str, str]:
         """Writing a big project in one response hits the output limit: first a file plan, then small groups.
 
         Every group sees the files written earlier, so interfaces between modules stay consistent.
         If no plan can be obtained it falls back to single-piece generation.
         """
+        raw = ""
         try:
-            plan = _parse_plan(self._ask(stage, extra=PLAN_INSTRUCTION, **values))
+            raw = self._ask(stage, extra=plan_instruction, **values)
+            plan = _parse_plan(raw)
         except ValueError:
-            return self._ask_files(stage, **values)
+            try:
+                # A model that ignored the plan instruction and wrote the files already gave a usable answer.
+                return _parse_file_bundle(raw)
+            except ValueError:
+                return self._ask_files(stage, **values)
         plan_text = "\n".join(f"- {item['path']}: {item.get('purpose', '')}" for item in plan)
         files: dict[str, str] = {}
 
@@ -473,10 +528,12 @@ class CrewAIEngine:
                 "(e.g. FR-07) into the test names. If the request is a bug, write a regression test that "
                 "reproduces the bug and is EXPECTED TO FAIL with the current code."
             )
-        return self._ask_files(
-            "testing", extra=extra, idea=idea, context=docs[:16000],
-            files=json.dumps(files, ensure_ascii=False)[:30000],
-        )
+        values = {"idea": idea, "context": docs[:16000], "files": json.dumps(files, ensure_ascii=False)[:30000]}
+        if extra:
+            return self._ask_files("testing", extra=extra, **values)
+        # The first test suite in one response makes a reasoning model design every file at once before writing a
+        # word (half an hour was seen); a plan and small groups keep each call short.
+        return self._ask_files_batched("testing", batch_size=3, plan_instruction=TEST_PLAN_INSTRUCTION, **values)
 
     def section(self, stage: str, idea: str, context: str, document: str, section: str,
                 instruction: str, mode: str, language: str | None = None) -> str:

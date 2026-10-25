@@ -147,6 +147,8 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
         json.dumps({"plan": [{"path": path, "purpose": "x"} for path in StubEngine().code("", "", feedback="fix")]}),
         json.dumps({"files": dict(list(StubEngine().code("", "", feedback="fix").items())[:4])}),
         json.dumps({"files": dict(list(StubEngine().code("", "", feedback="fix").items())[4:])}),
+        # Testing: first the test file plan, then the files.
+        json.dumps({"plan": [{"path": "tests/test_api.py", "purpose": "FR-01"}]}),
         json.dumps({"files": {
             "tests/test_api.py": "from fastapi.testclient import TestClient\nfrom app.main import app\n\ndef test_api():\n    assert TestClient(app).get('/').json()['answer'] == 1\n",
         }}),
@@ -205,7 +207,7 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
     assert result.attempts == 1
     assert "PASSED" in (result.output_dir / "test_report.md").read_text(encoding="utf-8")
     # Agent responses were received as a stream and written to the live-view files.
-    assert len(streamed) == 10  # 6 document stages + testing + the development plan and two file groups
+    assert len(streamed) == 11  # 6 document stages + the development plan and two file groups + the test plan and files
     assert "book tracker" in (result.output_dir / "live" / "planning.md").read_text(encoding="utf-8").lower()
 
 
