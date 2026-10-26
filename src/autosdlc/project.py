@@ -9,6 +9,30 @@ import yaml
 COMMANDS = {"setup", "unit_test", "api_test", "ui_test", "start", "package"}
 # Project types that run on the user's own machine: no server, tested through unit tests only.
 LOCAL_TYPES = {"cli", "desktop", "library"}
+SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<", "&"}
+# Programs that start a command of their own; one in the middle of an argument list is a second command.
+PROGRAMS = {"node", "npm", "npx", "pnpm", "yarn", "corepack", "python", "python3", "pip", "pip3", "go", "cargo", "sh",
+            "bash"}
+# Arguments after which a program name is what the command runs, not a second command (pnpm exec node, python -m pip).
+RUNS_NEXT = {"exec", "run", "dlx", "x", "-m", "--", "-c", "uv", "env"}
+
+
+def chained_command(command: list[str]) -> str | None:
+    """Why an argument list that runs without a shell holds more than one command; None when it holds one.
+
+    `a && b` written as one list once lost its && and ran `pnpm exec playwright install chromium node --test ...`:
+    Playwright answered "unknown option '--test'" and no UI test ran."""
+    if command[:1] in (["sh"], ["bash"]) and "-c" in command[1:2]:
+        return None
+    operator = next((arg for arg in command if arg in SHELL_OPERATORS), None)
+    if operator:
+        return f"contains {operator!r}"
+    # The first program may be a wrapper (xvfb-run python, timeout 60 node, cross-env A=1 node).
+    for previous, arg in zip(command[1:], command[2:]):
+        if (arg in PROGRAMS and previous not in RUNS_NEXT and not previous.startswith("-") and "=" not in previous
+                and not previous.isdigit()):
+            return f"starts a second command at {arg!r}"
+    return None
 
 
 def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
@@ -29,6 +53,10 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
             command = manifest[key] = shlex.split(command)
         if not isinstance(command, list) or len(command) > 20 or not all(isinstance(arg, str) and 0 < len(arg) < 300 for arg in command):
             raise ValueError(f"{key} in project.yaml must be a list of command arguments (e.g. [python, -m, pytest, -q, tests])")
+        chained = chained_command(command)
+        if chained:
+            raise ValueError(f"{key} in project.yaml {chained}, but the command runs without a shell; write several "
+                             f"commands as [sh, -c, \"first && second\"] (or put them in a script run with sh)")
     if decisions["project_type"] in LOCAL_TYPES and decisions["ui"] != "web":
         # Models sometimes fill every key; a CLI or desktop app has no server to start and no HTTP API to test, and
         # launching it as a "server" exits at once (or opens a window). unit_test is the whole contract for these types.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import glob
 import json
 import re
 import secrets
@@ -474,6 +475,10 @@ _JS_SOURCES = {".js", ".mjs", ".jsx"}
 _JS_COMMENTS = re.compile(r"/\*.*?\*/|^\s*//[^\n]*", re.DOTALL | re.MULTILINE)
 # `import { a, b as c } from './x.js'` (with an optional default before the braces) and `export { a } from './x.js'`.
 _JS_NAMED_IMPORT = re.compile(r"\b(?:import\s+(?:[\w$]+\s*,\s*)?|export\s*)\{([^}]*)\}\s*from\s*['\"](\.{1,2}/[^'\"]+)['\"]")
+# `import x from './x.js'` and `import x, { a } from './x.js'`: x is the module's default export.
+_JS_DEFAULT_IMPORT = re.compile(r"\bimport\s+([\w$]+)\s*(?:,\s*\{[^}]*\})?\s*from\s*['\"](\.{1,2}/[^'\"]+)['\"]")
+# Every relative module a file loads: static imports and re-exports, side-effect imports and import().
+_JS_RELATIVE_IMPORT = re.compile(r"(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['\"](\.{1,2}/[^'\"]+)['\"]")
 _JS_EXPORT_DECLARATION = re.compile(r"\bexport\s+(?:async\s+)?(?:function\s*\*?|class|const|let|var)\s*([\w$]+)")
 _JS_EXPORT_LIST = re.compile(r"\bexport\s*\{([^}]*)\}")
 
@@ -501,7 +506,8 @@ def _js_exports(source: str) -> set[str] | None:
 
 
 def missing_js_imports(project_dir: Path) -> list[str]:
-    """Relative named imports whose target module does not export the name.
+    """Relative imports that cannot load: a named or default export the target module does not have, or a file that
+    is not there.
 
     `node --check` only parses a file, so a repair that renamed an export without updating its importers was found
     only when the server crashed at start, using up a test attempt each time. The application's files are reported
@@ -517,6 +523,24 @@ def missing_js_imports(project_dir: Path) -> list[str]:
             continue
     problems: list[str] = []
     for name, source in sources.items():
+        for match in _JS_RELATIVE_IMPORT.finditer(source):
+            # A file that is not there: the server stopped at start with ERR_MODULE_NOT_FOUND after a repair moved
+            # a module. Any file with that name counts (a bundler adds the extension, a .css or .json is fine).
+            base = (project_dir / posixpath.dirname(name) / match.group(1).split("?")[0]).resolve()
+            if not (base.exists() or any(base.parent.glob(glob.escape(base.name) + ".*"))):
+                line = source[:match.start()].count("\n") + 1
+                problems.append(f"{name}:{line}: imports '{match.group(1)}', but there is no such file")
+        for local, specifier in _JS_DEFAULT_IMPORT.findall(source):
+            base = posixpath.normpath(posixpath.join(posixpath.dirname(name), specifier))
+            target = next((candidate for candidate in (base, *(base + suffix for suffix in _JS_SOURCES),
+                                                      *(f"{base}/index{suffix}" for suffix in _JS_SOURCES))
+                           if candidate in sources), None)
+            exports = _js_exports(sources[target]) if target else None
+            if exports is not None and "default" not in exports:
+                line = source[:source.find(specifier)].count("\n") + 1
+                problems.append(f"{name}:{line}: imports {local} as the default export of '{specifier}', but {target} "
+                                f"has no default export (it exports: {', '.join(sorted(exports)) or 'nothing'}); "
+                                f"import it by name: import {{ ... }} from '{specifier}'")
         for clause, specifier in _JS_NAMED_IMPORT.findall(source):
             base = posixpath.normpath(posixpath.join(posixpath.dirname(name), specifier))
             target = next((candidate for candidate in (base, *(base + suffix for suffix in _JS_SOURCES),
@@ -634,6 +658,20 @@ def test_helper_misuse(project_dir: Path) -> list[str]:
             helpers[match.group(1)] = (pattern[0] if pattern else -1, keys, returns_response, stringified)
     problems = []
     for name, source in sorted(sources.items()):
+        for blob in re.finditer(r"\bnew\s+Blob\s*\(", source):
+            end = _closing(source, blob.end() - 1)
+            args = _top_level_items(source[blob.end():end]) if end > 0 else []
+            line = source.count("\n", 0, blob.start()) + 1
+            # A small Buffer lives in Node's shared 8 KB pool: its .buffer is the whole pool, other bytes first, and
+            # every upload of a run failed the image check with it.
+            if args and re.search(r"[\w$)\]]\.buffer\b", args[0]):
+                problems.append(f"{name}:{line}: puts x.buffer in a Blob; a Buffer's .buffer is Node's shared memory "
+                                "pool (8 KB, other bytes first), not its own bytes; pass the Buffer itself: "
+                                "new Blob([x], { type: 'image/png' })")
+            elif len(args) == 1:
+                problems.append(f"{name}:{line}: creates a Blob without a type, so the upload arrives as "
+                                "application/octet-stream and a type check rejects it; give it one: "
+                                "new Blob([x], { type: 'image/png' })")
         for helper, (position, keys, returns_response, stringified) in helpers.items():
             for call in re.finditer(rf"(?<![\w$.]){re.escape(helper)}\s*\(", source):
                 if source[max(0, call.start() - 9):call.start()].rstrip().endswith("function"):

@@ -152,11 +152,12 @@
       locale) and antd''s App, and build every screen from antd components (Layout, Menu, Form with a name, Card, Table, Upload,
       DatePicker), never unstyled HTML. The axios instance has baseURL ''/api'', so calls use ''/events'', never ''/api/events''.
       After a logout the next login opens the events page. Use react ^18, antd ^5 and express ^5, never "latest" for them.
-      pnpm-workspace.yaml lists server and web; the root package.json has only playwright and pg as devDependencies. setup:
-      `corepack pnpm@10.26.0 install --no-frozen-lockfile && corepack pnpm@10.26.0 --dir web run build`; the start command
-      runs only the Express server, which also serves web/dist and /uploads on the same port. All tests use node:test: tests/api/*.test.js
-      and tests/ui/*.test.js (chromium from ''playwright''); ui_test: `corepack pnpm@10.26.0 exec playwright install chromium
-      && node --test tests/ui/*.test.js`. Hash passwords with bcryptjs. Login returns a JWT signed with JWT_SECRET
+      pnpm-workspace.yaml lists server and web; the root package.json has only playwright and pg as devDependencies. All
+      tests use node:test: tests/api/*.test.js and tests/ui/*.test.js (chromium from ''playwright''). project.yaml, exactly:
+      setup: [sh, -c, "corepack pnpm@10.26.0 install --no-frozen-lockfile && corepack pnpm@10.26.0 --dir web run build"],
+      api_test: [node, --test, tests/api/*.test.js], ui_test: [sh, -c, "corepack pnpm@10.26.0 exec playwright install chromium
+      && node --test tests/ui/*.test.js"], start: [node, server/src/index.js]; the server also serves web/dist and /uploads
+      on the same port. Hash passwords with bcryptjs. Login returns a JWT signed with JWT_SECRET
       (no default: stop at startup when it is missing) that the client sends as Authorization: Bearer <token> (axios interceptor);
       check the role on the server for every protected route (401 not logged in, 403 role not allowed). Register inside one
       transaction with a pessimistic write lock on the event row, so two people cannot take the last place; a full event,

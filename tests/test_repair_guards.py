@@ -150,6 +150,41 @@ def test_a_renamed_export_is_reported_with_what_the_module_exports(tmp_path):
         "(it exports: getCached, ttl)"]
 
 
+def test_a_missing_default_export_and_a_missing_file_are_reported(tmp_path):
+    from autosdlc.runner import missing_js_imports
+
+    # Both stopped the server at start, one test attempt each.
+    _write(tmp_path, {
+        "server/src/features/events/event.routes.js": "export const eventRoutes = 1;\n",
+        "server/src/features/users/users.routes.js": "const router = 1;\nexport default router;\n",
+        "server/src/common/app.js": (
+            "import eventRoutes from '../features/events/event.routes.js';\n"
+            "import usersRoutes from '../features/users/users.routes.js';\n"
+            "import { dataSource } from '../data-source.js';\n"),
+        "web/src/main.jsx": "import App from './App';\nimport './index.css';\n",
+        "web/src/App.jsx": "export default function App() {}\n",
+        "web/src/index.css": "body {}\n",
+    })
+    assert missing_js_imports(tmp_path) == [
+        "server/src/common/app.js:3: imports '../data-source.js', but there is no such file",
+        "server/src/common/app.js:1: imports eventRoutes as the default export of '../features/events/event.routes.js', "
+        "but server/src/features/events/event.routes.js has no default export (it exports: eventRoutes); import it by "
+        "name: import { ... } from '../features/events/event.routes.js'",
+    ]
+
+
+def test_a_blob_made_from_a_buffers_pool_or_without_a_type_is_reported(tmp_path):
+    from autosdlc.runner import test_helper_misuse
+
+    _write(tmp_path, {"tests/helpers.js": (
+        "form.append('cover', new Blob([cover.buffer]), 'cover.jpg');\n"
+        "form.append('cover', new Blob([png]), 'cover.png');\n"
+        "form.append('cover', new Blob([png], { type: 'image/png' }), 'cover.png');\n")})
+    problems = test_helper_misuse(tmp_path)
+    assert [problem.split(": ", 1)[0] for problem in problems] == ["tests/helpers.js:1", "tests/helpers.js:2"]
+    assert "shared memory pool" in problems[0] and "without a type" in problems[1]
+
+
 def test_a_package_installed_only_for_another_workspace_package_is_reported(tmp_path):
     from autosdlc.runner import missing_js_packages
 
