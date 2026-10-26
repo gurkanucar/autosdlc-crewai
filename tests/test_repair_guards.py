@@ -172,6 +172,7 @@ def test_a_playwright_spec_run_by_node_test_is_reported(tmp_path):
     from autosdlc.runner import test_runner_mismatches
 
     _write(tmp_path, {
+        "package.json": json.dumps({"devDependencies": {"@playwright/test": "^1.48.0"}}),
         "scripts/api-test.sh": "#!/bin/sh\nset -e\nnode --test --test-concurrency=1 tests/*.test.js\n",
         "tests/api.test.js": "import test from 'node:test';\n",
         "tests/ui.test.js": "import { test } from '@playwright/test';\n",
@@ -190,6 +191,7 @@ def test_a_node_test_file_run_by_playwright_test_is_reported(tmp_path):
     from autosdlc.runner import test_runner_mismatches
 
     _write(tmp_path, {
+        "package.json": json.dumps({"devDependencies": {"@playwright/test": "^1.48.0"}}),
         "scripts/ui-test.sh": "#!/bin/sh\nset -e\nplaywright install chromium\nplaywright test tests/ui\n",
         "tests/ui.test.js": "import test from 'node:test';\nimport { chromium } from '@playwright/test';\n",
         "tests/api.test.js": "import test from 'node:test';\n",
@@ -325,6 +327,44 @@ def test_a_failing_suite_does_not_hide_the_suites_after_it(tmp_path, monkeypatch
     attempt = (result.output_dir / "test_attempts" / "attempt-1.txt").read_text(encoding="utf-8")
     assert "### Unit tests (exit 1)" in attempt and "### API tests (exit 1)" in attempt
     assert "API SUITE RAN" in engine.reasons[0]
+
+
+def test_playwright_test_where_no_package_lists_playwright_test_is_reported(tmp_path):
+    from autosdlc.runner import test_runner_mismatches
+
+    # Python's Playwright CLI on the PATH answers `playwright test` with "unknown command 'test'".
+    _write(tmp_path, {
+        "web/package.json": json.dumps({"dependencies": {"react": "^18.3.1"}}),
+        "tests/ui/package.json": json.dumps({"devDependencies": {"@playwright/test": "^1.48.0"}}),
+        "tests/ui/flow.spec.js": "import { test } from '@playwright/test';\n",
+    })
+    command = ["sh", "-c", "pnpm install --dir web && pnpm --dir web exec playwright test tests/ui"]
+    problems = test_runner_mismatches(tmp_path, {"ui_test": command})
+    assert len(problems) == 1 and problems[0].startswith("project.yaml:1: `playwright test` runs in web, but no package.json")
+    command = ["sh", "-c", "pnpm install --dir tests/ui && pnpm --dir tests/ui exec playwright test"]
+    assert test_runner_mismatches(tmp_path, {"ui_test": command}) == []
+
+
+def test_a_missing_option_a_test_helper_sends_as_text_is_reported(tmp_path):
+    from autosdlc.runner import test_helper_misuse
+
+    _write(tmp_path, {
+        "tests/helpers.js": (
+            "export async function createEvent({ token, title, capacity = 5 }) {\n"
+            "  const form = new FormData();\n"
+            "  form.append('title', String(title));\n"
+            "  form.append('capacity', String(capacity));\n"
+            "  return send(form, token);\n"
+            "}\n"),
+        "tests/events.test.js": (
+            "import { createEvent } from './helpers.js';\n"
+            "await createEvent({ token, title: 'Party' });\n"
+            "await createEvent({ token, title: undefined });\n"
+            "await createEvent({ token });\n"),
+    })
+    problems = test_helper_misuse(tmp_path)
+    assert [problem.split(": ", 1)[0] for problem in problems] == ["tests/events.test.js:3", "tests/events.test.js:4"]
+    assert 'no title, which it sends as String(...), the text "undefined"' in problems[0]
 
 
 def test_a_test_helper_called_in_a_way_that_cannot_work_is_reported(tmp_path):

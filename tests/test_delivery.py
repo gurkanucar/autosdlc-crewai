@@ -100,11 +100,12 @@ def test_the_secrets_the_application_reads_are_passed_through_compose(tmp_path):
         "worker/app.py": "import os\nTOKEN = os.environ.get('WEBHOOK_TOKEN')\nos.getenv('SESSION_SECRET')\n",
         "node_modules/x/index.js": "process.env.LIBRARY_SECRET\n",
         "tests/helpers.js": "process.env.TEST_ONLY_SECRET\n",
+        "server/src/env.js": "const required = (name) => process.env[name];\nexport const s = required('COOKIE_SECRET');\n",
     }
     for name, content in files.items():
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text(content, encoding="utf-8")
-    assert app_secrets(tmp_path) == (["JWT_SECRET", "SESSION_SECRET"], ["MAPS_API_KEY", "WEBHOOK_TOKEN"])
+    assert app_secrets(tmp_path) == (["COOKIE_SECRET", "JWT_SECRET", "SESSION_SECRET"], ["MAPS_API_KEY", "WEBHOOK_TOKEN"])
     write_deployment_files(tmp_path, validate_decisions({**_decisions("docker"), "project_type": "backend", "database": "none",
                                                         "cache": "none", "observability": "none", "ui": "none"}))
     environment = yaml.safe_load((tmp_path / "compose.yaml").read_text(encoding="utf-8"))["services"]["app"]["environment"]

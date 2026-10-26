@@ -608,10 +608,11 @@ def test_helper_misuse(project_dir: Path) -> list[str]:
     """Calls of the tests' own helpers that cannot work, found without running them: an option the helper does not
     read (tests passed `cover` to a helper that reads `coverImage`, so every upload test sent the default PNG), and
     `.body.x` read from a helper that returns the raw fetch Response, whose body is a stream (`created.body.id` was
-    never set, and five test files failed on it)."""
+    never set, and five test files failed on it). And a missing option the helper sends as String(x): a test left out
+    the title to get a 400 and sent the text "undefined", a valid title, through two attempts."""
     sources = {name: _source(project_dir, name) for name in _project_files(project_dir, _JS_SOURCES)
                if _in_tests(name)}
-    helpers: dict[str, tuple[int, set[str] | None, bool]] = {}
+    helpers: dict[str, tuple[int, set[str] | None, bool, set[str]]] = {}
     for source in sources.values():
         for match in _JS_EXPORTED_FUNCTION.finditer(source):
             params_end = _closing(source, match.end() - 1)
@@ -626,10 +627,14 @@ def test_helper_misuse(project_dir: Path) -> list[str]:
             keys = _object_keys(pattern[1][:_closing(pattern[1], 0) + 1]) if pattern else None
             body = source[body_start:body_end]
             returns_response = bool(re.search(r"\breturn\s+(?:await\s+)?fetch\s*\(", body))
-            helpers[match.group(1)] = (pattern[0] if pattern else -1, keys, returns_response)
+            # Options without a default that the body turns into text: a missing one becomes "undefined".
+            bare = {item for item in _top_level_items(pattern[1][1:_closing(pattern[1], 0)])
+                    if re.fullmatch(r"[\w$]+", item)} if pattern else set()
+            stringified = {key for key in bare if re.search(rf"\bString\(\s*{re.escape(key)}\s*\)", body)}
+            helpers[match.group(1)] = (pattern[0] if pattern else -1, keys, returns_response, stringified)
     problems = []
     for name, source in sorted(sources.items()):
-        for helper, (position, keys, returns_response) in helpers.items():
+        for helper, (position, keys, returns_response, stringified) in helpers.items():
             for call in re.finditer(rf"(?<![\w$.]){re.escape(helper)}\s*\(", source):
                 if source[max(0, call.start() - 9):call.start()].rstrip().endswith("function"):
                     continue  # the definition itself
@@ -641,6 +646,13 @@ def test_helper_misuse(project_dir: Path) -> list[str]:
                     if unknown:
                         problems.append(f"{name}:{line}: passes {', '.join(unknown)} to {helper}(), which reads only "
                                         f"{', '.join(sorted(keys))}; the value is ignored")
+                    given = {item.split(":", 1)[0].strip(): item.split(":", 1)[1].strip() if ":" in item else item
+                             for item in _top_level_items(args[position].strip()[1:-1])}
+                    missing = sorted(key for key in stringified if given.get(key, "undefined") == "undefined")
+                    if missing and "..." not in args[position]:
+                        problems.append(f"{name}:{line}: gives {helper}() no {', '.join(missing)}, which it sends as "
+                                        f"String(...), the text \"undefined\" (a valid value), so the field is never "
+                                        f"missing; leave a field out of the request when its value is undefined")
             if returns_response:
                 for assigned in re.finditer(rf"(?:const|let|var)\s+([\w$]+)\s*=\s*await\s+{re.escape(helper)}\s*\(",
                                             source):
@@ -709,6 +721,7 @@ def test_runner_mismatches(project_dir: Path, manifest: dict) -> list[str]:
     texts += shell_scripts.values()
     scripts = _project_files(project_dir, NODE_SCRIPTS)
     return (_node_test_folders_in_scripts(project_dir, shell_scripts)
+            + _playwright_test_without_package(project_dir, texts)
             + _playwright_specs_run_by_node(project_dir, texts, scripts)
             + _node_tests_run_by_playwright(project_dir, texts, scripts))
 
@@ -727,6 +740,40 @@ def _node_test_folders_in_scripts(project_dir: Path, shell_scripts: dict[str, st
                 problems.append(f"{name}:{line}: `node --test {folders[0]}` fails with \"Cannot find module\" on "
                                 f"Node 22, which runs a folder as a file, so no test runs; name the files instead, "
                                 f"e.g. `node --test {folder}/*.test.js`")
+    return problems
+
+
+_PACKAGE_FOLDER = re.compile(r"(?:--dir|--prefix|-C)[= ]+['\"]?([^\s'\"]+)|\bcd\s+['\"]?([^\s'\"&;]+)")
+
+
+def _playwright_test_without_package(project_dir: Path, texts: list[str]) -> list[str]:
+    """`playwright test` run where no package.json up to the project root lists @playwright/test: the `playwright` on
+    the PATH is then Python's Playwright CLI, which answers "unknown command 'test'" (`pnpm --dir web exec playwright
+    test` lost every UI test of a run this way, five attempts in a row)."""
+    problems = []
+    for text in texts:
+        for match in _PLAYWRIGHT_TEST_CALL.finditer(text):
+            command = re.split(r"&&|;|\|\|", text[:match.start()])[-1]
+            folders = [found.group(1) or found.group(2) for found in _PACKAGE_FOLDER.finditer(command)]
+            folder = (project_dir / folders[-1]).resolve() if folders else project_dir.resolve()
+            declared = False
+            for candidate in (folder, *folder.parents):
+                try:
+                    manifest = json.loads((candidate / "package.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    manifest = {}
+                if any("@playwright/test" in (manifest.get(key) or {}) for key in ("dependencies", "devDependencies")):
+                    declared = True
+                if declared or candidate == project_dir.resolve():
+                    break
+            if not declared:
+                where = folders[-1] if folders else "the project root"
+                problems.append(f"project.yaml:1: `playwright test` runs in {where}, but no package.json there lists "
+                                "@playwright/test, so `playwright` is another CLI on the PATH (Python's Playwright "
+                                "answers \"unknown command 'test'\") and no UI test runs; add @playwright/test to that "
+                                "package.json and install it before the command, or write the UI tests with node:test "
+                                "and the 'playwright' library and run them with `node --test tests/ui/*.test.js`")
+                break
     return problems
 
 

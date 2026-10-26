@@ -1,5 +1,5 @@
 # Example project templates shown in the UI. Each one fills the form; the user can change it afterwards.
-# The decisions keys are the same as in questions.yaml. Idea at most 1000, stack at most 200, constraints at most 3000 characters.
+# The decisions keys are the same as in questions.yaml. Idea at most 1000, stack at most 200, constraints at most 4000 characters.
 # Keep the catalog small: tiny, sensible examples; desktop apps first, only a couple of CLIs, one web app, one API, scripts.
 # The idea is written the way a user would say it; technical hints belong to stack and constraints.
 # Texts are English source strings; other languages are in locales/<code>/content.yaml.
@@ -152,16 +152,19 @@
       locale) and antd''s App, and build every screen from antd components (Layout, Menu, Form with a name, Card, Table, Upload,
       DatePicker), never unstyled HTML. The axios instance has baseURL ''/api'', so calls use ''/events'', never ''/api/events''.
       After a logout the next login opens the events page. Use react ^18, antd ^5 and express ^5, never "latest" for them.
-      The setup command installs both folders and builds the React app; the start command runs only the Express server, which
-      also serves web/dist and /uploads on the same port. Hash passwords with bcryptjs. Login returns a JWT signed with JWT_SECRET
+      pnpm-workspace.yaml lists server and web; the root package.json has only playwright and pg as devDependencies. setup:
+      `corepack pnpm@10.26.0 install --no-frozen-lockfile && corepack pnpm@10.26.0 --dir web run build`; the start command
+      runs only the Express server, which also serves web/dist and /uploads on the same port. All tests use node:test: tests/api/*.test.js
+      and tests/ui/*.test.js (chromium from ''playwright''); ui_test: `corepack pnpm@10.26.0 exec playwright install chromium
+      && node --test tests/ui/*.test.js`. Hash passwords with bcryptjs. Login returns a JWT signed with JWT_SECRET
       (no default: stop at startup when it is missing) that the client sends as Authorization: Bearer <token> (axios interceptor);
       check the role on the server for every protected route (401 not logged in, 403 role not allowed). Register inside one
       transaction with a pessimistic write lock on the event row, so two people cannot take the last place; a full event,
-      a past event or a second registration answers 409. Creating an event with a past date is allowed (tests create past
-      events this way). Upload the cover with multer: JPEG, PNG or WebP (checked by its first bytes) up to 5 MB, saved in
+      a past event or a second registration answers 409. Creating an event with a past date is allowed (tests
+      need it). Upload the cover with multer: JPEG, PNG or WebP (checked by its first bytes) up to 5 MB, saved in
       UPLOADS_DIR under a generated name; other files answer 400, and the uploaded file is deleted whenever the request fails.
       UI tests create users and events through the API and use the browser only to log in and to register or cancel. A test
-      file that opens a database connection (e.g. to make a user an organizer) closes it in after(), or the test process never
+      file that opens a database connection closes it in after(), or the test process never
       exits. Keep every SDLC document short (at most half a page each); at most 4 FRs and 2 NFRs.'
 - id: task-api
   title: Task API (Python, web API)

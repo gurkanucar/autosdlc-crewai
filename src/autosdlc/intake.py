@@ -54,7 +54,7 @@ def questions() -> dict[str, dict]:
 
 # Characters an optional free text decision (the constraints) may have: a web app template that names its structure,
 # validation, UI kit and the mistakes of earlier runs needs well over 1000.
-OPTIONAL_TEXT_LIMIT = 3000
+OPTIONAL_TEXT_LIMIT = 4000
 
 
 def question_text(name: str) -> str:
