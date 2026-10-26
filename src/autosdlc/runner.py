@@ -73,6 +73,13 @@ STAGE_INPUTS = {
 }
 # Seconds the package command may run: release builds of GUI crates for several targets are slow on a small server.
 PACKAGE_TIMEOUT = 1800
+# Seconds each of setup, unit, API and UI may run. 300 ended a run whose node:test files ran one after another, each
+# waiting for its idle database connections to close; installs and a large suite also need more on a small server.
+SUITE_TIMEOUT = 1800
+# Seconds a unit, API or UI command may go without writing output before it is stopped as hung: a node:test run whose
+# tests had all finished waited silently for open connections until the whole timeout ran out. Setup is left out, as
+# an install or a download may stay quiet for a long time.
+SUITE_SILENCE = 300
 # Fix rounds the compile check may ask for before the test attempts; they do not count as test attempts.
 BUILD_FIXES = 2
 SERVER_START_FAILURES = ("The application server exited before the tests",
@@ -294,12 +301,13 @@ def _stop_process(process: subprocess.Popen) -> None:
 
 
 def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, timeout: int,
-                should_stop: Callable[[], bool] | None = None) -> tuple[str, int | None]:
+                should_stop: Callable[[], bool] | None = None, silence: int | None = None) -> tuple[str, int | None]:
     """Runs a build command with its output in a file; the code is None when it could not start or timed out.
 
     The command runs in its own process group: on a timeout the compilers it started are stopped too, and nothing
     waits for pipes that a leftover child still holds open (cargo -> rustc, sh build.sh -> go build).
     When should_stop turns true (the user pressed Stop) the command is stopped and RunPaused is raised.
+    With silence, a command whose log has not grown for that many seconds is stopped as hung.
     """
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -309,6 +317,7 @@ def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, t
     except OSError as exc:
         return str(exc), None
     deadline = time.monotonic() + timeout
+    log_size, last_output = 0, time.monotonic()
     while True:
         try:
             code = process.wait(timeout=0.5)
@@ -320,6 +329,17 @@ def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, t
             if time.monotonic() > deadline:
                 _stop_process(process)
                 return f"timed out after {timeout} seconds\n{_tail(log, 2500)}", None
+            if silence is not None:
+                try:
+                    size = log.stat().st_size
+                except OSError:
+                    size = log_size
+                if size != log_size:
+                    log_size, last_output = size, time.monotonic()
+                elif time.monotonic() - last_output > silence:
+                    _stop_process(process)
+                    return (f"stopped after {silence} seconds without output, likely hung (an open connection, "
+                            f"server or browser keeps the process alive)\n{_tail(log, 2500)}"), None
 
 
 def with_display(command: list[str], env: dict[str, str], platform: str = sys.platform) -> list[str]:
@@ -619,12 +639,32 @@ def test_runner_mismatches(project_dir: Path, manifest: dict) -> list[str]:
     browser under the node:test tests while they run."""
     commands = [manifest.get(key) or [] for key in ("unit_test", "api_test", "ui_test")]
     texts = [" ".join(command) for command in commands]
+    shell_scripts = {}
     for arg in (arg for command in commands for arg in command):
         if arg.endswith((".sh", ".bash")) and (project_dir / arg).is_file():
-            texts.append((project_dir / arg).read_text(encoding="utf-8", errors="replace"))
+            shell_scripts[arg] = (project_dir / arg).read_text(encoding="utf-8", errors="replace")
+    texts += shell_scripts.values()
     scripts = _project_files(project_dir, NODE_SCRIPTS)
-    return _playwright_specs_run_by_node(project_dir, texts, scripts) + _node_tests_run_by_playwright(
-        project_dir, texts, scripts)
+    return (_node_test_folders_in_scripts(project_dir, shell_scripts)
+            + _playwright_specs_run_by_node(project_dir, texts, scripts)
+            + _node_tests_run_by_playwright(project_dir, texts, scripts))
+
+
+def _node_test_folders_in_scripts(project_dir: Path, shell_scripts: dict[str, str]) -> list[str]:
+    """`node --test tests/` in a script fails with "Cannot find module" and runs no test (a run lost its last attempt
+    to it). A project.yaml command gets its folders expanded (expand_node_test_folders); a script's line does not."""
+    problems = []
+    for name, text in shell_scripts.items():
+        for match in _NODE_TEST_CALL.finditer(text):
+            folders = [token.strip("'\"") for token in match.group(1).split()
+                       if not token.startswith(("-", "$")) and (project_dir / token.strip("'\"")).is_dir()]
+            if folders:
+                line = text[:match.start()].count("\n") + 1
+                folder = folders[0].rstrip("/")
+                problems.append(f"{name}:{line}: `node --test {folders[0]}` fails with \"Cannot find module\" on "
+                                f"Node 22, which runs a folder as a file, so no test runs; name the files instead, "
+                                f"e.g. `node --test {folder}/*.test.js`")
+    return problems
 
 
 def _source(project_dir: Path, name: str) -> str:
@@ -1027,12 +1067,14 @@ class RunSession:
             self._stopping = self.history.pause_requested(self.run_id)
         return self._stopping
 
-    def _run_reported(self, label: str, command: list[str], env: dict[str, str], log: Path, timeout: int) -> tuple[str, int | None]:
+    def _run_reported(self, label: str, command: list[str], env: dict[str, str], log: Path, timeout: int,
+                      silence: int | None = None) -> tuple[str, int | None]:
         """_run_logged, with the command shown in the live activity view while it runs."""
         current = {"kind": "command", "label": label, "command": " ".join(command), "started_at": now(),
                    "log": log.relative_to(self.output_dir).as_posix()}
         self._activity({**current, "phase": "running"})
-        output, code = _run_logged(command, self.project_dir, env, log, timeout=timeout, should_stop=self._stop_requested)
+        output, code = _run_logged(command, self.project_dir, env, log, timeout=timeout, should_stop=self._stop_requested,
+                                   silence=silence)
         self._activity({**current, "phase": "done" if code == 0 else "failed", "exit": code})
         return output, code
 
@@ -1750,6 +1792,8 @@ class RunSession:
     def _run_checks(self, env: dict[str, str], keys: tuple[str, ...] = ("setup", "unit_test", "api_test", "ui_test")) -> tuple[str, int]:
         """Execute stack-specific commands from the validated project manifest (only those in keys)."""
         env["PYTHONPATH"] = str(self.project_dir)
+        # Python buffers output written to a file; unbuffered, a slow but healthy pytest run is not taken for silence.
+        env["PYTHONUNBUFFERED"] = "1"
         temp_dir = self.output_dir / "tmp"
         temp_dir.mkdir(exist_ok=True)
         env.update({"TEMP": str(temp_dir), "TMP": str(temp_dir), "TMPDIR": str(temp_dir)})
@@ -1795,7 +1839,9 @@ class RunSession:
                 if label != "Setup":
                     resolved = with_display(resolved, env)
                 # Into a log file rather than a pipe, so the live activity view can show the output while it runs.
-                output, code = self._run_reported(label, resolved, env, temp_dir / f"{label.lower()}.log", timeout=300)
+                output, code = self._run_reported(label, resolved, env, temp_dir / f"{label.lower()}.log",
+                                                   timeout=SUITE_TIMEOUT,
+                                                   silence=None if label == "Setup" else SUITE_SILENCE)
                 if code is None:
                     return "\n".join(logs + [f"The {label} command failed: {output}"]), -1
                 logs.append(_clip(f"### {label} tests (exit {code})\n{output}", 20_000))

@@ -61,3 +61,18 @@ def test_stop_ends_a_running_command(tmp_path):
         _run_logged([sys.executable, "-c", "import time; time.sleep(60)"], tmp_path, {}, tmp_path / "x.log",
                     timeout=120, should_stop=lambda: time.monotonic() - started > 1)
     assert time.monotonic() - started < 15
+
+
+def test_a_command_without_output_is_stopped_as_hung(tmp_path):
+    started = time.monotonic()
+    output, code = _run_logged([sys.executable, "-u", "-c", "print('ok 1'); import time; time.sleep(60)"], tmp_path,
+                               {}, tmp_path / "x.log", timeout=120, silence=2)
+    assert code is None and output.startswith("stopped after 2 seconds without output") and "ok 1" in output
+    assert time.monotonic() - started < 15
+
+
+def test_a_command_that_keeps_writing_is_not_stopped_by_the_silence_limit(tmp_path):
+    script = "import time\nfor i in range(5):\n    print(i, flush=True)\n    time.sleep(1)\n"
+    output, code = _run_logged([sys.executable, "-c", script], tmp_path, {}, tmp_path / "x.log", timeout=120,
+                               silence=2)
+    assert code == 0 and "4" in output

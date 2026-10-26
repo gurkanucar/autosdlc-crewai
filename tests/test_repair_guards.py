@@ -198,6 +198,20 @@ def test_a_node_test_file_run_by_playwright_test_is_reported(tmp_path):
     assert len(problems) == 1 and problems[0].startswith("tests/ui.test.js:1: is written with node:test")
 
 
+def test_a_test_folder_given_to_node_test_in_a_script_is_reported(tmp_path):
+    from autosdlc.runner import test_runner_mismatches
+
+    _write(tmp_path, {
+        "scripts/api-test.sh": "#!/bin/sh\nset -u\nnode server/src/index.js &\nnode --test tests/ &\nwait\n",
+        "scripts/ui-test.sh": "#!/bin/sh\nnode --test --test-concurrency=1 tests/*.test.js \"$EXTRA\"\n",
+        "tests/api.test.js": "import test from 'node:test';\n",
+    })
+    manifest = {"api_test": ["sh", "scripts/api-test.sh"], "ui_test": ["sh", "scripts/ui-test.sh"]}
+    assert test_runner_mismatches(tmp_path, manifest) == [
+        "scripts/api-test.sh:4: `node --test tests/` fails with \"Cannot find module\" on Node 22, which runs a folder "
+        "as a file, so no test runs; name the files instead, e.g. `node --test tests/*.test.js`"]
+
+
 class SuitesEngine(RepairEngine):
     """The unit tests fail and the API suite after them has its own failure; both are in the first attempt's output."""
 
