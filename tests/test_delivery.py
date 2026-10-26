@@ -90,6 +90,29 @@ def test_compose_files_only_for_docker(tmp_path):
     assert (tmp_path / "compose.yaml").is_file()
 
 
+def test_the_secrets_the_application_reads_are_passed_through_compose(tmp_path):
+    import yaml
+    from autosdlc.deployment import app_secrets
+
+    files = {
+        "server/src/common/config.js": "export const secret = process.env.JWT_SECRET;\nconst url = process.env['DATABASE_URL'];\n"
+                                       "const key = process.env.MAPS_API_KEY;\n",
+        "worker/app.py": "import os\nTOKEN = os.environ.get('WEBHOOK_TOKEN')\nos.getenv('SESSION_SECRET')\n",
+        "node_modules/x/index.js": "process.env.LIBRARY_SECRET\n",
+        "tests/helpers.js": "process.env.TEST_ONLY_SECRET\n",
+    }
+    for name, content in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(content, encoding="utf-8")
+    assert app_secrets(tmp_path) == (["JWT_SECRET", "SESSION_SECRET"], ["MAPS_API_KEY", "WEBHOOK_TOKEN"])
+    write_deployment_files(tmp_path, validate_decisions({**_decisions("docker"), "project_type": "backend", "database": "none",
+                                                        "cache": "none", "observability": "none", "ui": "none"}))
+    environment = yaml.safe_load((tmp_path / "compose.yaml").read_text(encoding="utf-8"))["services"]["app"]["environment"]
+    assert environment["JWT_SECRET"] == "${JWT_SECRET:?set JWT_SECRET}"
+    assert environment["MAPS_API_KEY"] == "${MAPS_API_KEY:-}"
+    assert "JWT_SECRET=change-me-to-a-long-random-value" in (tmp_path / ".env.example").read_text(encoding="utf-8")
+
+
 def test_binary_delivery_builds_executables_after_the_tests(tmp_path, monkeypatch):
     result, events = _run(tmp_path, monkeypatch, CliEngine(), "binary")
 

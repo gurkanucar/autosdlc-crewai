@@ -52,6 +52,11 @@ def questions() -> dict[str, dict]:
     return yaml.safe_load(source.read_text(encoding="utf-8"))
 
 
+# Characters an optional free text decision (the constraints) may have: a web app template that names its structure,
+# validation, UI kit and the mistakes of earlier runs needs well over 1000.
+OPTIONAL_TEXT_LIMIT = 3000
+
+
 def question_text(name: str) -> str:
     """The question for a decision, in the active language."""
     return t(questions()[name]["question"])
@@ -91,7 +96,8 @@ def validate_decisions(decisions: dict[str, str] | None) -> dict[str, str]:
         raise ValueError(f"These architecture decisions are required: {', '.join(missing)}")
     for name, value in selected.items():
         if catalog[name].get("free_text"):
-            if not isinstance(value, str) or (not catalog[name].get("optional") and not value.strip()) or len(value) > (1000 if catalog[name].get("optional") else 200):
+            limit = OPTIONAL_TEXT_LIMIT if catalog[name].get("optional") else 200
+            if not isinstance(value, str) or (not catalog[name].get("optional") and not value.strip()) or len(value) > limit:
                 raise ValueError(f"Invalid {name}: enter a short text")
         # A stored project keeps "none" for a choice that did not apply to it (e.g. platforms of a Docker project).
         elif value not in catalog[name]["options"] and not (value == "none" and not applies(catalog[name], selected)):

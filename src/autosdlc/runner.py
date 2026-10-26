@@ -6,6 +6,7 @@ import os
 import posixpath
 import json
 import re
+import secrets
 import shutil
 import signal
 import socket
@@ -24,7 +25,7 @@ import yaml
 
 from .crewai_engine import ClarificationNeeded, CrewAIEngine
 from .i18n import normalize, t
-from .deployment import write_deployment_files
+from .deployment import app_secrets, write_deployment_files
 from .services import LocalServices
 from .exports import is_compiled_binary, plain
 from .files import MAX_FILE_BYTES, write_generated_files
@@ -80,6 +81,8 @@ SUITE_TIMEOUT = 1800
 # tests had all finished waited silently for open connections until the whole timeout ran out. Setup is left out, as
 # an install or a download may stay quiet for a long time.
 SUITE_SILENCE = 300
+# Preloaded into the API and UI test commands: what the browser of a Playwright test saw fail goes into the report.
+BROWSER_LOG_HOOK = Path(__file__).with_name("hooks") / "browser_log.mjs"
 # Fix rounds the compile check may ask for before the test attempts; they do not count as test attempts.
 BUILD_FIXES = 2
 SERVER_START_FAILURES = ("The application server exited before the tests",
@@ -103,6 +106,15 @@ REVERTED_NOTE = (
     "\n\nYOUR LAST REPAIR WAS ROLLED BACK: with it {count} tests passed instead of {best}. It broke: {broken}. The output "
     "above is from the restored code. Change only what the failing tests above need, and keep the code the passing "
     "tests rely on.\n"
+)
+
+CONTRADICTION_NOTE = (
+    "\n\nTHESE TESTS MAY CONTRADICT EACH OTHER: the developer's last repair made these pass:\n{fixed}\nand broke these, "
+    "which passed before:\n{broken}\nThe repair was rolled back (the first failures above are from the restored code, "
+    "the others from the rolled back one). Check both groups against the requirements. When they demand opposite "
+    "behaviour of the same endpoint (one test expects a request to be rejected that another sends as its setup and "
+    "needs to succeed, e.g. an event with a past date), no application passes both: fix or remove the test the "
+    "requirements do not back. Return no file when they do not contradict each other.\n"
 )
 
 
@@ -271,6 +283,34 @@ def regressed_tests(before: str, after: str, tests_before: dict[str, str], tests
     return found
 
 
+def failures_named(output: str, names: set[str]) -> str:
+    """The failure blocks of these tests from a TAP output, without the counts and logs of failure_digest."""
+    kept: list[str] = []
+
+    def keep(block: list[str]) -> bool:
+        match = _TAP_NOT_OK.match(block[0])
+        if match and match.group(2) in names and _leaf_failure(block):
+            kept.extend(block)
+        return False
+
+    failure_digest(output, keep)
+    return "\n".join(kept) + "\n" if kept else ""
+
+
+def contradiction_report(restored: str, rolled_back: str) -> tuple[str, set[str]]:
+    """When a rolled back repair fixed some tests and broke others, the failures of both groups for the Test Agent and
+    the names of the tests it fixed; ("", set()) otherwise. Fixing "past date returns 400" broke the two tests that
+    create a past event through the same endpoint, twice, and the developer could only go back and forth."""
+    before, after = failing_test_names(restored), failing_test_names(rolled_back)
+    fixed, broken = before - after, after - before
+    blocks = failures_named(restored, fixed), failures_named(rolled_back, broken)
+    if not all(blocks):
+        return "", set()
+    return blocks[0] + blocks[1] + CONTRADICTION_NOTE.format(
+        fixed="\n".join(f"- {name}" for name in sorted(fixed)[:10]),
+        broken="\n".join(f"- {name}" for name in sorted(broken)[:10])), fixed
+
+
 def failing_test_names(output: str) -> set[str]:
     return {match.group(2) for line in output.splitlines() if (match := _TAP_NOT_OK.match(line))} | set(
         re.findall(r"^FAILED (\S+)", output, re.M))
@@ -340,6 +380,29 @@ def _run_logged(command: list[str], cwd: Path, env: dict[str, str], log: Path, t
                     _stop_process(process)
                     return (f"stopped after {silence} seconds without output, likely hung (an open connection, "
                             f"server or browser keeps the process alive)\n{_tail(log, 2500)}"), None
+
+
+def with_browser_log(env: dict[str, str], log: Path) -> dict[str, str]:
+    """The environment of a test command with the browser log hook preloaded into its Node processes."""
+    log.unlink(missing_ok=True)
+    if not BROWSER_LOG_HOOK.is_file():
+        return env
+    options = f"{env.get('NODE_OPTIONS', '')} --import {BROWSER_LOG_HOOK.as_uri()}".strip()
+    return {**env, "NODE_OPTIONS": options, "AUTOSDLC_BROWSER_LOG": str(log)}
+
+
+def browser_log_section(log: Path, limit: int = 40) -> str:
+    """The distinct lines the browser log hook recorded, as a section of the test output; "" when there are none."""
+    try:
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ""
+    distinct = list(dict.fromkeys(line for line in lines if line.strip()))
+    if not distinct:
+        return ""
+    left_out = f"\n[... {len(distinct) - limit} more lines left out ...]" if len(distinct) > limit else ""
+    return ("### Browser log (what the UI test's browser saw fail: responses of 400 and above, failed requests, "
+            "console and page errors)\n" + "\n".join(distinct[:limit]) + left_out)
 
 
 def with_display(command: list[str], env: dict[str, str], platform: str = sys.platform) -> list[str]:
@@ -919,6 +982,8 @@ class RunSession:
         self.idea = idea.strip()
         # A retry of the Testing stage that runs the test files already on disk instead of writing a new suite.
         self.keep_tests = keep_tests
+        # The signing secrets the test runs give the application, the same for every run of this session.
+        self.test_secrets: dict[str, str] = {}
         self.workspace = Path(workspace).resolve()
         self.run_id = run_id or uuid.uuid4().hex[:12]
         self.history = History(self.workspace / "runs" / "history.sqlite3")
@@ -1475,6 +1540,9 @@ class RunSession:
         if self.decisions.get("project_type") in {"backend", "fullstack"}:
             # Files the tests upload stay out of the project folder.
             env["UPLOADS_DIR"] = str(self.output_dir / "tmp" / "uploads")
+            # A signing secret has no default in the code (compose.yaml requires it), so the tests get one of their own.
+            for name in app_secrets(self.project_dir)[0]:
+                env[name] = self.test_secrets.setdefault(name, secrets.token_hex(32))
         started = self.services.env is not None
         env.update(self.services.start())
         if not started:
@@ -1575,6 +1643,8 @@ class RunSession:
         limit, extra, previous = self.max_repairs + 1, 0, None
         # The output of the last attempt and the test files it ran, to find tests the code repair after it broke.
         last_run: tuple[str, dict[str, str]] | None = None
+        # The tests a rolled back repair had fixed whose clash with others the Test Agent already checked.
+        checked_clashes: list[set[str]] = []
         number = 0
         while number < limit:
             number += 1
@@ -1599,7 +1669,7 @@ class RunSession:
                 self.test_passed = True
                 break
             count = passed_test_count(output)
-            base, note = output, ""
+            base, note, clash, clash_tests = output, "", "", set()
             if (number == limit and extra < EXTRA_ATTEMPTS and self.max_repairs and count is not None
                     and previous is not None and count > previous):
                 # The last repair fixed tests (0, 1, 2 of 4 UI tests passed over three attempts, then no attempt was
@@ -1621,6 +1691,9 @@ class RunSession:
                     best=best["number"]) + "\n")
                 base = best["output"]
                 note = REVERTED_NOTE.format(count=count, best=best["passes"], broken="; ".join(broken[:15]) or "-")
+                clash, clash_tests = contradiction_report(best["output"], output)
+                if clash_tests in checked_clashes:
+                    clash = ""
                 # The next repair starts from the restored code: progress and broken tests are measured against it,
                 # not against the attempt that was thrown away (20 → 47 passed once looked like progress, and tests
                 # of the discarded attempt were reported as broken).
@@ -1641,6 +1714,16 @@ class RunSession:
                 last_run = (output, tests_run)
             if number >= limit:
                 continue
+            if clash:
+                checked_clashes.append(clash_tests)
+                self._event("testing", "tests_contradiction", "; ".join(sorted(clash_tests)[:5]))
+                if self._repair_tests(clash, "tests that may contradict each other"):
+                    # The developer is not sent after the tests the Test Agent has just looked at.
+                    base = failure_digest(base, lambda block: (match := _TAP_NOT_OK.match(block[0])) is None
+                                          or match.group(2) not in clash_tests)
+                    if not failing_test_names(base):
+                        self._fix_build(with_tests=True)
+                        continue
             if failure_is_in_tests(output):
                 # The error is in the Test Agent's own files; the developer is not allowed to touch them, so the author repairs them.
                 if self._repair_tests(failure_digest(base) + note, f"from test attempt {number}"):
@@ -1836,10 +1919,14 @@ class RunSession:
                             return "\n".join(logs + [SERVER_START_FAILURES[1], _tail(server_log)]), -1
                         time.sleep(0.2)
                 resolved = self._command(command, env)
+                command_env = env
                 if label != "Setup":
                     resolved = with_display(resolved, env)
+                browser_log = temp_dir / f"browser-{label.lower()}.log"
+                if label in {"API", "UI"}:
+                    command_env = with_browser_log(env, browser_log)
                 # Into a log file rather than a pipe, so the live activity view can show the output while it runs.
-                output, code = self._run_reported(label, resolved, env, temp_dir / f"{label.lower()}.log",
+                output, code = self._run_reported(label, resolved, command_env, temp_dir / f"{label.lower()}.log",
                                                    timeout=SUITE_TIMEOUT,
                                                    silence=None if label == "Setup" else SUITE_SILENCE)
                 if code is None:
@@ -1848,6 +1935,8 @@ class RunSession:
                 if code:
                     if server is not None:
                         logs.append("### Application server log\n" + _tail(server_log))
+                    if label in {"API", "UI"} and (browser := browser_log_section(browser_log)):
+                        logs.append(browser)
                     if label == "Setup":
                         return "\n".join(logs), code
                     # The other suites still run: UI tests left out while the API tests failed showed their own

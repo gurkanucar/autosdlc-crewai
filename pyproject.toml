@@ -29,7 +29,7 @@ autosdlc = "autosdlc.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-autosdlc = ["config/*.yaml", "config/locales/*/*.yaml"]
+autosdlc = ["config/*.yaml", "config/locales/*/*.yaml", "hooks/*.mjs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

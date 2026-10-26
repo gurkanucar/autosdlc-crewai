@@ -114,6 +114,7 @@ EVENT_NAMES = {
     "old_tests_removed": "Old tests removed", "stubs_rejected": "Placeholder file rejected",
     "test_issues_reported": "Tests reported as wrong", "repair_reverted": "Repair rolled back",
     "attempt_added": "Extra test attempt", "tests_kept": "Tests kept", "repair_regressed": "Repair broke tests",
+    "tests_contradiction": "Tests may contradict",
 }
 # Stage -> (file, label, stage to regenerate from when edited). None: read-only.
 STAGE_DOCUMENTS = {
@@ -376,6 +377,7 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "repair_reverted": t("↩️ The last repair made more tests fail, so it was rolled back ({detail}).", detail=detail),
             "tests_kept": t("📌 The tests of the last try are kept and run again ({detail}).", detail=detail),
             "repair_regressed": t("⚠️ The last repair broke tests that passed before; the developer is told to restore them: {detail}", detail=detail),
+            "tests_contradiction": t("⚖️ The rolled back repair fixed some tests and broke others; they may contradict each other, so they go back to the Test Agent: {detail}", detail=detail),
             "attempt_added": t("➕ The repairs are working, so the tests get one more attempt ({detail}).", detail=detail),
             "stubs_rejected": t("🛡️ A placeholder that would have replaced a real file was rejected: {detail}", detail=detail),
             "tests_protected": t("🛡️ An attempt to change the test files was rejected: {detail}", detail=detail),
@@ -404,9 +406,10 @@ def chat_messages(row: dict) -> list[tuple[str, str, str]]:
             "package_unavailable": t("ℹ️ This stack cannot be built into executables; launcher scripts are delivered instead."),
             "package_skipped": t("↷ No executables were built because the tests did not pass."),
             "files_skipped": t("ℹ️ Files in the reserved docs/ folder were not written: {detail}", detail=detail),
-            "tests_repair_started": t("🛠️ The developer reported some tests as wrong; I am fixing my own test files.")
-            if event["detail"] == "reported as wrong by the developer"
-            else t("🛠️ The tests themselves do not compile; I am fixing my own test files."),
+            "tests_repair_started": {
+                "reported as wrong by the developer": t("🛠️ The developer reported some tests as wrong; I am fixing my own test files."),
+                "tests that may contradict each other": t("🛠️ I am checking the tests against the requirements and fixing the one that is wrong."),
+            }.get(event["detail"], t("🛠️ The tests themselves do not compile; I am fixing my own test files.")),
             "test_issues_reported": t("🔎 These tests look wrong, not the application; they go back to the Test Agent: {detail}",
                                       detail=detail),
             "tests_repaired": t("✅ Test files fixed: {detail}", detail=detail),

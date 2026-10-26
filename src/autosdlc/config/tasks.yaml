@@ -84,7 +84,10 @@ development:
     Follow the requested language, framework, package manager and UI simplicity exactly. Code is written in English.
     Return ONLY this JSON format: {"files": {"relative/path": "complete file content", ...}}.
     Package the project according to the `delivery` decision:
-      docker: a Dockerfile suited to the chosen technology.
+      docker: a Dockerfile suited to the chosen technology. compose.yaml is generated for you: write no
+        docker-compose.yml or other compose file. Read a secret (JWT or session signing secret, API key) only
+        from an environment variable, never with a default value in the code, and stop at startup with a clear
+        message when a required one is missing; compose.yaml and the test runs provide it.
       binary: a POSIX sh script build.sh that builds standalone executables into dist/ ONLY for the operating
         systems in the `platforms` decision (windows, linux, macos, or all of them), named <app>-<os>-<arch>
         (with .exe for Windows); building more targets than asked only wastes time. Go: CGO_ENABLED=0 with

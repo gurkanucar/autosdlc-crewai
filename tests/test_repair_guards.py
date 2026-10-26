@@ -766,3 +766,99 @@ def test_a_server_that_does_not_start_is_repaired_without_using_an_attempt(tmp_p
     assert result.attempts == 1
     assert ("development", "repair_started", "the application server did not start") in events
     assert "module_that_does_not_exist" in engine.reasons[0]
+
+
+def _tap_failure(number, name, error):
+    return (f"not ok {number} - {name}\n  ---\n  duration_ms: 5\n  type: 'test'\n"
+            f"  location: '/data/app/tests/events.test.js:{number}:1'\n  error: '{error}'\n  ...\n")
+
+
+def test_a_rolled_back_repair_that_traded_tests_is_reported_as_a_possible_contradiction():
+    from autosdlc.runner import contradiction_report
+
+    restored = ("### API tests (exit 1)\nok 1 - past events are not listed\n"
+                + _tap_failure(2, "past date returns 400", "expected 400, got 201")
+                + _tap_failure(3, "UI card is visible", "locator timeout") + "# pass 1\n# fail 2\n")
+    rolled_back = ("### API tests (exit 1)\n" + _tap_failure(1, "past events are not listed", "expected 201, got 400")
+                   + "ok 2 - past date returns 400\n" + _tap_failure(3, "UI card is visible", "locator timeout")
+                   + "# pass 1\n# fail 2\n")
+    report, fixed = contradiction_report(restored, rolled_back)
+    assert fixed == {"past date returns 400"}
+    assert "not ok 2 - past date returns 400" in report and "not ok 1 - past events are not listed" in report
+    assert "UI card is visible" not in report and "MAY CONTRADICT EACH OTHER" in report
+    # A repair that only broke tests (or only fixed some) is no contradiction.
+    assert contradiction_report(restored, restored + _tap_failure(4, "another", "x")) == ("", set())
+
+
+def test_the_browser_log_is_reported_once_per_line(tmp_path):
+    from autosdlc.runner import BROWSER_LOG_HOOK, browser_log_section, with_browser_log
+
+    log = tmp_path / "browser-ui.log"
+    log.write_text("left over from the last attempt\n", encoding="utf-8")
+    env = with_browser_log({"NODE_OPTIONS": "--max-old-space-size=512"}, log)
+    assert not log.exists() and env["AUTOSDLC_BROWSER_LOG"] == str(log)
+    assert env["NODE_OPTIONS"] == f"--max-old-space-size=512 --import {BROWSER_LOG_HOOK.as_uri()}"
+    assert browser_log_section(log) == ""
+    log.write_text("404 GET http://127.0.0.1:3000/api/api/events\n" * 3 + "page error: boom\n", encoding="utf-8")
+    assert browser_log_section(log).splitlines()[1:] == ["404 GET http://127.0.0.1:3000/api/api/events",
+                                                         "page error: boom"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_browser_log_hook_leaves_a_process_without_playwright_alone(tmp_path):
+    import subprocess
+    from autosdlc.runner import with_browser_log
+
+    env = with_browser_log({"PATH": __import__("os").environ["PATH"]}, tmp_path / "browser.log")
+    result = subprocess.run(["node", "-e", "console.log('ran')"], cwd=tmp_path, env=env, capture_output=True,
+                            text=True, timeout=30)
+    assert result.returncode == 0 and result.stdout.strip() == "ran" and not (tmp_path / "browser.log").exists()
+
+
+class ContradictingEngine(RepairEngine):
+    """Two tests want opposite answers from check(-1). The first repair makes the one that wants false pass, breaks the
+    other one and mul(), and is rolled back; the Test Agent removes the test the requirements do not back."""
+
+    TESTS = ("import test from 'node:test';\nimport assert from 'node:assert/strict';\n"
+             "import { add, mul, check } from '../src/calc.js';\n\n"
+             "test('FR-01 add', () => { assert.equal(add(1, 2), 3); });\n"
+             "test('FR-01 mul', () => { assert.equal(mul(2, 3), 6); });\n"
+             "test('FR-01 a negative is accepted as setup', () => { assert.equal(check(-1), true); });\n")
+    WRONG = "test('FR-01 a negative is rejected', () => { assert.equal(check(-1), false); });\n"
+
+    def __init__(self, workspace):
+        super().__init__(workspace, [])
+        self.test_feedback = []
+
+    def code(self, idea, docs, feedback=None, change=None):
+        bodies = {0: ("a - b", "a * b", "true"), 1: ("a - b", "a + b", "false"), 2: ("a + b", "a * b", "true")}
+        if feedback is not None:
+            self.reasons.append(feedback)
+        add, mul, check = bodies[min(len(self.reasons), 2)]
+        files = {"src/calc.js": f"export function add(a, b) {{ return {add}; }}\n"
+                                f"export function mul(a, b) {{ return {mul}; }}\n"
+                                f"export function check(n) {{ return {check}; }}\n"}
+        if feedback is None:
+            files["package.json"] = '{"name": "calc", "type": "module"}\n'
+            files["project.yaml"] = "unit_test: [node, --test, tests/calc.test.js]\n"
+        return files
+
+    def tests(self, idea, docs, files, change=None, feedback=None):
+        if feedback is not None:
+            self.test_feedback.append(feedback)
+            return {"tests/calc.test.js": self.TESTS} if "MAY CONTRADICT EACH OTHER" in feedback else {}
+        return {"tests/calc.test.js": self.TESTS + self.WRONG}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs Node.js")
+def test_tests_a_rolled_back_repair_traded_go_to_the_test_agent(tmp_path, monkeypatch):
+    engine = ContradictingEngine(tmp_path)
+    result, events = _run(tmp_path, monkeypatch, engine, {
+        "project_type": "library", "stack": "Node.js", "delivery": "none", "scale": "small"})
+    assert result.status == "completed", result.error
+    assert ("testing", "tests_contradiction", "FR-01 a negative is rejected") in events
+    feedback = engine.test_feedback[0]
+    assert "not ok 4 - FR-01 a negative is rejected" in feedback
+    assert "not ok 3 - FR-01 a negative is accepted as setup" in feedback
+    # The developer is not sent after the test the Test Agent has just removed.
+    assert "FR-01 a negative is rejected" not in engine.reasons[1] and "FR-01 add" in engine.reasons[1]

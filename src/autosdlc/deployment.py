@@ -1,15 +1,51 @@
 """Deterministic container artifacts derived from reviewed architecture choices."""
 
+import re
 from pathlib import Path
 
 import yaml
 
+# Environment variables the application reads: process.env.X / process.env["X"] (Node.js), os.environ["X"],
+# os.environ.get("X") / os.getenv("X") (Python), os.Getenv("X") (Go).
+_ENV_READ = re.compile(r"""process\.env(?:\.([A-Z][A-Z0-9_]*)|\[\s*['"]([A-Z][A-Z0-9_]*)['"]\s*\])"""
+                       r"""|os\.(?:environ(?:\.get)?\s*[\[(]|getenv\s*\(|Getenv\s*\()\s*['"]([A-Z][A-Z0-9_]*)['"]""")
+_SOURCES = {".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".py", ".go"}
+_SKIPPED_FOLDERS = {"node_modules", "dist", "build", "target", "vendor", "__pycache__", "tests", "test"}
+# Variables the pipeline sets itself, or keys of the pipeline that must never reach the application.
+_NOT_APP_SECRETS = {"POSTGRES_PASSWORD", "OPENCODE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"}
 
-def render_compose(decisions: dict[str, str], port: int = 8000) -> dict:
+
+def app_secrets(project_dir: Path) -> tuple[list[str], list[str]]:
+    """(the secrets the application cannot run without, the other keys/tokens/passwords it reads) from its source.
+
+    A signing secret (JWT_SECRET, SESSION_SECRET) is required: the generated compose.yaml once left JWT_SECRET out, the
+    app fell back to a default written in its code, and a token signed with that default was accepted as an admin's."""
+    names: set[str] = set()
+    for path in project_dir.rglob("*"):
+        folders = path.relative_to(project_dir).parts[:-1]
+        if path.suffix not in _SOURCES or not path.is_file() or any(
+                part in _SKIPPED_FOLDERS or part.startswith(".") for part in folders):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        names.update(next(group for group in match.groups() if group) for match in _ENV_READ.finditer(text))
+    names -= _NOT_APP_SECRETS
+    required = sorted(name for name in names if "SECRET" in name)
+    optional = sorted(name for name in names - set(required) if re.search(r"(?:_KEY|TOKEN|PASSWORD)$", name))
+    return required, optional
+
+
+def render_compose(decisions: dict[str, str], port: int = 8000,
+                   secrets: tuple[list[str], list[str]] = ([], [])) -> dict:
     app = {
         "build": ".",
         "environment": {},
     }
+    required, optional = secrets
+    app["environment"].update({name: f"${{{name}:?set {name}}}" for name in required})
+    app["environment"].update({name: f"${{{name}:-}}" for name in optional})
     if decisions["project_type"] in {"backend", "frontend", "fullstack"}:
         app["ports"] = [f"{port}:{port}"]
     services = {"app": app}
@@ -83,8 +119,10 @@ def write_deployment_files(project_dir: Path, decisions: dict[str, str], port: i
         "test-results\nplaywright-report\ntests\ntest\n",
         encoding="utf-8",
     )
-    (project_dir / "compose.yaml").write_text(yaml.safe_dump(render_compose(decisions, port), sort_keys=False), encoding="utf-8")
-    examples = []
+    secrets = app_secrets(project_dir)
+    (project_dir / "compose.yaml").write_text(yaml.safe_dump(render_compose(decisions, port, secrets), sort_keys=False),
+                                              encoding="utf-8")
+    examples = [f"{name}=change-me-to-a-long-random-value" for name in secrets[0]] + [f"{name}=" for name in secrets[1]]
     if decisions["database"] == "postgres":
         examples.append("POSTGRES_PASSWORD=change-me")
     if decisions["observability"] == "openobserve":
