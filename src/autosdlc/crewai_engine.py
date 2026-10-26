@@ -392,7 +392,9 @@ class CrewAIEngine:
                     url = f"{GO_BASE_URL}/chat/completions"
                     headers = {"Authorization": f"Bearer {inner.key}", "x-opencode-session": inner.session_id}
                     payload = {"model": inner.model, "messages": messages}
-                    effort = REASONING_EFFORT.get(inner.stage)
+                    # After a call cut at the reasoning budget the retry asks for low effort too: the nudge alone
+                    # failed on 9 of 9 retries of a design and review stage, and the run lost 50 minutes.
+                    effort = "low" if nudged else REASONING_EFFORT.get(inner.stage)
                     if effort and inner.model not in inner.no_effort:
                         payload["reasoning_effort"] = effort
                     if inner.model not in inner.no_temperature:
@@ -554,6 +556,9 @@ class CrewAIEngine:
             allow_delegation=False,
             verbose=False,
             max_iter=3,
+            # CrewAI ran a failed task twice more: a model over its reasoning budget cost three times its two
+            # attempts, about 20 minutes per stage. call() already retries what is worth retrying.
+            max_retry_limit=0,
         )
         task = self.Task(
             description=prompt,

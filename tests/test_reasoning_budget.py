@@ -119,6 +119,10 @@ def test_overthinking_is_cut_and_the_model_is_told_to_answer(monkeypatch):
     assert len(payloads) == 2
     assert BUDGET_NUDGE not in payloads[0]["messages"][-1]["content"]
     assert payloads[1]["messages"][-1]["content"].endswith(BUDGET_NUDGE)
+    # The planning stage asks for no effort of its own; the retry asks for low effort.
+    engine, payloads = _engine(monkeypatch, [_overthinking(), _answer("OK")], stage="design")
+    assert engine.llm.call("write the design") == "OK"
+    assert "reasoning_effort" not in payloads[0] and payloads[1]["reasoning_effort"] == "low"
 
 
 def test_a_model_that_keeps_overthinking_names_the_stage_to_change(monkeypatch):
@@ -188,3 +192,11 @@ def test_test_repairs_still_use_a_single_response():
     engine._ask = ask
     assert engine.tests("Book tracker", "docs", {}, feedback="SyntaxError") == {"tests/t.py": "def test(): pass\n"}
     assert len(asked) == 1 and "YOUR TESTS NEED A FIX" in asked[0]
+
+
+def test_a_model_over_its_budget_is_not_run_again_by_crewai(monkeypatch):
+    engine, payloads = _engine(monkeypatch, [_overthinking(), _overthinking(), _answer("never asked")], stage="design")
+    engine.output_listener = lambda stage, text: None
+    with pytest.raises(RuntimeError, match="reasoned more than"):
+        engine._ask("design", idea="x", context="y", language="English")
+    assert len(payloads) == 2
