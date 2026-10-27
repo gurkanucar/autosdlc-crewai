@@ -1411,3 +1411,13 @@ def test_streamlit_keeps_the_ui_language_when_the_page_drops_its_widget_key(monk
     app.session_state["kept_language"] = "tr"
     app.run()
     assert app.session_state["ui_language"] == "tr"
+
+
+def test_uncovered_tests_read_shell_commands_and_globs():
+    from autosdlc.runner import uncovered_tests
+
+    manifest = {"api_test": ["node", "--test", "tests/api/*.test.js"],
+                "ui_test": ["sh", "-c", "corepack pnpm@10.26.0 exec playwright install chromium && node --test tests/ui/*.test.js"]}
+    names = ["tests/api/a.test.js", "tests/api/helpers.js", "tests/ui/b.test.js", "tests/e2e/c.test.js"]
+    # The helper is not a test; the warning once listed every file of these commands, the helper too.
+    assert uncovered_tests(manifest, names) == ["tests/e2e/c.test.js"]

@@ -937,3 +937,21 @@ def test_tests_a_rolled_back_repair_traded_go_to_the_test_agent(tmp_path, monkey
     assert "not ok 3 - FR-01 a negative is accepted as setup" in feedback
     # The developer is not sent after the test the Test Agent has just removed.
     assert "FR-01 a negative is rejected" not in engine.reasons[1] and "FR-01 add" in engine.reasons[1]
+
+
+def test_ui_test_looking_for_an_id_the_antd_form_does_not_give(tmp_path):
+    from autosdlc.runner import ui_test_ids_missing
+
+    (tmp_path / "web/src").mkdir(parents=True)
+    (tmp_path / "web/src/Login.jsx").write_text(
+        '<Form name="login" onFinish={f}>\n  <Form.Item name="email" label="E-posta"><Input /></Form.Item>\n'
+        '  <Form.Item name="password" label="Parola"><Input.Password /></Form.Item>\n</Form>\n'
+        '<Form onFinish={g}><Form.Item name="title"><Input /></Form.Item></Form>\n<div id="events" />\n',
+        encoding="utf-8")
+    (tmp_path / "tests/ui").mkdir(parents=True)
+    (tmp_path / "tests/ui/login.test.js").write_text(
+        "await page.locator('#email').fill(a);\nawait page.fill('#login_password', b);\n"
+        "await page.locator('#title').fill(c);\nawait page.locator('#events').waitFor();\n", encoding="utf-8")
+    problems = ui_test_ids_missing(tmp_path)
+    assert problems == ["tests/ui/login.test.js:1: looks for #email, but no element has that id: the antd form gives "
+                        "its email input the id login_email; use page.getByLabel('E-posta') or #login_email"]

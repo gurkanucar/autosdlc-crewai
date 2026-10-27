@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import posixpath
 import glob
 import json
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import socket
@@ -705,6 +707,49 @@ def test_helper_misuse(project_dir: Path) -> list[str]:
     return problems
 
 
+_JS_FORM = re.compile(r"<Form\b([^>]*)>(.*?)</Form>", re.S)
+_JS_FORM_ITEM = re.compile(r"<Form\.Item\b([^>]*?)>", re.S)
+_JSX_STRING_PROP = r"""\b{}\s*=\s*(?:\{{\s*)?['"`]([^'"`]+)['"`]"""
+_TEST_ID_SELECTOR = re.compile(
+    r"""\b(?:locator|fill|click|type|check|press|waitForSelector|\$)\(\s*['"`]#([\w-]+)['"`]""")
+
+
+def ui_test_ids_missing(project_dir: Path) -> list[str]:
+    """`#x` selectors in the tests for a form field whose input has another id. antd's <Form name="login"> gives the
+    email field the id login_email: a UI test waited for #email for 30 seconds in every attempt and the change failed
+    with the application working."""
+    web = {name: _source(project_dir, name) for name in _project_files(project_dir, _JS_SOURCES) if not _in_tests(name)}
+    ids: set[str] = set()
+    fields: dict[str, tuple[str, str | None]] = {}  # field name -> (the id antd gives it, its label)
+    for source in web.values():
+        ids.update(re.findall(_JSX_STRING_PROP.format("id"), source))
+        for form in _JS_FORM.finditer(source):
+            form_name = re.search(_JSX_STRING_PROP.format("name"), form.group(1))
+            for item in _JS_FORM_ITEM.finditer(form.group(2)):
+                field = re.search(_JSX_STRING_PROP.format("name"), item.group(1))
+                if not field:
+                    continue
+                label = re.search(_JSX_STRING_PROP.format("label"), item.group(1))
+                given = f"{form_name.group(1)}_{field.group(1)}" if form_name else field.group(1)
+                ids.add(given)
+                fields.setdefault(field.group(1), (given, label.group(1) if label else None))
+    problems = []
+    for name in _project_files(project_dir, _JS_SOURCES):
+        if not _in_tests(name):
+            continue
+        source = _source(project_dir, name)
+        for match in _TEST_ID_SELECTOR.finditer(source):
+            wanted = match.group(1)
+            if wanted in ids or wanted not in fields:
+                continue
+            given, label = fields[wanted]
+            line = source.count("\n", 0, match.start()) + 1
+            instead = f"page.getByLabel('{label}') or #{given}" if label else f"#{given}"
+            problems.append(f"{name}:{line}: looks for #{wanted}, but no element has that id: the antd form gives "
+                            f"its {wanted} input the id {given}; use {instead}")
+    return problems
+
+
 def missing_js_packages(project_dir: Path) -> list[str]:
     """Packages a JS file imports that are not installed where Node looks for them from that file.
 
@@ -891,6 +936,7 @@ def test_placement_problem(tests: dict[str, str]) -> str | None:
 
 
 PATH_RUNNERS = {"pytest", "node", "jest", "mocha", "vitest"}
+_TEST_FILE = re.compile(r"^test_|_test\.|[.\-]test\.|\.spec\.|Test\.java$")
 
 
 def uncovered_tests(manifest: dict, test_names: list[str]) -> list[str]:
@@ -899,15 +945,25 @@ def uncovered_tests(manifest: dict, test_names: list[str]) -> list[str]:
     If the commands do not name a test file/folder (e.g. "npm test") the coverage is unknowable and an empty list is returned.
     """
     # Only runners that take a file path are examined; the "test" in "npm test" or "go test" is a subcommand.
-    commands = [manifest.get(key) or [] for key in ("unit_test", "api_test", "ui_test")]
+    commands = []
+    for key in ("unit_test", "api_test", "ui_test"):
+        command = [str(arg) for arg in manifest.get(key) or []]
+        # [sh, -c, "a && b"] runs the commands in its string; the warning once named every file of such a ui_test.
+        if len(command) >= 3 and Path(command[0]).name in {"sh", "bash"} and command[1] == "-c":
+            commands += [shlex.split(part) for part in re.split(r"&&|\|\||;", command[2]) if part.strip()]
+        else:
+            commands.append(command)
     targets = [arg.rstrip("/") for command in commands
                if any(Path(token).name in PATH_RUNNERS for token in command[:3])
                for arg in command[1:] if arg.rstrip("/") in {"tests", "test"} or arg.startswith(TEST_DIRS)]
     if not targets:
         return []
+    # node --test expands tests/api/*.test.js itself; a helper next to the tests (tests/api/helpers.js) is not a test.
     return sorted(name for name in test_names
                   if name.endswith((".py", ".js", ".ts", ".mjs", ".go", ".rs", ".java"))
-                  and not any(name == target or name.startswith(target + "/") for target in targets))
+                  and not (any("*" in target for target in targets) and not _TEST_FILE.search(Path(name).name))
+                  and not any(name == target or name.startswith(target + "/") or fnmatch.fnmatch(name, target)
+                              for target in targets))
 
 
 def backup_versions(output_dir: Path, filename: str) -> None:
@@ -1948,7 +2004,8 @@ class RunSession:
         if syntax_errors:
             return "\n".join(syntax_errors[:25]), 1
         problems = (missing_js_imports(self.project_dir) + missing_js_packages(self.project_dir)
-                    + test_runner_mismatches(self.project_dir, self.manifest) + test_helper_misuse(self.project_dir))
+                    + test_runner_mismatches(self.project_dir, self.manifest) + test_helper_misuse(self.project_dir)
+                    + ui_test_ids_missing(self.project_dir))
         # The application's problems alone first: the developer cannot fix the tests, and the tests may be right.
         problems = [problem for problem in problems if not _in_tests(problem.split(":", 1)[0])] or problems
         if problems:
