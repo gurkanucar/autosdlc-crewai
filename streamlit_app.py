@@ -48,7 +48,10 @@ st.set_page_config(page_title="AutoSDLC", page_icon="🧭", layout="wide")
 def use_language() -> None:
     """Applies the language chosen in this browser session; called at the top of every script run, fragment and dialog."""
     if "ui_language" not in st.session_state:
-        st.session_state["ui_language"] = normalize(st.query_params.get("lang"))
+        # st.switch_page drops the selector's widget key and the ?lang= parameter; the kept copy survives it, or the
+        # Turkish UI turned English after "Create the project".
+        st.session_state["ui_language"] = st.session_state.get("kept_language") or normalize(st.query_params.get("lang"))
+    st.session_state["kept_language"] = st.session_state["ui_language"]
     set_language(st.session_state["ui_language"])
 
 
@@ -1276,6 +1279,7 @@ def wait_for_start(run_id: str) -> None:
 def language_selector() -> None:
     """UI language of this browser session; the project's document language is chosen separately in the new-project form."""
     st.selectbox(t("Interface language"), list(LANGUAGES), format_func=LANGUAGES.get, key="ui_language")
+    st.session_state["kept_language"] = st.session_state["ui_language"]
     st.query_params["lang"] = st.session_state["ui_language"]
 
 
@@ -1330,7 +1334,10 @@ def projects_page() -> None:
 
 def apply_template(template_id: str | None) -> None:
     """Writes the selected template's values into the form fields (button callback: runs before the widgets)."""
-    template = next((item for item in templates() if item["id"] == template_id), None)
+    # A callback runs before the script's use_language(), in whatever language the thread had: the Turkish UI got the
+    # English idea and constraints.
+    use_language()
+    template =next((item for item in templates() if item["id"] == template_id), None)
     if template is None:
         return
     chosen = template["decisions"]

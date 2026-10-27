@@ -1384,3 +1384,30 @@ def test_legacy_turkish_protocol_tokens_are_still_accepted():
     base = "# Requirements\n\n## Functional\n\nFR-01: x\n"
     assert apply_patch(base, "DEĞİŞİKLİK YOK") == (base, 0, 0)
     assert apply_patch(base, "# Requirements\n\n## Functional\n\nFR-01: x\n<!-- SONRA: Functional -->\n## Extra\n\ny\n")[2] >= 0
+
+
+def test_streamlit_template_is_applied_in_the_ui_language(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    from autosdlc.i18n import set_language
+
+    monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
+    app = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30).run()
+    app.selectbox(key="template_choice").select("event-registration-node").run()
+    # The button callback runs before the script sets the language; the thread may still hold another session's.
+    app.session_state["ui_language"] = "tr"
+    set_language("en")
+    app.button(key="apply_template").click().run()
+    assert app.session_state["idea_input"].startswith("Bir etkinlik kayıt")
+    assert app.session_state["constraints_input"].startswith("İki klasör")
+
+
+def test_streamlit_keeps_the_ui_language_when_the_page_drops_its_widget_key(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
+    app = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "streamlit_app.py"), default_timeout=30)
+    # What st.switch_page leaves: the selector's key and ?lang= are gone, the kept copy is not.
+    app.session_state["kept_language"] = "tr"
+    app.run()
+    assert app.session_state["ui_language"] == "tr"
