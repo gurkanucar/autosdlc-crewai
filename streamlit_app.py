@@ -18,7 +18,8 @@ from dotenv import load_dotenv
 
 from autosdlc.auth import auth_enabled, password_matches
 from autosdlc.crewai_engine import CrewAIEngine
-from autosdlc.exports import ANSI_ESCAPE, diagnostics_text, diagnostics_zip, export_files, export_zip, project_zip
+from autosdlc.exports import (ANSI_ESCAPE, diagnostics_text, diagnostics_zip, documents_html, documents_pdf, export_files,
+                              export_zip, project_zip)
 from autosdlc.desktop import can_open_folders, open_folder
 from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
 from autosdlc.intake import applies, choice_label, default_delivery, question_text, templates, questions, validate_decisions
@@ -1159,6 +1160,12 @@ def header(db: History, row: dict) -> None:
                 st.download_button(label, lambda kind=kind: export_zip(Path(row["project_dir"]), Path(row["output_dir"]), kind),
                                    file_name=f"{run_id}-{kind}.zip", mime="application/zip", icon=":material/download:",
                                    key=f"bundle_{run_id}_{kind}", width="stretch", on_click="ignore")
+            st.download_button(t("All documents in one PDF"), lambda: documents_pdf(documents_html(
+                Path(row["output_dir"]), project_title(row), lifecycle_svg(row),
+                t("The diagram could not be drawn; its source follows."))),
+                               file_name=f"{run_id}-documents.pdf", mime="application/pdf", icon=":material/picture_as_pdf:",
+                               key=f"pdf_{run_id}", width="stretch", on_click="ignore",
+                               help=t("Every SDLC document with its tables and Mermaid diagrams drawn; takes a few seconds."))
             st.markdown("**" + t("Diagnostics") + "**")
             st.caption(t("Where and why the run broke: the error traceback, every model call, build/test logs and the event timeline. API keys and passwords are masked."))
             st.download_button(t("Failure report (ZIP)"), lambda: diagnostics_zip(db.get(run_id), db.changes(run_id), db.iterations(run_id)),

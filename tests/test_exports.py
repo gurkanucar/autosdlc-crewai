@@ -152,3 +152,35 @@ def test_a_new_model_call_clears_the_previous_live_output(tmp_path):
     session._activity_written = 0.0
     RunSession._activity(session, {"kind": "model", "stage": "testing", "phase": "waiting"})
     assert not (tmp_path / "live" / "testing.md").exists() and session._live_written == 0.0
+
+
+def test_all_documents_become_one_page_with_mermaid_left_to_the_browser(tmp_path):
+    from autosdlc.exports import documents_html
+
+    (tmp_path / "requirements.md").write_text("# Gereksinimler\n\n| FR | Açıklama |\n|---|---|\n| FR-01 | Kayıt |\n",
+                                              encoding="utf-8")
+    (tmp_path / "architecture.md").write_text(
+        "# Tasarım\n\n```mermaid\ngraph TD\n  A-->B\n```\n\n<script>alert(1)</script>\n\nDoğrulanan <!-- test-result -->",
+        encoding="utf-8")
+    html = documents_html(tmp_path, "Etkinlik", "<svg id='lifecycle'></svg>")
+    # Reading order, with the missing documents left out.
+    assert html.index("Gereksinimler") < html.index("Tasarım") and "planning" not in html
+    assert '<a href="#doc2">Gereksinimler</a>' in html and "<svg id='lifecycle'></svg>" in html
+    assert "<table>" in html and "<td>FR-01</td>" in html
+    assert '<pre class="mermaid">graph TD\n  A--&gt;B\n</pre>' in html
+    # The documents are model output: their HTML is shown as text, never run.
+    assert "<script>alert(1)</script>" not in html and "&lt;script&gt;" in html
+    assert "test-result" not in html
+
+
+def test_the_documents_pdf_is_printed_by_chromium(tmp_path):
+    import pytest
+
+    from autosdlc.exports import documents_html, documents_pdf
+
+    (tmp_path / "planning.md").write_text("# Plan\n\nİlk sürüm.", encoding="utf-8")
+    try:
+        pdf = documents_pdf(documents_html(tmp_path, "Etkinlik"))
+    except Exception as exc:  # no Chromium installed on this machine
+        pytest.skip(f"Chromium is not available: {exc}")
+    assert pdf.startswith(b"%PDF")

@@ -388,3 +388,6 @@
 "Tests reported as wrong": "Hatalı bulunan testler"
 "⏳ Starting…": "⏳ Başlatılıyor…"
 "OPENCODE_API_KEY is not set in the environment; the agents cannot run.": "OPENCODE_API_KEY ortam değişkeninde tanımlı değil; ajanlar çalışamaz."
+"All documents in one PDF": "Tüm belgeler tek PDF"
+"The diagram could not be drawn; its source follows.": "Diyagram çizilemedi; kaynağı aşağıda."
+"Every SDLC document with its tables and Mermaid diagrams drawn; takes a few seconds.": "Tablolar ve çizilmiş Mermaid diyagramlarıyla bütün SDLC belgeleri; birkaç saniye sürer."

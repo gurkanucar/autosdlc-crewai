@@ -87,6 +87,101 @@ def project_zip(root: Path, files: list[Path]) -> bytes:
     return buffer.getvalue()
 
 
+# The SDLC documents in reading order; the ones a run has not written yet are left out.
+PDF_DOCUMENTS = ["planning.md", "requirements.md", "architecture.md", "design_review.md", "test_report.md",
+                 "traceability.md", "deployment.md", "maintenance_report.md", "CHANGELOG.md"]
+MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs"
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_PDF_STYLE = """
+body {font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #1f2937;}
+h1 {font-size: 18pt; border-bottom: 2px solid #e5e7eb; padding-bottom: 4pt;} h2 {font-size: 14pt;} h3 {font-size: 12pt;}
+.document {break-before: page;} .cover {text-align: center; padding-top: 40pt;} .cover svg {width: 100%; height: auto;}
+table {border-collapse: collapse; width: 100%; margin: 8pt 0; font-size: 9pt;} tr {break-inside: avoid;}
+th, td {border: 1px solid #d1d5db; padding: 3pt 5pt; text-align: left; vertical-align: top;} th {background: #f3f4f6;}
+pre {background: #f6f8fa; padding: 6pt; font-size: 8pt; white-space: pre-wrap; word-break: break-word;}
+code {font-family: "DejaVu Sans Mono", monospace; font-size: 9pt;}
+.mermaid {background: none; text-align: center; break-inside: avoid;} .mermaid svg {max-width: 100%; height: auto;}
+.mermaid-failed {font-size: 8pt; color: #b91c1c;}
+.toc {display: inline-block; text-align: left; margin-top: 24pt; font-size: 11pt;} .toc a {color: #1f2937; text-decoration: none;}
+"""
+# Draws every diagram; one with broken Mermaid code keeps its source under a note instead of stopping the others.
+_PDF_SCRIPT = """<script type="module">
+import mermaid from "%s";
+mermaid.initialize({startOnLoad: false, theme: "neutral", securityLevel: "strict"});
+for (const block of document.querySelectorAll("pre.mermaid")) {
+  const source = block.textContent;
+  try {
+    const {svg} = await mermaid.render("diagram" + Math.random().toString(36).slice(2), source);
+    block.innerHTML = svg;
+  } catch (error) {
+    block.classList.remove("mermaid");
+    block.insertAdjacentHTML("beforebegin", '<p class="mermaid-failed">%s</p>');
+  }
+}
+window.diagramsDone = true;
+</script>"""
+
+
+def documents_html(output: Path, title: str, lifecycle_svg: str | None = None,
+                   failed_note: str = "The diagram could not be drawn; its source follows.") -> str:
+    """One HTML page of every SDLC document: Markdown tables and code blocks, ```mermaid blocks left for the browser to draw."""
+    from html import escape
+
+    from markdown_it import MarkdownIt
+
+    # html=False: the documents are model output, so any raw HTML in them is shown as text, never run.
+    renderer = MarkdownIt("commonmark", {"html": False}).enable(["table", "strikethrough"])
+    default_fence = renderer.renderer.rules["fence"]
+
+    def fence(_renderer, tokens, index, options, env):
+        token = tokens[index]
+        if token.info.strip().lower() == "mermaid":
+            return f'<pre class="mermaid">{escape(token.content)}</pre>\n'
+        return default_fence(tokens, index, options, env)
+
+    renderer.add_render_rule("fence", fence)
+    sections, toc = [], []
+    for number, name in enumerate(PDF_DOCUMENTS, 1):
+        path = output / name
+        if not path.is_file():
+            continue
+        text = _HTML_COMMENT.sub("", path.read_text(encoding="utf-8", errors="replace"))
+        heading = next((line.lstrip("#").strip() for line in text.splitlines() if line.startswith("# ")), name)
+        toc.append(f'<li><a href="#doc{number}">{escape(heading)}</a></li>')
+        sections.append(f'<section class="document" id="doc{number}">{renderer.render(text)}</section>')
+    cover = f'<section class="cover"><h1>{escape(title)}</h1>{lifecycle_svg or ""}<ol class="toc">{"".join(toc)}</ol></section>'
+    script = _PDF_SCRIPT % (MERMAID_CDN, escape(failed_note).replace("'", "&#39;"))
+    return (f'<!doctype html><html><head><meta charset="utf-8"><title>{escape(title)}</title>'
+            f'<style>{_PDF_STYLE}</style></head><body>{cover}{"".join(sections)}{script}</body></html>')
+
+
+def documents_pdf(html: str, timeout_ms: int = 60_000) -> bytes:
+    """Prints the page with headless Chromium after Mermaid has drawn the diagrams. Only the Mermaid CDN is reachable:
+    the documents are model output and must not load anything else."""
+    from playwright.sync_api import sync_playwright
+
+    host = MERMAID_CDN.split("/")[2]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.continue_() if route.request.url.split("/")[2:3] == [host]
+                       or route.request.url.startswith("data:") else route.abort())
+            page.set_content(html, wait_until="load")
+            if 'class="mermaid"' in html:
+                try:
+                    page.wait_for_function("window.diagramsDone === true", timeout=timeout_ms)
+                except Exception:
+                    pass  # CDN unreachable: the diagrams stay as source code, the rest of the PDF is still useful.
+            return page.pdf(format="A4", print_background=True, display_header_footer=True,
+                            header_template="<span></span>",
+                            footer_template='<div style="font-size:8pt;width:100%;text-align:center;color:#6b7280">'
+                                            '<span class="pageNumber"></span> / <span class="totalPages"></span></div>',
+                            margin={"top": "16mm", "bottom": "18mm", "left": "14mm", "right": "14mm"})
+        finally:
+            browser.close()
+
+
 # Per file in the failure report: logs can grow large, and their end holds the error.
 DIAGNOSTIC_FILE_LIMIT = 2_000_000
 SECRET_PATTERNS = [
