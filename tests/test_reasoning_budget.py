@@ -68,7 +68,17 @@ def test_the_temperature_is_sent_and_dropped_when_the_gateway_rejects_it(monkeyp
     assert payloads[1]["reasoning_effort"] == "low"
 
 
-GARBLED = "## 9. Bakım\nBil الإنسan discharge了打工作报告 планируемый таблица 和 birdecimal"
+def test_crewai_cache_markers_are_not_sent_to_the_gateway(monkeypatch):
+    from crewai.llms.cache import mark_cache_breakpoint
+
+    engine, payloads = _engine(monkeypatch, [_answer("OK")])
+    messages = [mark_cache_breakpoint({"role": "system", "content": "rules"}),
+                mark_cache_breakpoint({"role": "user", "content": "write tests"})]
+    assert engine.llm.call(messages) == "OK"
+    assert payloads[0]["messages"] == [{"role": "system", "content": "rules"}, {"role": "user", "content": "write tests"}]
+
+
+GARBLED ="## 9. Bakım\nBil الإنسan discharge了打工作报告 планируемый таблица 和 birdecimal"
 
 
 def test_an_answer_that_drifts_into_other_scripts_is_asked_again(monkeypatch):

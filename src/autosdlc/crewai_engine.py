@@ -382,6 +382,9 @@ class CrewAIEngine:
                     raise ValueError("External tools are not allowed for agents in this project")
                 if isinstance(messages, str):
                     messages = [{"role": "user", "content": messages}]
+                # CrewAI 1.15 marks messages with cache_breakpoint for its own providers to translate; the gateway
+                # rejects any field it does not know with HTTP 400, and the Test stage failed on its first call.
+                messages = [{"role": message["role"], "content": message.get("content", "")} for message in messages]
                 # Three attempts with exponential backoff on temporary network/rate-limit errors.
                 nudged = repeated = False
                 # The prompt's own foreign scripts (an idea written in Russian) are not drift.
