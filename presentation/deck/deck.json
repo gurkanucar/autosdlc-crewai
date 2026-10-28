@@ -1,0 +1,30 @@
+{
+  "title": "AutoSDLC: AI agent'larla fikirden test edilmiş projeye",
+  "title_en": "AutoSDLC: from an idea to a tested project with AI agents",
+  "order": [
+    "kapak",
+    "problem",
+    "fikir",
+    "stack",
+    "mimari",
+    "kod-yaml",
+    "kod-flow",
+    "kod-agent",
+    "donguler",
+    "kod-review",
+    "insan",
+    "cr",
+    "ekran",
+    "demo",
+    "hatalar",
+    "hata-model",
+    "hata-test",
+    "hata-turkce",
+    "hata-framework",
+    "hata-altyapi",
+    "dersler",
+    "sinirlar",
+    "kapanis",
+    "terimler"
+  ]
+}

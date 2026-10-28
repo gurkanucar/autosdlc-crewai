@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Agents and tasks are defined in YAML</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="kod-yaml" class="slide code-slide" data-chapter="A short look at the code" aria-labelledby="title-kod-yaml">
+<header class="slide-header"><p class="chapter">A short look at the code</p><h2 id="title-kod-yaml">Agents and tasks are<br><span class="marker">defined in YAML</span></h2></header>
+<div class="slide-content"><div class="code-pair"><div class="reveal code-block code-small" data-step="1" data-anim="fade"><p class="code-caption">config/agents.yaml (shortened)</p><pre><code><b class="f">review</b>:
+  role: <b class="s">Architecture Review Agent</b>
+  goal: <b class="s">Independently audit the design</b>
+    <b class="s">against the requirements.</b>
+  backstory: <b class="s">A senior architect who catches</b>
+    <b class="s">missing requirements before any</b>
+    <b class="s">code is written.</b>
+
+<b class="f">testing</b>:
+  role: <b class="s">Test Agent</b>
+  goal: <b class="s">Prepare API, UI and unit tests</b>
+    <b class="s">that match the requirements.</b></code></pre></div><div class="reveal code-block code-small" data-step="2" data-anim="fade"><p class="code-caption">config/tasks.yaml (shortened)</p><pre><code><b class="f">review</b>:
+  description: |
+    <b class="s">Project idea: $idea</b>
+    <b class="s">The design to review: $context</b>
+    <b class="s">Write the whole report in $language.</b>
+    <b class="s">Findings: | No | Severity | Finding |</b>
+    <b class="s">Critical or High finding → REVISE.</b>
+    <b class="s">The last line must be exactly</b>
+    <b class="s">"VERDICT: APPROVE" or "VERDICT: REVISE".</b>
+  expected_output: <b class="s">A review report</b>
+    <b class="s">with a findings table and a VERDICT line.</b></code></pre></div></div><p class="reveal caption" data-step="3" data-anim="fade">Prompts live apart from the code: adding or changing an agent needs no Python. The application fills the variables that start with <code>$</code>. Prompts are in English; <code>$language</code> chooses the document language.</p></div>
+<footer class="slide-footer"><span>AutoSDLC · SDLC with AI agents</span><span class="folio">06 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Speaker notes"><p>In CrewAI an agent is defined by three things: its role, its goal and its backstory. A task says what to do and what output is expected. We keep them in YAML files. Note the review task: we ask the model to end with a verdict line that a program can read, because the next step is done by code.</p></aside>
+</section>
+</body></html>

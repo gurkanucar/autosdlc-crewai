@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>From agent to agent: CrewAI Flow</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="kod-flow" class="slide code-slide" data-chapter="A short look at the code" aria-labelledby="title-kod-flow">
+<header class="slide-header"><p class="chapter">A short look at the code</p><h2 id="title-kod-flow">From agent to agent:<br><span class="marker">CrewAI Flow</span></h2></header>
+<div class="slide-content"><div class="code-pair wide-left"><div class="reveal code-block code-small" data-step="1" data-anim="fade"><p class="code-caption">runner.py · stage order (shortened)</p><pre><code><b class="k">class</b> <b class="f">SDLCFlow</b>(Flow):
+    @start()
+    <b class="k">def</b> <b class="f">plan</b>(self):
+        <b class="k">return</b> session.execute(<b class="s">"planning"</b>, ...)
+
+    @listen(plan)
+    <b class="k">def</b> <b class="f">analyse</b>(self, _previous):
+        <b class="k">return</b> session.execute(<b class="s">"analysis"</b>, ...)
+
+    @listen(analyse)
+    <b class="k">def</b> <b class="f">design</b>(self, _previous): ...
+
+    <i class="c"># review → develop → test → deploy → maintain</i></code></pre></div><div class="reveal code-block code-small" data-step="2" data-anim="fade"><p class="code-caption">runner.py · stage inputs</p><pre><code><i class="c"># which documents does each agent read?</i>
+STAGE_INPUTS = {
+  <b class="s">"analysis"</b>:    (<b class="s">"planning"</b>,),
+  <b class="s">"design"</b>:      (<b class="s">"analysis"</b>, <b class="s">"planning"</b>),
+  <b class="s">"review"</b>:      (<b class="s">"design"</b>, <b class="s">"analysis"</b>),
+  <b class="s">"development"</b>: (<b class="s">"design"</b>, <b class="s">"analysis"</b>,
+                  <b class="s">"review"</b>),
+  <b class="s">"testing"</b>:     (<b class="s">"analysis"</b>, <b class="s">"design"</b>),
+}</code></pre></div></div><p class="reveal takeaway" data-step="3" data-anim="fade"><code>@listen</code>: when a stage ends, the next one starts. Earlier documents go into the prompt's <code>$context</code>.</p></div>
+<footer class="slide-footer"><span>AutoSDLC · SDLC with AI agents</span><span class="folio">07 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Speaker notes"><p>The agents do not talk to each other directly. The Flow starts the next stage when one finishes. STAGE_INPUTS decides what an agent knows: for example the Development Agent sees the design, the requirements and the review report. The user's answers and decisions are added to every prompt's context too.</p></aside>
+</section>
+</body></html>

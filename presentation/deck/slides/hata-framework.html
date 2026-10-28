@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Hata 4: model eski bilgiyle kod yazıyor</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="hata-framework" class="slide " data-chapter="Karşılaştığımız hatalar" aria-labelledby="title-hata-framework">
+<header class="slide-header"><p class="chapter">Karşılaştığımız hatalar</p><h2 id="title-hata-framework">Hata 4: model<br><span class="marker">eski bilgiyle kod yazıyor</span></h2></header>
+<div class="slide-content"><table class="compact"><thead><tr><th>Belirti</th><th>Sebep</th><th>Çözüm</th></tr></thead><tbody>
+<tr class="reveal" data-step="1"><td><code>TypeError: Cannot set property query</code></td><td>Express 5'te <code>req.query</code> artık sadece okunabilir.</td><td>Build check yakalıyor, agent'a açık talimat.</td></tr>
+<tr class="reveal" data-step="2"><td><code>#email</code> bulunamadı</td><td>antd <code>Form name="login"</code> input'a <code>login_email</code> id'si veriyor.</td><td>Testteki id'ler arayüz koduyla karşılaştırılıyor.</td></tr>
+<tr class="reveal" data-step="3"><td>Test hiç başlamıyor</td><td><code>node:test</code> dosyası <code>playwright test</code> ile koşturulmuş.</td><td>project.yaml komutları kontrol ediliyor.</td></tr>
+<tr class="reveal" data-step="4"><td>Sunucu açılmıyor</td><td>Gerekli secret'lar (ör. <code>JWT_SECRET</code>) eksik.</td><td>Test sunucusuna secret'lar otomatik veriliyor.</td></tr>
+</tbody></table></div>
+<footer class="slide-footer"><span>AutoSDLC · AI agent'larla SDLC</span><span class="folio">19 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Konuşmacı notları"><p>Modeller eğitim verilerindeki eski sürümlere göre kod yazıyor. Express 5 ile gelen değişiklikleri bilmiyor, Ant Design'ın id üretme kuralını bilmiyor. Bu hataları her seferinde testlerin dakikalarca koşmasını beklemeden, statik kontrollerle hızlıca yakalayıp agent'a net bir mesajla geri veriyoruz.</p></aside>
+</section>
+</body></html>

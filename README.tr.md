@@ -78,6 +78,12 @@ Net olmayan bir mimari kararda ajan projeyi durdurup çalışma alanında size s
 
 Ajan chat'inde yanıt verebilirsiniz. Yanıtınız run ile saklanır ve sonraki aşamalara aktarılır. Yukarıdaki soru temsili bir örnektir; gerçek sorular projenize göre belirlenir.
 
+## Sunum
+
+[![AutoSDLC sunum kapağı](docs/media/presentation-cover.png)](presentation/deck/index.html)
+
+Projeyi anlatan 24 slaytlık sunum: agent'lar, birbirlerine nasıl iş aktardıkları, koda kısa bir bakış ve karşılaştığımız hatalar. Uygulamadaki **Sunum** sayfasında (`/presentation`) açılır; ya da [`presentation/deck/index.html`](presentation/deck/index.html) dosyasını ([English](presentation/deck/index.en.html)) indirip tarayıcıda açabilirsiniz. Tek dosyadır, internet gerekmez.
+
 ## Geliştirme
 
 ```bash

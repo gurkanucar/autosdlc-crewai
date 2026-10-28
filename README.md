@@ -78,6 +78,12 @@ An agent can stop at an unclear architecture decision and ask you in the project
 
 You can answer in the agent chat. The answer is saved with the run and passed to the next stages. The question above is an illustrative example; actual questions depend on your project.
 
+## Presentation
+
+[![AutoSDLC presentation cover](docs/media/presentation-cover-en.png)](presentation/deck/index.en.html)
+
+A 24-slide presentation of the project: the agents, how they hand work to each other, a short look at the code and the errors we ran into. Open it in the app's **Presentation** page (`/presentation`), or download [`presentation/deck/index.en.html`](presentation/deck/index.en.html) ([Turkish](presentation/deck/index.html)) and open it in a browser; it is a single offline file.
+
 ## Development
 
 ```bash

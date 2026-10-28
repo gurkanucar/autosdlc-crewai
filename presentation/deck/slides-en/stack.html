@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>The technologies we used</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="stack" class="slide " data-chapter="Technology" aria-labelledby="title-stack">
+<header class="slide-header"><p class="chapter">Technology</p><h2 id="title-stack">The technologies<br><span class="marker">we used</span></h2></header>
+<div class="slide-content"><div class="stack-grid rows">
+<div class="reveal row" data-step="1"><h3>CrewAI Flows</h3><p>Python framework that runs the agents and the order of the stages.</p></div>
+<div class="reveal row" data-step="1"><h3>OpenCode Go</h3><p>The model gateway. Default model glm-5.3-flash; each stage can use its own model.</p></div>
+<div class="reveal row" data-step="2"><h3>Streamlit</h3><p>Live UI: stage status, agent output, questions, document editing.</p></div>
+<div class="reveal row" data-step="2"><h3>SQLite</h3><p>Run history, events, versions and change requests.</p></div>
+<div class="reveal row" data-step="3"><h3>Playwright + pytest</h3><p>API and UI tests of the generated project, with a real Chromium.</p></div>
+<div class="reveal row" data-step="3"><h3>Docker + Dokploy</h3><p>How both AutoSDLC and the apps it generates are deployed.</p></div>
+</div></div>
+<footer class="slide-footer"><span>AutoSDLC · SDLC with AI agents</span><span class="folio">04 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Speaker notes"><p>The generator is Python, but the projects it creates can be Node.js, Go, Rust or Python; web, CLI or desktop. The Docker image has all these toolchains, because the tests of the generated code run in the same container.</p></aside>
+</section>
+</body></html>

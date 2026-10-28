@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Hata 5: bazen altyapı patlıyor</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="hata-altyapi" class="slide " data-chapter="Karşılaştığımız hatalar" aria-labelledby="title-hata-altyapi">
+<header class="slide-header"><p class="chapter">Karşılaştığımız hatalar</p><h2 id="title-hata-altyapi">Hata 5: bazen<br><span class="marker">altyapı patlıyor</span></h2></header>
+<div class="slide-content"><div class="rows fix-rows">
+<div class="reveal row" data-step="1"><h3>Kütüphane güncellemesi <span>HTTP 400</span></h3><p>CrewAI 1.15 mesajlara <code>cache_breakpoint</code> alanı ekledi, gateway bilinmeyen alanı reddetti. <b>Çözüm:</b> sadece <code>role</code> ve <code>content</code> gönderiliyor, test eklendi.</p></div>
+<div class="reveal row" data-step="2"><h3>Zaman aşımı <span>büyük projeler</span></h3><p>Paket kurulumu ve test suite 300 saniyeye sığmıyordu. <b>Çözüm:</b> 1800 saniye.</p></div>
+<div class="reveal row" data-step="3"><h3>Retry değişikliği unutuyordu <span>CR “Başarısız”</span></h3><p>Başarısız CR yeniden denenince düz regenerate yapılıyordu. <b>Çözüm:</b> retry önce CR'ı yeniden açıyor.</p></div>
+<div class="reveal row" data-step="4"><h3>Arayüz dili <span>Streamlit</span></h3><p>Sayfa değişince dil İngilizceye dönüyordu, şablon Türkçe forma İngilizce metin dolduruyordu. <b>Çözüm:</b> dil seçimi session state'te tutuluyor.</p></div>
+</div></div>
+<footer class="slide-footer"><span>AutoSDLC · AI agent'larla SDLC</span><span class="folio">20 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Konuşmacı notları"><p>Hataların hepsi modelden gelmiyor. Bir kütüphane güncellemesi bütün çağrıları bozdu; büyük projelerde zaman aşımları yetmedi; arayüzde de klasik Streamlit hataları çıktı. Her birini düzeltirken tekrar etmemesi için bir test yazdık.</p></aside>
+</section>
+</body></html>

@@ -21,7 +21,7 @@ from autosdlc.crewai_engine import CrewAIEngine
 from autosdlc.exports import (ANSI_ESCAPE, diagnostics_text, diagnostics_zip, documents_html, documents_pdf, export_files,
                               export_zip, project_zip)
 from autosdlc.desktop import can_open_folders, open_folder
-from autosdlc.i18n import LANGUAGES, normalize, set_language, t, translate_stored
+from autosdlc.i18n import LANGUAGES, current_language, normalize, set_language, t, translate_stored
 from autosdlc.intake import applies, choice_label, default_delivery, question_text, templates, questions, validate_decisions
 from autosdlc.lifecycle import (
     STAGE_KEYS, STAGES, counters, format_duration, render_svg, stage_description, stage_label, stage_metrics, stage_states,
@@ -1486,9 +1486,27 @@ def home_page() -> None:
                      "if the tests fail, the Development Agent repairs the code. The tests belong to the Test Agent; the developer cannot change them."))
 
 
+PRESENTATION_DIR = Path(__file__).resolve().parent / "presentation" / "deck"
+
+
+def presentation_page() -> None:
+    """The project presentation (a single self-contained HTML file per language) shown inside the app."""
+    name = "index.html" if current_language() == "tr" else "index.en.html"
+    if not (PRESENTATION_DIR / name).is_file():
+        st.warning(t("The presentation file was not found: {path}").format(path=f"presentation/deck/{name}"))
+        return
+    deck = (PRESENTATION_DIR / name).read_text(encoding="utf-8")
+    st.caption(t("Click the slide, then use ← → to move; G lists the slides and N shows the speaker notes. "
+                 "For full screen, download the file and open it in the browser."))
+    st.download_button(t("Download the presentation (HTML)"), deck, file_name=t("autosdlc-presentation.html"), mime="text/html",
+                       on_click="ignore", icon="⬇️")
+    st.components.v1.html(deck, height=820)
+
+
 HOME_PAGE = st.Page(home_page, title=t("New project"), icon="🏠", default=True)
 PROJECTS_PAGE = st.Page(projects_page, title=t("Projects"), icon="📁")
-navigation = st.navigation([HOME_PAGE, PROJECTS_PAGE])
+PRESENTATION_PAGE = st.Page(presentation_page, title=t("Presentation"), icon="🎞️", url_path="presentation")
+navigation = st.navigation([HOME_PAGE, PROJECTS_PAGE, PRESENTATION_PAGE])
 with st.sidebar:
     language_selector()
 # After the pages are registered: a login screen shown earlier makes Streamlit forget the URL's page and land on the home page.

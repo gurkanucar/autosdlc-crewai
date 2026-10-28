@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Sistemin mimarisi</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="mimari" class="slide " data-chapter="Teknoloji" aria-labelledby="title-mimari">
+<header class="slide-header"><p class="chapter">Teknoloji</p><h2 id="title-mimari">Sistemin<br><span class="marker">mimarisi</span></h2></header>
+<div class="slide-content"><div class="architecture">
+<div class="reveal arch-lane sketch-box" data-step="1" data-anim="pop"><h3>Arayüz</h3><p>Streamlit sayfaları</p><p>Proje formu ve şablonlar</p><p>Canlı workspace</p><p>ZIP ve tek PDF indirme</p><p class="connector-label">butonlar job başlatır</p></div>
+<div class="reveal arch-lane sketch-box violet" data-step="2" data-anim="pop"><h3>Orkestrasyon</h3><p>runner.py + CrewAI Flow</p><p>Review döngüsü</p><p>Test / repair döngüsü</p><p>Build check: statik kontroller</p><p class="connector-label">her agent çağrısı model gateway'ine</p></div>
+<div class="reveal arch-lane sketch-box" data-step="3" data-anim="pop"><h3>Çalışma alanı</h3><p>Üretilen proje klasörü</p><p>setup / test / start komutları (subprocess)</p><p>Test için geçici PostgreSQL / Redis</p><p>UI testi için Chromium</p></div>
+</div><p class="reveal takeaway" data-step="4" data-anim="fade">Model sadece metin üretiyor; kodu çalıştıran ve sonucu ölçen bizim tarafımız.</p></div>
+<footer class="slide-footer"><span>AutoSDLC · AI agent'larla SDLC</span><span class="folio">05 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Konuşmacı notları"><p>Üç katman var. Arayüz job başlatıyor ve olayları SQLite'tan okuyup canlı gösteriyor. Orkestrasyon katmanı aşamaları sırayla çalıştırıyor, agent çıktılarını kontrol ediyor. Çalışma alanında ise üretilen proje gerçekten kuruluyor, testleri koşuyor, sunucusu ayağa kalkıyor. Model kodu çalıştırmıyor; çalıştırıp sonucu ölçen bizim kodumuz.</p></aside>
+</section>
+</body></html>

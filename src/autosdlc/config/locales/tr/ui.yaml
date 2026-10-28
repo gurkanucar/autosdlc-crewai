@@ -391,3 +391,8 @@
 "All documents in one PDF": "Tüm belgeler tek PDF"
 "The diagram could not be drawn; its source follows.": "Diyagram çizilemedi; kaynağı aşağıda."
 "Every SDLC document with its tables and Mermaid diagrams drawn; takes a few seconds.": "Tablolar ve çizilmiş Mermaid diyagramlarıyla bütün SDLC belgeleri; birkaç saniye sürer."
+"Presentation": "Sunum"
+"The presentation file was not found: {path}": "Sunum dosyası bulunamadı: {path}"
+"Click the slide, then use ← → to move; G lists the slides and N shows the speaker notes. For full screen, download the file and open it in the browser.": "Slayta tıklayıp ← → ile ilerleyin; G slayt listesini, N konuşmacı notlarını açar. Tam ekran için dosyayı indirip tarayıcıda açın."
+"Download the presentation (HTML)": "Sunumu indir (HTML)"
+"autosdlc-presentation.html": "autosdlc-sunum.html"

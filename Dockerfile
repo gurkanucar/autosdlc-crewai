@@ -55,6 +55,7 @@ RUN pip install . \
     && rm -rf /var/lib/apt/lists/*
 
 COPY streamlit_app.py ./
+COPY presentation/deck/index.html presentation/deck/index.en.html ./presentation/deck/
 COPY .streamlit ./.streamlit
 
 # projects/ and runs/ live under the workspace; mount a volume on /data to keep them.

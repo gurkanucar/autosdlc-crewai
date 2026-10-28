@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Error 4: the model writes code from old knowledge</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="hata-framework" class="slide " data-chapter="Errors we ran into" aria-labelledby="title-hata-framework">
+<header class="slide-header"><p class="chapter">Errors we ran into</p><h2 id="title-hata-framework">Error 4: the model writes code<br><span class="marker">from old knowledge</span></h2></header>
+<div class="slide-content"><table class="compact"><thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead><tbody>
+<tr class="reveal" data-step="1"><td><code>TypeError: Cannot set property query</code></td><td>In Express 5 <code>req.query</code> is read-only.</td><td>The build check catches it; a clear instruction to the agent.</td></tr>
+<tr class="reveal" data-step="2"><td><code>#email</code> not found</td><td>antd <code>Form name="login"</code> gives the input the id <code>login_email</code>.</td><td>Ids in the tests are compared with the UI code.</td></tr>
+<tr class="reveal" data-step="3"><td>The tests never start</td><td>A <code>node:test</code> file run with <code>playwright test</code>.</td><td>The project.yaml commands are checked.</td></tr>
+<tr class="reveal" data-step="4"><td>The server does not start</td><td>Required secrets (e.g. <code>JWT_SECRET</code>) are missing.</td><td>The test server gets the secrets automatically.</td></tr>
+</tbody></table></div>
+<footer class="slide-footer"><span>AutoSDLC · SDLC with AI agents</span><span class="folio">19 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Speaker notes"><p>Models write code for the old versions in their training data. They do not know the changes in Express 5 or how Ant Design builds ids. We catch these quickly with static checks, without waiting minutes for the tests to run, and give the agent a clear message.</p></aside>
+</section>
+</body></html>

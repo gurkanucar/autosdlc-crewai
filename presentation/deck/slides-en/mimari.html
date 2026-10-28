@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>The system's architecture</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="mimari" class="slide " data-chapter="Technology" aria-labelledby="title-mimari">
+<header class="slide-header"><p class="chapter">Technology</p><h2 id="title-mimari">The system's<br><span class="marker">architecture</span></h2></header>
+<div class="slide-content"><div class="architecture">
+<div class="reveal arch-lane sketch-box" data-step="1" data-anim="pop"><h3>Interface</h3><p>Streamlit pages</p><p>Project form and templates</p><p>Live workspace</p><p>ZIP and single PDF download</p><p class="connector-label">buttons start jobs</p></div>
+<div class="reveal arch-lane sketch-box violet" data-step="2" data-anim="pop"><h3>Orchestration</h3><p>runner.py + CrewAI Flow</p><p>Review loop</p><p>Test / repair loop</p><p>Build check: static checks</p><p class="connector-label">every agent call goes to the model gateway</p></div>
+<div class="reveal arch-lane sketch-box" data-step="3" data-anim="pop"><h3>Workspace</h3><p>The generated project folder</p><p>setup / test / start commands (subprocess)</p><p>Throwaway PostgreSQL / Redis for tests</p><p>Chromium for UI tests</p></div>
+</div><p class="reveal takeaway" data-step="4" data-anim="fade">The model only writes text; our side runs the code and measures the result.</p></div>
+<footer class="slide-footer"><span>AutoSDLC · SDLC with AI agents</span><span class="folio">05 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Speaker notes"><p>Three layers. The interface starts jobs and shows the events from SQLite live. The orchestration layer runs the stages in order and checks the agent outputs. In the workspace the generated project is really installed, its tests run and its server starts. The model never runs code; our code runs it and measures the result.</p></aside>
+</section>
+</body></html>

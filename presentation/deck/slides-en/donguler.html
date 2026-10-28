@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>The agents check each other</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="donguler" class="slide " data-chapter="How it works" aria-labelledby="title-donguler">
+<header class="slide-header"><p class="chapter">How it works</p><h2 id="title-donguler">The agents<br><span class="marker">check each other</span></h2></header>
+<div class="slide-content"><div class="comparison">
+<div class="reveal sketch-box loop-box" data-step="1" data-anim="pop"><h3>Review loop</h3><ol><li>The Review Agent compares the design with the requirements.</li><li>The report contains a verdict line: <code>VERDICT: APPROVE</code> or <code>REVISE</code>.</li><li>On REVISE the Design Agent fixes the findings.</li></ol><p class="comparison-end">at most 2 rounds, then it moves on</p></div>
+<div class="reveal sketch-box violet loop-box" data-step="2" data-anim="pop"><h3>Test / repair loop</h3><ol><li>The tests really run.</li><li>The failure output goes back to the right agent.</li><li>A repair that breaks passing tests is rolled back.</li><li>More passing tests each attempt earn extra attempts.</li></ol><p class="comparison-end">2 repairs by default + 2 extra attempts</p></div>
+</div></div>
+<footer class="slide-footer"><span>AutoSDLC · SDLC with AI agents</span><span class="folio">09 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Speaker notes"><p>We do not expect the right result in one pass. The Review Agent can reject the design; then the Design Agent fixes it. When tests fail, their output is given back to an agent. An important detail: if a repair breaks tests that passed before, we roll it back, so we never lose a good state.</p></aside>
+</section>
+</body></html>

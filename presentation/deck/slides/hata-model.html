@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>Hata 1: model durmadan düşünüyor</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="hata-model" class="slide " data-chapter="Karşılaştığımız hatalar" aria-labelledby="title-hata-model">
+<header class="slide-header"><p class="chapter">Karşılaştığımız hatalar</p><h2 id="title-hata-model">Hata 1: model<br><span class="marker">durmadan düşünüyor</span></h2></header>
+<div class="slide-content"><div class="split"><div><div class="reveal bubble red" data-step="1" data-anim="pop"><p class="speaker">Maintenance Agent, Türkçe doküman</p><p class="glitch">## 9. Bakım<br>Bil <mark>الإنسan discharge了打工作报告 планируемый</mark> …</p></div></div>
+<div class="rows fix-rows"><div class="reveal row" data-step="2"><h3>Bitmeyen reasoning <span>dakikalarca</span></h3><p><b>Çözüm:</b> 60.000 karakterlik bütçe, sonra “şimdi cevap ver”. Yine olmazsa aşama durur ve model değiştirmesi önerilir.</p></div><div class="reveal row" data-step="3"><h3>Aynı satırı tekrar <span>döngü</span></h3><p><b>Çözüm:</b> tekrar eden çıktı kesilir, bir kez daha sorulur.</p></div><div class="reveal row" data-step="4"><h3>Dil kayması <span>başka alfabeler</span></h3><p><b>Çözüm:</b> prompt'ta olmayan alfabe görülürse cevap tekrar istenir.</p></div></div></div></div>
+<footer class="slide-footer"><span>AutoSDLC · AI agent'larla SDLC</span><span class="folio">16 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Konuşmacı notları"><p>Soldaki metin gerçek bir örnekten: Türkçe yazması gereken model birden Arapça, Çince ve Rusça kelimelere kaydı. Bazı modeller de cevap vermeden dakikalarca düşünüyordu. Hepsi için ölçülebilir bir sınır koyduk ve sınır aşılınca modele açık bir uyarı veriyoruz.</p></aside>
+</section>
+</body></html>

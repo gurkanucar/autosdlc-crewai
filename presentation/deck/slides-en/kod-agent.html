@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>How does an agent call work?</title><link rel="stylesheet" href="../styles.css"><script src="../vendor/rough.js" defer></script><script src="../whiteboard.js" defer></script><script src="../standalone.js" defer></script></head><body>
+<section id="kod-agent" class="slide code-slide" data-chapter="A short look at the code" aria-labelledby="title-kod-agent">
+<header class="slide-header"><p class="chapter">A short look at the code</p><h2 id="title-kod-agent">How does<br><span class="marker">an agent call work?</span></h2></header>
+<div class="slide-content"><div class="code-pair wide-left"><div class="reveal code-block code-small" data-step="1" data-anim="fade"><p class="code-caption">crewai_engine.py · _ask() (simplified)</p><pre><code>prompt = Template(task[<b class="s">"description"</b>]).substitute(
+    idea=idea, context=context, language=<b class="s">"English"</b>)
+
+agent = Agent(role=cfg[<b class="s">"role"</b>], goal=cfg[<b class="s">"goal"</b>],
+              backstory=cfg[<b class="s">"backstory"</b>], llm=llm,
+              allow_delegation=<b class="k">False</b>, max_iter=3)
+task = Task(description=prompt, agent=agent,
+            expected_output=task[<b class="s">"expected_output"</b>])
+raw = Crew(agents=[agent], tasks=[task]).kickoff().raw
+
+<b class="k">if</b> raw.startswith(<b class="s">"USER_QUESTION:"</b>):
+    <b class="k">raise</b> ClarificationNeeded(...)  <i class="c"># a question in the UI</i></code></pre></div><div class="rows"><div class="reveal row" data-step="2"><h3>1. Prompt</h3><p>The YAML template is filled with the idea, the context and the language.</p></div><div class="reveal row" data-step="3"><h3>2. Agent + Task + Crew</h3><p>Every stage is a small crew with one agent. Delegation is off.</p></div><div class="reveal row" data-step="4"><h3>3. Model</h3><p>The OpenCode Go gateway; each stage can use its own model.</p></div><div class="reveal row" data-step="5"><h3>4. Question</h3><p>On <code>USER_QUESTION:</code> the run stops; the answer is added to the context.</p></div></div></div></div>
+<footer class="slide-footer"><span>AutoSDLC · SDLC with AI agents</span><span class="folio">08 / 24</span></footer>
+<aside class="speaker-notes" aria-label="Speaker notes"><p>This function is the common entry point of every stage. It fills the prompt from YAML, builds the CrewAI Agent and Task and runs them. We turned delegation off: we wanted the routing to be explicit in the code, not agents handing work to each other. If the model notices a missing decision it returns a question in a fixed format, and we show it to the user in the UI.</p></aside>
+</section>
+</body></html>
