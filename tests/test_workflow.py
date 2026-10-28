@@ -101,7 +101,7 @@ def test_yaml_config_and_opencode_request_header(monkeypatch):
         return Response()
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
-    engine = CrewAIEngine(api_key="test-key", model="glm-5.3-flash")
+    engine = CrewAIEngine(model="glm-5.3-flash")
     assert engine.agents["analysis"]["role"] == "Analysis Agent"
     assert "acceptance criteria" in engine.tasks["analysis"]["description"]
     assert len(engine.agents) == 9 and engine.agents["impact"]["role"] == "Impact Analysis Agent"
@@ -129,7 +129,7 @@ def test_planning_agent_reads_yaml_task_and_calls_gateway(monkeypatch):
         return Response()
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
-    engine = CrewAIEngine(api_key="test-key")
+    engine = CrewAIEngine()
     result = engine.document("planning", "Book tracker", "")
     assert "Scope" in result
     assert payloads
@@ -201,7 +201,7 @@ def test_complete_crewai_flow_with_mock_gateway(tmp_path, monkeypatch):
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.stream", fake_stream)
-    engine = CrewAIEngine(api_key="test-key")
+    engine = CrewAIEngine()
     result = run_project("Book tracker", workspace=tmp_path, engine=engine, decisions=BACKEND)
     assert result.status == "completed", result.error
     assert result.attempts == 1
@@ -375,7 +375,7 @@ def test_agent_question_marker_is_detected(monkeypatch, token):
             return {"choices": [{"message": {"content": f"{token}: Who is the target user?"}}]}
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", lambda *args, **kwargs: Response())
-    engine = CrewAIEngine(api_key="test-key")
+    engine = CrewAIEngine()
     with pytest.raises(ClarificationNeeded, match="Who is the target user"):
         engine.document("planning", "Stock API", "")
 
@@ -658,7 +658,6 @@ def test_streamlit_create_button_starts_a_run(monkeypatch):
     """Runs the real UI and presses "Create the project"; run_project must receive valid arguments."""
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
     calls = []
     monkeypatch.setattr("autosdlc.runner.run_project", lambda *args, **kwargs: calls.append(kwargs))
     monkeypatch.setattr("autosdlc.models.available_models", lambda: ["glm-5.3-flash"])
@@ -788,8 +787,7 @@ def test_streamlit_create_then_live_workspace_with_chat(tmp_path, monkeypatch):
             return super().document(stage, idea, context)
 
     monkeypatch.setattr("autosdlc.runner.run_project", lambda idea, **kw: real_run(
-        idea, engine=AskingEngine(), **{k: v for k, v in kw.items() if k not in {"model", "api_key"}}))
-    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
+        idea, engine=AskingEngine(), **{k: v for k, v in kw.items() if k != "model"}))
     app = _app(tmp_path, monkeypatch).run()
     app.selectbox(key="template_choice").select("task-api").run()
     app.button(key="apply_template").click().run()
@@ -831,10 +829,9 @@ def test_no_resume_is_offered_while_the_worker_of_a_run_is_starting(tmp_path, mo
     from autosdlc.ui_jobs import ACTIVE_JOBS
 
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
-    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
     real_run = runner.run_project
     monkeypatch.setattr("autosdlc.runner.run_project", lambda idea, **kw: real_run(
-        idea, engine=StubEngine(), **{k: v for k, v in kw.items() if k not in {"model", "api_key"}}))
+        idea, engine=StubEngine(), **{k: v for k, v in kw.items() if k != "model"}))
     app = _app(tmp_path, monkeypatch).run()
     app.selectbox(key="template_choice").select("task-api").run()
     app.button(key="apply_template").click().run()
@@ -871,7 +868,7 @@ def test_gateway_400_is_retried_once_and_reason_is_reported(monkeypatch):
         return httpx.Response(status, json=body, request=request)
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
-    engine = CrewAIEngine(api_key="test-key")
+    engine = CrewAIEngine()
     assert engine.llm.call("merhaba") == "OK"
     with pytest.raises(RuntimeError, match="returned HTTP 400: .*context too long"):
         engine.llm.call("merhaba")
@@ -1015,13 +1012,12 @@ def test_streamlit_section_edit_marks_downstream_stale(tmp_path, monkeypatch):
     from autosdlc import runner
 
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
-    monkeypatch.setenv("OPENCODE_API_KEY", "test-key")
     real_run = runner.run_project
     monkeypatch.setattr("autosdlc.runner.run_project", lambda idea, **kw: real_run(
-        idea, engine=StubEngine(), **{k: v for k, v in kw.items() if k not in {"model", "api_key"}}))
+        idea, engine=StubEngine(), **{k: v for k, v in kw.items() if k != "model"}))
 
     class FakeEngine:
-        def __init__(self, api_key=None, model=None):
+        def __init__(self, model=None):
             pass
 
         def section(self, stage, idea, context, document, section, instruction, mode, language=None):
@@ -1082,7 +1078,7 @@ def test_language_rules_reach_every_agent_and_terms_are_not_translated(monkeypat
         return Response()
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
-    engine = CrewAIEngine(api_key="test-key")
+    engine = CrewAIEngine()
     engine.document("planning", "Inventory", "")
     engine.section("analysis", "Inventory", "", "# Doc\nFR-01: x", "FR-01: x", "Why?", "question")
     assert all("LANGUAGE RULES" in prompt and "addProduct" in prompt for prompt in prompts)
@@ -1151,7 +1147,7 @@ def test_truncated_output_is_reported_and_development_is_batched(monkeypatch):
         return Response(*next(replies))
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
-    engine = CrewAIEngine(api_key="test-key")
+    engine = CrewAIEngine()
     with pytest.raises(OutputTruncated):
         engine._ask("testing", idea="x", context="", files="{}")
     assert engine._ask_files("testing", idea="x", context="", files="{}") == {"a.py": "x = 1"}

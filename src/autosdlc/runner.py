@@ -2350,7 +2350,6 @@ def run_project(
     *,
     workspace: Path | str | None = None,
     max_repairs: int = 2,
-    api_key: str | None = None,
     model: str | None = None,
     engine: StageEngine | None = None,
     decisions: dict[str, str] | None = None,
@@ -2379,7 +2378,7 @@ def run_project(
         raise ValueError("max_repairs must be between 0 and 3")
     decisions = validate_decisions(decisions)
     stage_models = validate_stage_models(stage_models)
-    engine = engine or CrewAIEngine(api_key=api_key, model=model)
+    engine = engine or CrewAIEngine(model=model)
     if hasattr(engine, "stage_models"):
         engine.stage_models = stage_models
     session = RunSession(idea, workspace, engine, max_repairs, decisions, Path(output) if output is not None else None,

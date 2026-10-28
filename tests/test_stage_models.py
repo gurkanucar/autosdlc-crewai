@@ -24,7 +24,7 @@ def test_each_agent_call_uses_its_stage_model(monkeypatch):
         return Response()
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.post", fake_post)
-    engine = CrewAIEngine(api_key="test-key", model="glm-5.3")
+    engine = CrewAIEngine(model="glm-5.3")
     engine.stage_models = {"analysis": "glm-5.3-flash"}
     engine.document("planning", "Book tracker", "")
     engine.document("analysis", "Book tracker", "")

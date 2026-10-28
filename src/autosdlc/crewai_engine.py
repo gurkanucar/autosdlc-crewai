@@ -309,7 +309,7 @@ def _parse_file_bundle(raw: str) -> dict[str, str]:
 
 
 class CrewAIEngine:
-    def __init__(self, api_key: str | None = None, model: str | None = None):
+    def __init__(self, model: str | None = None):
         try:
             from crewai import Agent, BaseLLM, Crew, Process, Task
             import yaml
@@ -317,9 +317,9 @@ class CrewAIEngine:
             raise RuntimeError("Dependencies are missing. Run make setup to install them") from exc
 
         load_dotenv()
-        self.key = api_key or os.getenv("OPENCODE_API_KEY", "")
+        self.key = os.getenv("OPENCODE_API_KEY", "")
         if not self.key:
-            raise RuntimeError("OPENCODE_API_KEY is required; check the local .env file")
+            raise RuntimeError("OPENCODE_API_KEY is required; set it in the environment or the .env file")
         self.model = model or os.getenv("AUTOSDLC_MODEL", DEFAULT_MODEL)
         self.session_id = "ses_" + uuid.uuid4().hex
 

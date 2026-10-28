@@ -216,22 +216,22 @@ def _spawn(job_id: str, name: str, **kwargs) -> None:
     threading.Thread(target=worker, daemon=True, name=f"autosdlc-{name}-{job_id}").start()
 
 
-def start_run(idea: str, decisions: dict[str, str], output: Path | None, model: str, api_key: str | None,
+def start_run(idea: str, decisions: dict[str, str], output: Path | None, model: str,
               stage_models: dict[str, str] | None = None) -> str:
     run_id = uuid.uuid4().hex[:12]
-    _spawn(run_id, "run", idea=idea, model=model, api_key=api_key, decisions=decisions, output=output, run_id=run_id,
+    _spawn(run_id, "run", idea=idea, model=model, decisions=decisions, output=output, run_id=run_id,
            stage_models=stage_models)
     return run_id
 
 
-def resume_run(run_id: str, api_key: str | None, keep_tests: bool = False) -> None:
-    _spawn(run_id, "resume", idea="", resume_run_id=run_id, api_key=api_key, keep_tests=keep_tests)
+def resume_run(run_id: str, keep_tests: bool = False) -> None:
+    _spawn(run_id, "resume", idea="", resume_run_id=run_id, keep_tests=keep_tests)
 
 
-def regenerate(db: History, run_id: str, stage: str, api_key: str | None, keep_tests: bool = False) -> None:
+def regenerate(db: History, run_id: str, stage: str, keep_tests: bool = False) -> None:
     if not db.reset_from(run_id, stage):
         raise ValueError(t("A running project cannot be regenerated; stop it first."))
-    resume_run(run_id, api_key, keep_tests)
+    resume_run(run_id, keep_tests)
 
 
 # ---------------------------------------------------------------- small helpers
@@ -265,13 +265,12 @@ def continue_with(db: History, run_id: str, models: tuple[str, dict[str, str]]) 
     db.set_stage_models(run_id, models[1])
 
 
-def api_key_field(prefix: str) -> tuple[bool, str | None]:
-    """(key ready?, user key). The .env key is never sent to the browser."""
-    if os.getenv("OPENCODE_API_KEY") and not st.toggle(t("Use a different API key"), key=f"{prefix}_override"):
-        st.caption(t("🔐 The API key will be read from the local `.env` file."))
-        return True, None
-    key = st.text_input(t("OpenCode Go API key"), type="password", key=f"{prefix}_key", placeholder="oc_sk_…") or None
-    return bool(key), key
+def api_key_ready() -> bool:
+    """The OpenCode Go key comes only from the OPENCODE_API_KEY environment variable; it is never asked for or sent to the browser."""
+    if os.getenv("OPENCODE_API_KEY"):
+        return True
+    st.warning(t("OPENCODE_API_KEY is not set in the environment; the agents cannot run."))
+    return False
 
 
 def show_diagram(svg: str, *, zoom: int = 100) -> None:
@@ -517,7 +516,7 @@ def accept_edit(db: History, row: dict, stage: str, filename: str, before: str, 
     db.event(row["id"], "workflow", "stale", stale_from or stage)
 
 
-def propagate(db: History, row: dict, start: str, delta: bool, api_key: str | None) -> None:
+def propagate(db: History, row: dict, start: str, delta: bool) -> None:
     """Re-runs out-of-date stages; in delta mode earlier documents are kept and only affected parts change."""
     path = pending_edits_path(row)
     edits = json.loads(read_text(path) or "[]")
@@ -527,7 +526,7 @@ def propagate(db: History, row: dict, start: str, delta: bool, api_key: str | No
         )
         change_id = db.create_change(row["id"], "edit", f"Document edits ({len(edits) or 1})", description[:3990], status="in_progress")
         db.update_change(row["id"], change_id, start_stage=start)
-    regenerate(db, row["id"], start, api_key)
+    regenerate(db, row["id"], start)
     path.unlink(missing_ok=True)
 
 
@@ -544,8 +543,8 @@ def stage_context(row: dict, stage: str) -> str:
     return "\n\n".join(parts)
 
 
-def make_engine(row: dict, api_key: str | None) -> CrewAIEngine:
-    engine = CrewAIEngine(api_key=api_key, model=row["model"] or None)
+def make_engine(row: dict) -> CrewAIEngine:
+    engine = CrewAIEngine(model=row["model"] or None)
     engine.stage_models = stage_models(row)
     return engine
 
@@ -625,13 +624,13 @@ def section_panel(db: History, row: dict, stage: str, filename: str, content: st
                         "add": t("E.g. Add a requirement under this section for searching products by barcode.")}
         instruction = st.text_area(t("Question") if action == "question" else t("Instruction"), key=f"instruction_{prefix}_{action}",
                                    height=70, placeholder=placeholders[action])
-        ready, api_key = api_key_field(f"section_{prefix}")
+        ready = api_key_ready()
         label = t("Ask") if action == "question" else t("Get proposal")
         if st.button(label, key=f"ask_{prefix}", type="primary", disabled=not (ready and instruction.strip())):
             agent = t(next(item.agent for item in STAGES if item.key == stage))
             try:
                 with st.spinner(t("{agent} is working…", agent=agent)):
-                    text = make_engine(row, api_key).section(stage, row["idea"], stage_context(row, stage), content,
+                    text = make_engine(row).section(stage, row["idea"], stage_context(row, stage), content,
                                                              section.text(lines), instruction, action,
                                                              language=document_language(row))
             except (RuntimeError, ValueError) as exc:
@@ -913,10 +912,10 @@ def stale_banner(db: History, row: dict, stale: list[str]) -> None:
             "delta": t("Delta — keep the existing documents and code, update only the affected parts"),
             "full": t("Regenerate — rewrite these stages from scratch"),
         }.get)
-        ready, key = api_key_field(f"propagate_{row['id']}")
+        ready = api_key_ready()
         if st.button(t("Start"), key=f"propagate_{row['id']}", type="primary", disabled=not ready):
             try:
-                propagate(db, row, stale[0], mode == "delta", key)
+                propagate(db, row, stale[0], mode == "delta")
                 st.rerun()
             except ValueError as exc:
                 st.error(translate_stored(str(exc)))
@@ -968,7 +967,7 @@ def changes_dialog(run_id: str) -> None:
                      "are affected; if you approve, only the affected stages are updated in delta mode."))
         return
     busy = row["status"] == "running" or db.active_change(run_id) is not None
-    ready, api_key = api_key_field(f"changes_{run_id}")
+    ready = api_key_ready()
     for change in reversed(changes):
         open_now = change["status"] in {"draft", "analyzed"}
         with st.expander(f"{t(CHANGE_STATUS.get(change['status'], change['status']))} · **{change['id']}** · "
@@ -983,7 +982,7 @@ def changes_dialog(run_id: str) -> None:
                 if st.button(t("🔍 Run impact analysis"), key=f"impact_{change['id']}", disabled=not ready):
                     try:
                         with st.spinner(t("The Impact Analysis Agent is working…")):
-                            report = make_engine(row, api_key).impact(row["idea"], impact_context(row), (
+                            report = make_engine(row).impact(row["idea"], impact_context(row), (
                                 f"{change['id']} · {CHANGE_KINDS[change['kind']]}: {change['title']}\n{change['description']}"),
                                 language=document_language(row))
                         start = parse_start_stage(report) or ("development" if change["kind"] == "bug" else "analysis")
@@ -1018,7 +1017,7 @@ def changes_dialog(run_id: str) -> None:
                     clarifications = "\n".join(f"- Question: {question}\n  Answer: {answer.strip()}" for question, answer in answers.items())
                     db.update_change(run_id, change["id"], status="in_progress", start_stage=start,
                                      clarifications=clarifications or None, skip_stages=",".join(skipped) or None)
-                    regenerate(db, run_id, start, api_key)
+                    regenerate(db, run_id, start)
                     st.rerun()
                 if reject.button(t("✖ Reject"), key=f"reject_{change['id']}"):
                     db.update_change(run_id, change["id"], status="rejected")
@@ -1190,10 +1189,10 @@ def header(db: History, row: dict) -> None:
         elif row["status"] == "paused":
             with primary.popover(t("▶ Resume"), width="stretch"):
                 models = model_fields(f"resume_{run_id}", row)
-                ready, key = api_key_field(f"resume_{run_id}")
+                ready = api_key_ready()
                 if st.button(t("Resume where it stopped"), key=f"resume_{run_id}", type="primary", disabled=not ready):
                     continue_with(db, run_id, models)
-                    resume_run(run_id, key)
+                    resume_run(run_id)
                     st.rerun()
         elif row["status"] == "failed":
             # Failed job: reset from the first incomplete stage and continue; finished stages are not regenerated.
@@ -1207,11 +1206,11 @@ def header(db: History, row: dict) -> None:
                         t("Keep the current tests"), value=True, key=f"keep_tests_{run_id}",
                         help=t("The tests written last time run again and only the failures are repaired. Clear it to "
                                "have the Test Agent write a new suite."))
-                ready, key = api_key_field(f"retry_{run_id}")
+                ready = api_key_ready()
                 if st.button(t("Retry"), key=f"retry_{run_id}", type="primary", disabled=not ready):
                     continue_with(db, run_id, models)
                     db.reopen_failed_change(run_id)
-                    regenerate(db, run_id, failed_at, key, keep_tests)
+                    regenerate(db, run_id, failed_at, keep_tests)
                     st.rerun()
         with manage.popover(t("⚙️ Manage"), width="stretch"):
             manage_menu(db, row)
@@ -1250,10 +1249,10 @@ def manage_menu(db: History, row: dict) -> None:
     with regen:
         stage = st.selectbox(t("Starting stage"), STAGE_KEYS, format_func=stage_label, key=f"regen_stage_{run_id}")
         st.caption(t("The selected stage and the ones after it run again; earlier documents are used as input."))
-        ready, key = api_key_field(f"regen_{run_id}")
+        ready = api_key_ready()
         if st.button(t("Regenerate"), key=f"regen_{run_id}", type="primary", disabled=not ready):
             try:
-                regenerate(db, run_id, stage, key)
+                regenerate(db, run_id, stage)
                 st.rerun()
             except ValueError as exc:
                 st.error(translate_stored(str(exc)))
@@ -1448,7 +1447,7 @@ def home_page() -> None:
                                                 placeholder=t("E.g. Use pnpm, keep the frontend plain HTML, write the UI texts in Turkish."))
     with right:
         model, chosen_models = model_fields("new")
-        ready, api_key = api_key_field("new")
+        ready = api_key_ready()
         path_col, browse_col = st.columns([3, 1], vertical_alignment="bottom")
         output_path = path_col.text_input(t("Project folder (optional)"), key="output_path", placeholder="projects/<name>-<id>")
         if browse_col.button(t("Browse"), width="stretch"):
@@ -1459,11 +1458,11 @@ def home_page() -> None:
                 if not idea.strip() or len(idea) > 1000:
                     raise ValueError(t("Write the project idea in 1–1000 characters."))
                 if not ready:
-                    raise ValueError(t("An OpenCode Go API key is required."))
+                    raise ValueError(t("OPENCODE_API_KEY is not set in the environment; the agents cannot run."))
                 target = Path(output_path).expanduser().resolve() if output_path.strip() else None
                 if target and target.exists():
                     raise ValueError(t("Project folder already exists: {path}", path=target))
-                st.session_state["starting_run"] = start_run(idea.strip(), validated, target, model, api_key, chosen_models)
+                st.session_state["starting_run"] = start_run(idea.strip(), validated, target, model, chosen_models)
                 st.switch_page(PROJECTS_PAGE)
             except (ValueError, OSError) as exc:
                 st.error(translate_stored(str(exc)))

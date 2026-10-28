@@ -66,7 +66,8 @@ def test_failure_report_shows_the_failing_model_call_and_traceback(tmp_path, mon
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.stream", lambda *args, **kwargs: Stream())
     monkeypatch.setattr("autosdlc.crewai_engine.time.sleep", lambda seconds: None)
-    engine = CrewAIEngine(api_key="sk-secret-key-123456")
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-secret-key-123456")
+    engine = CrewAIEngine()
     decisions = {"project_type": "backend", "stack": "Python / FastAPI", "database": "sqlite", "cache": "none",
                  "observability": "none", "ui": "none"}
     result = run_project("Book tracker", workspace=tmp_path, engine=engine, decisions=decisions)

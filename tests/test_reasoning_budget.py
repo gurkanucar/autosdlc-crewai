@@ -51,7 +51,7 @@ def _engine(monkeypatch, responses, stage="testing"):
         return Stream(response)
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.stream", fake_stream)
-    engine = CrewAIEngine(api_key="test-key")
+    engine = CrewAIEngine()
     engine.llm.stage = stage
     engine.llm.listener = lambda text: None
     return engine, payloads

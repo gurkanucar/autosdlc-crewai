@@ -46,7 +46,7 @@ def test_stop_cuts_off_a_model_call_that_is_still_reasoning(tmp_path, monkeypatc
 
     monkeypatch.setattr("autosdlc.crewai_engine.httpx.stream", fake_stream)
     started = time.monotonic()
-    result = run_project("Book tracker", workspace=tmp_path, engine=CrewAIEngine(api_key="test-key"),
+    result = run_project("Book tracker", workspace=tmp_path, engine=CrewAIEngine(),
                          decisions=BACKEND, run_id=run_id)
     assert result.status == "paused" and db.get(run_id)["status"] == "paused"
     assert time.monotonic() - started < 30
