@@ -1421,3 +1421,18 @@ def test_uncovered_tests_read_shell_commands_and_globs():
     names = ["tests/api/a.test.js", "tests/api/helpers.js", "tests/ui/b.test.js", "tests/e2e/c.test.js"]
     # The helper is not a test; the warning once listed every file of these commands, the helper too.
     assert uncovered_tests(manifest, names) == ["tests/e2e/c.test.js"]
+
+
+def test_retrying_a_failed_change_continues_that_change(tmp_path):
+    db = History(tmp_path / "history.sqlite3")
+    db.create("r1", "Event app", tmp_path / "out", tmp_path / "project")
+    change_id = db.create_change("r1", "feature", "Title search", "Search events by title.")
+    db.update_change("r1", change_id, status="failed")
+    db.add_iteration("r1", "v1 · Initial version", "initial", None, "completed", 1, tmp_path / "v1")
+    assert db.reopen_failed_change("r1") is None
+    db.add_iteration("r1", "v2 · CR-001", "feature", change_id, "failed", 3, tmp_path / "v2")
+    assert db.reopen_failed_change("r1") == change_id
+    assert db.active_change("r1")["id"] == change_id
+    # A change that was finished some other way is left alone.
+    db.update_change("r1", change_id, status="done")
+    assert db.reopen_failed_change("r1") is None

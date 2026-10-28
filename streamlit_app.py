@@ -1210,6 +1210,7 @@ def header(db: History, row: dict) -> None:
                 ready, key = api_key_field(f"retry_{run_id}")
                 if st.button(t("Retry"), key=f"retry_{run_id}", type="primary", disabled=not ready):
                     continue_with(db, run_id, models)
+                    db.reopen_failed_change(run_id)
                     regenerate(db, run_id, failed_at, key, keep_tests)
                     st.rerun()
         with manage.popover(t("⚙️ Manage"), width="stretch"):

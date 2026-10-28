@@ -328,6 +328,21 @@ class History:
             row = db.execute("SELECT * FROM changes WHERE run_id=? AND id=?", (run_id, change_id)).fetchone()
             return dict(row) if row else None
 
+    def reopen_failed_change(self, run_id: str) -> str | None:
+        """Retrying a run whose last version was a failed change continues that change: retried as a plain
+        regeneration, CR-001 passed its tests but stayed "Failed"."""
+        with self._connect() as db:
+            last = db.execute(
+                "SELECT change_id, status FROM iterations WHERE run_id=? ORDER BY number DESC LIMIT 1", (run_id,)
+            ).fetchone()
+            if not last or not last["change_id"] or last["status"] != "failed":
+                return None
+            result = db.execute(
+                "UPDATE changes SET status='in_progress', updated_at=? WHERE run_id=? AND id=? AND status='failed'",
+                (now(), run_id, last["change_id"]),
+            )
+            return last["change_id"] if result.rowcount else None
+
     def active_change(self, run_id: str) -> dict | None:
         with self._connect() as db:
             row = db.execute(
