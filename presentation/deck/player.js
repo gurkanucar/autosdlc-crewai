@@ -35,7 +35,8 @@
     }
     const target = current + direction;
     if(target < 0 || target >= slides.length) return;
-    show(target, true, direction < 0 && stepMode ? maxStep(slides[target]) : 1);
+    // Going back returns to a slide already seen: show its last state at once instead of replaying it.
+    show(target, true, direction < 0 && stepMode ? maxStep(slides[target]) : 1, direction > 0);
   }
   function toggleSteps() {
     stepMode = !stepMode;
@@ -62,7 +63,7 @@
     $('notes-content').innerHTML = slides[current].querySelector('.speaker-notes')?.innerHTML || `<p>${L.noNotes}</p>`;
     notesPanel.scrollTop = 0;
   }
-  function show(index, writeHash = true, step = 1) {
+  function show(index, writeHash = true, step = 1, animate = true) {
     const next = Math.max(0, Math.min(index, slides.length - 1));
     slides.forEach((slide, i) => {
       if (!slide.hidden) window.Whiteboard?.deactivate(slide);
@@ -73,8 +74,8 @@
     current = next;
     currentStep = Math.min(step, maxStep(slides[current]));
     slides[current].querySelectorAll('[data-step]').forEach(e=>e.classList.remove('is-revealed'));
-    window.Whiteboard?.activate(slides[current], stepMode ? currentStep : Infinity);
-    paintStep();
+    window.Whiteboard?.activate(slides[current], stepMode ? currentStep : Infinity, animate);
+    paintStep(animate);
     $('slide-position').textContent = `${String(current + 1).padStart(2, '0')} / ${slides.length}`;
     $('chapter-name').textContent = slides[current].dataset.chapter;
     $('progress').style.width = `${(current + 1) / slides.length * 100}%`;
