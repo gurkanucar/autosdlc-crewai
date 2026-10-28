@@ -955,3 +955,19 @@ def test_ui_test_looking_for_an_id_the_antd_form_does_not_give(tmp_path):
     problems = ui_test_ids_missing(tmp_path)
     assert problems == ["tests/ui/login.test.js:1: looks for #email, but no element has that id: the antd form gives "
                         "its email input the id login_email; use page.getByLabel('E-posta') or #login_email"]
+
+
+def test_caseless_regex_that_misses_a_dotted_capital_i(tmp_path):
+    from autosdlc.runner import dotted_capital_i_regexes
+
+    (tmp_path / "web/src").mkdir(parents=True)
+    (tmp_path / "web/src/Events.jsx").write_text("<Button danger>İptal</Button>\n<Button>Kayıt Ol</Button>\n",
+                                                 encoding="utf-8")
+    (tmp_path / "tests/ui").mkdir(parents=True)
+    (tmp_path / "tests/ui/a.test.js").write_text(
+        "await card.getByRole('button', { name: /kayıt ol/i }).click();\n"
+        "await card.getByRole('button', { name: /iptal/i }).click();\n"
+        "await card.getByRole('button', { name: /İptal/i }).click();\n", encoding="utf-8")
+    assert dotted_capital_i_regexes(tmp_path) == [
+        "tests/ui/a.test.js:2: /iptal/i never matches the UI text 'İptal': JavaScript does not fold the Turkish İ to i; "
+        "write the text as the UI has it ('İptal' or /İptal/i)"]

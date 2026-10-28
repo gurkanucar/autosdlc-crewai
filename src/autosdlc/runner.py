@@ -750,6 +750,46 @@ def ui_test_ids_missing(project_dir: Path) -> list[str]:
     return problems
 
 
+_JS_CASELESS_REGEX = re.compile(r"""(?<![\w$)\]])/((?:[^/\\\n]|\\.)+)/([a-z]*i[a-z]*)""")
+
+
+def dotted_capital_i_regexes(project_dir: Path) -> list[str]:
+    """Case-insensitive regexes in the tests that cannot match the UI text because of a Turkish dotted capital İ:
+    JavaScript does not fold İ to i, so /iptal/i never matches the button "İptal". A UI test waited for that button
+    in every attempt while the registration had worked."""
+    web = "\n".join(_source(project_dir, name) for name in _project_files(project_dir, _JS_SOURCES)
+                    if not _in_tests(name))
+    texts = [line for line in web.splitlines() if "İ" in line]
+    if not texts:
+        return []
+    problems = []
+    for name in _project_files(project_dir, _JS_SOURCES):
+        if not _in_tests(name):
+            continue
+        source = _source(project_dir, name)
+        for match in _JS_CASELESS_REGEX.finditer(source):
+            pattern = match.group(1)
+            # Only plain words: a regex with its own syntax is not translated to Python's.
+            if "i" not in pattern.lower() or not re.fullmatch(r"[^\\.*+?()\[\]{}|$/]+", pattern.lstrip("^")):
+                continue
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+                # Python folds İ to i, JavaScript does not: with İ out of both, only what JavaScript matches is left.
+                in_javascript = re.compile(pattern.replace("İ", "\0"), re.IGNORECASE)
+            except re.error:
+                continue
+            missed = next((text for text in texts if not in_javascript.search(text.replace("İ", "\0"))
+                           and compiled.search(text.replace("İ", "I"))), None)
+            if missed:
+                found = compiled.search(missed.replace("İ", "I"))
+                word = missed[found.start():found.end()]
+                line = source.count("\n", 0, match.start()) + 1
+                problems.append(f"{name}:{line}: /{pattern}/{match.group(2)} never matches the UI text '{word}': "
+                                f"JavaScript does not fold the Turkish İ to i; write the text as the UI has it "
+                                f"('{word}' or /{word}/i)")
+    return problems
+
+
 def missing_js_packages(project_dir: Path) -> list[str]:
     """Packages a JS file imports that are not installed where Node looks for them from that file.
 
@@ -2005,7 +2045,7 @@ class RunSession:
             return "\n".join(syntax_errors[:25]), 1
         problems = (missing_js_imports(self.project_dir) + missing_js_packages(self.project_dir)
                     + test_runner_mismatches(self.project_dir, self.manifest) + test_helper_misuse(self.project_dir)
-                    + ui_test_ids_missing(self.project_dir))
+                    + ui_test_ids_missing(self.project_dir) + dotted_capital_i_regexes(self.project_dir))
         # The application's problems alone first: the developer cannot fix the tests, and the tests may be right.
         problems = [problem for problem in problems if not _in_tests(problem.split(":", 1)[0])] or problems
         if problems:
