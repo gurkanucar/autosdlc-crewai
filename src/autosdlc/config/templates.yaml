@@ -256,7 +256,8 @@
       in the folder given by the POET_DATA_DIR environment variable, or next to the program when it is not set;
       .gitignore lists both files. Put the acrostic check, the prompt and the jsonl store in poet.py and the command loop
       in a function run(input_stream, output_stream, store, complete, ask_key), where complete(messages) returns the
-      model''s text; the HTTP call lives in client.py. main.py only wires them together and ends quietly on Ctrl+C or
+      model''s text; run() writes the "> " prompt to output_stream before every read, also when the
+      input is not a terminal, and returns at end of input. The HTTP call lives in client.py. main.py only wires them together and ends quietly on Ctrl+C or
       end of input. The tests never call the network or need a key: they pass a fake complete and temporary folders.
       Fewest files: poet.py, client.py, main.py, run.bat, run.sh, .gitignore and one test file under tests/. Keep every
       SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'

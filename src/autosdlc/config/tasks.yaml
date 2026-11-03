@@ -212,6 +212,10 @@ testing:
     In JavaScript/TypeScript a string that contains an apostrophe uses double quotes or backticks, never single quotes.
     Test data that is large (a file over a size limit, a long string, many rows) is generated in code, e.g.
     Buffer.alloc(6 * 1024 * 1024) or 'a'.repeat(300); never written out literally.
+    Test data that must pass a rule the application checks (an acrostic that spells a word, a checksum, a valid
+    date or format) is built in code from that rule, e.g. one line per letter of the word, never typed out by hand:
+    a hand-written poem missing one line made five tests fail against correct code. Two tests never demand opposite
+    behaviour from the same code (one expects a prompt on every read, another no output at all).
     Every function that uses await is declared async, the callbacks of test(), it(), describe(), before() and after()
     too (`test('...', async () => { ... })`); `await` in a plain callback does not even parse.
     Comments, skip reasons and assertion messages in test files are English, like the test names.

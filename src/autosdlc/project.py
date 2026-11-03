@@ -57,11 +57,16 @@ def read_project_manifest(project_dir: Path, decisions: dict[str, str]) -> dict:
         if chained:
             raise ValueError(f"{key} in project.yaml {chained}, but the command runs without a shell; write several "
                              f"commands as [sh, -c, \"first && second\"] (or put them in a script run with sh)")
-    if decisions["project_type"] in LOCAL_TYPES and decisions["ui"] != "web":
+    has_server = not (decisions["project_type"] in LOCAL_TYPES and decisions["ui"] != "web")
+    if not has_server:
         # Models sometimes fill every key; a CLI or desktop app has no server to start and no HTTP API to test, and
         # launching it as a "server" exits at once (or opens a window). unit_test is the whole contract for these types.
         for key in ("api_test", "ui_test", "start"):
             manifest.pop(key, None)
+        # The prompt asks for a port only for a web service, so models write "port: null" or "port: 0" here; nothing
+        # listens on it, so any value is accepted and replaced by the default.
+        if not (isinstance(manifest.get("port"), int) and 1024 <= manifest["port"] <= 65535):
+            manifest.pop("port", None)
     port = manifest.get("port", 8000)
     if not isinstance(port, int) or not 1024 <= port <= 65535:
         raise ValueError("The project.yaml port must be between 1024 and 65535")

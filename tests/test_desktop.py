@@ -24,6 +24,15 @@ def test_desktop_manifest_keeps_only_the_unit_test(tmp_path):
     assert set(read_project_manifest(tmp_path, decisions)) == {"unit_test", "port"}
 
 
+def test_a_console_app_without_a_server_may_write_any_port(tmp_path):
+    # The prompt says the port is only for a web service, so models write "port: null" or "port: 0" for a CLI;
+    # that failed the quality gate and cost a rewrite of the whole project.
+    decisions = validate_decisions({"project_type": "cli", "stack": "Python", "delivery": "script"})
+    for port in (None, 0, "none"):
+        (tmp_path / "project.yaml").write_text(yaml.safe_dump({"unit_test": ["pytest"], "port": port}), encoding="utf-8")
+        assert read_project_manifest(tmp_path, decisions)["port"] == 8000
+
+
 def test_planning_keeps_what_the_idea_asks_for_in_scope():
     planning = yaml.safe_load(TASKS.read_text(encoding="utf-8"))["planning"]["description"]
     assert "never list it as out of scope" in planning

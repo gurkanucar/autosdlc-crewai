@@ -276,6 +276,26 @@ def _files_for_prompt(files: dict[str, str], limit: int, focus: str = "", first:
     return text
 
 
+def _failing_tests(files: dict[str, str], feedback: str, limit: int = 12000) -> str:
+    """The test files the failure output names, whole and read-only, for a repair.
+
+    The failure output alone does not show a test's fixtures and fakes: a developer without them guessed what the
+    test fed in ("what if the fixture poem has a title line?") until its reasoning budget ran out, twice."""
+    shown: dict[str, str] = {}
+    size = 2
+    for name, content in files.items():
+        if not name.startswith(("tests/", "test/")) or name not in feedback:
+            continue
+        entry = len(json.dumps({name: content}, ensure_ascii=False))
+        if size + entry <= limit:
+            shown[name] = content
+            size += entry
+    if not shown:
+        return ""
+    return ("The failing test files, read-only (they show exactly what the tests feed in and expect; read them "
+            "instead of guessing, and never return them):\n" + json.dumps(shown, ensure_ascii=False) + "\n")
+
+
 def _ends(text: str, limit: int) -> str:
     """The start and the end of a long test output: the failures are reported at the top, the summary and the logs
     at the bottom. Only the end once showed a repair the server log and none of the failing tests."""
@@ -644,11 +664,12 @@ class CrewAIEngine:
 
     def code(self, idea: str, docs: str, feedback: str | None = None, change: str | None = None) -> dict[str, str]:
         self.test_issues = {}
-        # The tests are left out: the failure output shows what they expect, and they would crowd out the code.
+        # Only the test files the failure names are shown, read-only: all of them would crowd out the code.
         current = (
             "Files under tests/ and test/ belong to the Test Agent and must not be changed. Return only changed or new files.\n"
             "Existing application files:\n"
             f"{_files_for_prompt(self.current_files, 40000, focus=(feedback or '') + (change or ''), skip=('tests/', 'test/'))}\n"
+            + (_failing_tests(self.current_files, feedback) if feedback else "")
         )
         if change:
             # Change request: the existing application is kept, only the files the request requires change.

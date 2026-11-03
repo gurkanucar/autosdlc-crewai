@@ -52,6 +52,18 @@ def test_the_developer_repair_sees_the_code_without_the_tests():
     assert '"app.py": "x = 1"' in feedback and "assert False" not in feedback
 
 
+def test_the_developer_repair_reads_the_failing_test_files_but_not_the_others():
+    # Without the failing test the developer guessed its fixtures ("what if the fixture poem has a title line?") until
+    # the reasoning budget ran out, twice, for about five minutes each.
+    engine = _engine(json.dumps({"files": {"poet.py": "x = 2"}}))
+    engine.current_files = {"poet.py": "x = 1", "tests/test_poet.py": "VALID_BAHAR = 'Bulutlar'",
+                            "tests/test_other.py": "UNRELATED = 1"}
+    engine.code("idea", "docs", feedback="FAILED tests/test_poet.py::test_FR02_saves - AssertionError")
+    feedback = engine.asked[0]["feedback"]
+    assert "VALID_BAHAR = 'Bulutlar'" in feedback and "UNRELATED" not in feedback
+    assert "read-only" in feedback
+
+
 def test_the_test_agent_sees_project_yaml_and_its_scripts_first():
     engine = _engine(json.dumps({"files": {"tests/t.test.js": "x"}}))
     files = {"web/big.js": "w" * 40000, "scripts/api-test.sh": "node --test tests/*.test.js",

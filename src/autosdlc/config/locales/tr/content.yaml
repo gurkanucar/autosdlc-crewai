@@ -293,7 +293,8 @@ Python 3.12, standard library (urllib.request, getpass, json), pytest; OpenCode 
   id, word, theme, text, model and created_at) and config.json in the folder given by the POET_DATA_DIR environment variable, or next
   to the program when it is not set; .gitignore lists both files. Put the acrostic check, the prompt and the jsonl store in poet.py
   and the command loop in a function run(input_stream, output_stream, store, complete, ask_key), where complete(messages) returns
-  the model''s text; the HTTP call lives in client.py. main.py only wires them together and ends quietly on Ctrl+C or end of input.
+  the model''s text; run() writes the "> " prompt to output_stream before every read, also when the input is not a terminal, and returns
+  at end of input. The HTTP call lives in client.py. main.py only wires them together and ends quietly on Ctrl+C or end of input.
   The tests never call the network or need a key: they pass a fake complete and temporary folders. Fewest files: poet.py, client.py,
   main.py, run.bat, run.sh, .gitignore and one test file under tests/. Keep every SDLC document short (at most half a page each);
   write at most 3 FRs and 2 NFRs.'
@@ -306,10 +307,11 @@ Python 3.12, standard library (urllib.request, getpass, json), pytest; OpenCode 
   daha sor, sonra kaydetmeden başarısız olduğunu söyle. Şiirleri poems.jsonl''a (her satırda id, word, theme, text, model ve created_at
   ile bir şiir) ve config.json''u POET_DATA_DIR ortam değişkeninin verdiği klasöre, o yoksa programın yanına kaydet; .gitignore ikisini
   de listeler. Akrostiş kontrolünü, istemi ve jsonl deposunu poet.py içine, komut döngüsünü de run(input_stream, output_stream, store,
-  complete, ask_key) fonksiyonuna koy; complete(messages) modelin metnini döndürür; HTTP çağrısı client.py içindedir. main.py yalnızca
-  bunları birbirine bağlar ve Ctrl+C''de ya da girdi bitince sessizce kapanır. Testler hiç ağa çıkmaz ve anahtar istemez: sahte bir
-  complete ve geçici klasörler kullanır. En az dosya: poet.py, client.py, main.py, run.bat, run.sh, .gitignore ve tests/ altında tek
-  test dosyası. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+  complete, ask_key) fonksiyonuna koy; complete(messages) modelin metnini döndürür; run() her okumadan önce, girdi bir terminal olmasa
+  da, "> " istemini output_stream''e yazar ve girdi bitince döner. HTTP çağrısı client.py içindedir. main.py yalnızca bunları birbirine
+  bağlar ve Ctrl+C''de ya da girdi bitince sessizce kapanır. Testler hiç ağa çıkmaz ve anahtar istemez: sahte bir complete ve geçici
+  klasörler kullanır. En az dosya: poet.py, client.py, main.py, run.bat, run.sh, .gitignore ve tests/ altında tek test dosyası. Bütün
+  SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 What is the project type?: Proje türü nedir?
 Which languages and frameworks will be used? State the backend, frontend and package manager.: Hangi dil ve framework'ler
   kullanılacak? Backend, frontend ve package manager'ı belirt.
