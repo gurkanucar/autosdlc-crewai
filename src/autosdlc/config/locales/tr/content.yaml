@@ -10,34 +10,97 @@ Python 3.12, pytest: Python 3.12, pytest
   tests/. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 : 'Dış bağımlılık kullanma, setup komutu gerekmez. En az dosya: tek kaynak modülü ve tests/ altında tek test dosyası. Bütün
   SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Calculator (Python, CLI): Hesap makinesi (Python, CLI)
-A command-line calculator for the four basic operations; run.sh/run.bat launchers (Python must be installed).: Dört işlem
-  yapan komut satırı hesap makinesi; run.sh/run.bat başlatıcıları (Python kurulu olmalı).
-? 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication and division.
-  Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero code.'
-: 'Dört işlem yapan komut satırı hesap makinesi: toplama, çıkarma, çarpma ve bölme. Kullanım: calc 6 / 3 çıktısı 2 olsun.
-  Sıfıra bölme açık bir hata mesajı yazsın ve sıfırdan farklı bir çıkış koduyla bitsin.'
-Python 3.12, argparse, pytest: Python 3.12, argparse, pytest
-? 'Use no external dependencies; standard library only. Fewest files: one source module and a single test file under tests/.
-  Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-: 'Dış bağımlılık kullanma; yalnızca standard library. En az dosya: tek kaynak modülü ve tests/ altında tek test dosyası.
-  Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Password generator (Go, CLI): Parola üretici (Go, CLI)
-Prints random passwords; ready-to-run executables for Windows (.exe), Linux and macOS.: Rastgele parola üretir; Windows (.exe),
-  Linux ve macOS için hazır çalıştırılabilir dosyalar.
-? A command-line password generator. "genpass" prints one random password of 16 characters. "--length 24" sets the length,
-  "--no-symbols" leaves out symbols and "--count 5" prints five passwords. Every password contains at least one lowercase
-  letter, one uppercase letter and one digit. A length below 8 prints a clear error message and exits with a non-zero code.
-: Komut satırı parola üretici. "genpass" 16 karakterlik bir rastgele parola yazar. "--length 24" uzunluğu belirler, "--no-symbols"
-  sembolleri çıkarır, "--count 5" beş parola yazar. Her parola en az bir küçük harf, bir büyük harf ve bir rakam içerir. 8'den
-  kısa uzunluk açık bir hata mesajı yazar ve sıfırdan farklı bir çıkış koduyla biter.
+Calculator (Python, console): Hesap makinesi (Python, konsol)
+? A console calculator that keeps running; type an expression, press Enter, get the answer. Starts with a double click on run.bat
+  (Python must be installed).
+: Sürekli çalışan konsol hesap makinesi; bir ifade yaz, Enter'a bas, cevabı gör. run.bat'a çift tıklayarak açılır (Python kurulu olmalı).
+? A console calculator that keeps running. It opens with a one-line help and a "> " prompt; you type an expression such as 6 / 3 or
+  2 + 3 * (4 - 1) and press Enter, and it prints the result. It supports +, -, *, / and parentheses, and "ans" stands for the last
+  result. A wrong input or a division by zero prints a short error and the calculator keeps running. "help" shows the help again,
+  "quit" or "exit" closes it.
+: Sürekli çalışan bir konsol hesap makinesi. Tek satırlık bir yardım ve "> " istemiyle açılır; 6 / 3 ya da 2 + 3 * (4 - 1) gibi bir
+  ifade yazıp Enter'a basınca sonucu yazar. +, -, *, / ve parantezleri destekler; "ans" son sonucun yerini tutar. Hatalı girdi ya
+  da sıfıra bölme kısa bir hata yazar ve hesap makinesi çalışmaya devam eder. "help" yardımı yeniden gösterir, "quit" ya da "exit"
+  kapatır.
+Python 3.12, standard library, pytest: Python 3.12, standard library, pytest
+? 'Standard library only and never eval(): parse the expression with a small tokenizer and parser that respects operator precedence
+  and parentheses. Put the parsing and calculation in calculator.py and the prompt loop in a function run(input_stream, output_stream)
+  in the same module, so the tests drive a whole session with io.StringIO; main.py only calls run(sys.stdin, sys.stdout) and ends
+  quietly on Ctrl+C or end of input. Fewest files: calculator.py, main.py, run.bat, run.sh and one test file under tests/. Keep every
+  SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca standard library kullan, eval() asla kullanma: ifadeyi işlem önceliğine ve parantezlere uyan küçük bir tokenizer ve parser
+  ile çözümle. Çözümlemeyi ve hesaplamayı calculator.py içine, istem döngüsünü de aynı modülde run(input_stream, output_stream) fonksiyonuna
+  koy; böylece testler bütün bir oturumu io.StringIO ile yürütür. main.py yalnızca run(sys.stdin, sys.stdout) çağırır ve Ctrl+C''de
+  ya da girdi bitince sessizce kapanır. En az dosya: calculator.py, main.py, run.bat, run.sh ve tests/ altında tek test dosyası. Bütün
+  SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Password generator (Go, console): Parola üretici (Go, konsol)
+? Double-click it and a console window shows a fresh password on every Enter; ready-to-run executables for Windows (.exe), Linux and
+  macOS.
+: Çift tıklayınca açılan konsol penceresi her Enter'da yeni bir parola gösterir; Windows (.exe), Linux ve macOS için hazır çalıştırılabilir
+  dosyalar.
+? An interactive password generator. Double-click it and a console window opens and shows a random 16-character password. Pressing
+  Enter shows a new one; typing a number between 8 and 64 changes the length; "s" turns symbols on or off; "q" closes it. The current
+  settings are shown above the prompt. Every password contains at least one lowercase letter, one uppercase letter and one digit (and
+  one symbol when symbols are on). A wrong input prints a short message and the program keeps running.
+: Etkileşimli bir parola üretici. Çift tıklayınca bir konsol penceresi açılır ve 16 karakterlik rastgele bir parola gösterir. Enter'a
+  basınca yenisini gösterir; 8 ile 64 arasında bir sayı yazınca uzunluk değişir; "s" sembolleri açar ya da kapatır; "q" kapatır. Geçerli
+  ayarlar istemin üstünde görünür. Her parola en az bir küçük harf, bir büyük harf ve bir rakam (semboller açıksa bir sembol de) içerir.
+  Hatalı girdi kısa bir mesaj yazar ve program çalışmaya devam eder.
+? 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Put the generator and the prompt loop
+  in one package under internal/; the loop is a function Run(in io.Reader, out io.Writer) so the tests drive a whole session with
+  strings.Reader and bytes.Buffer, and it returns at end of input. main.go only calls it with os.Stdin and os.Stdout. Fewest files:
+  main.go and that package. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca Go standard library kullan; rastgele sayıları math/rand değil crypto/rand''dan al. Üreticiyi ve istem döngüsünü internal/
+  altında tek bir pakete koy; döngü Run(in io.Reader, out io.Writer) fonksiyonu olsun, böylece testler bütün bir oturumu strings.Reader
+  ve bytes.Buffer ile yürütür; girdi bitince fonksiyon döner. main.go yalnızca onu os.Stdin ve os.Stdout ile çağırır. En az dosya:
+  main.go ve bu paket. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Number guessing game (Python, console): Sayı tahmin oyunu (Python, konsol)
+? The computer picks a number between 1 and 100 and you guess it in the console; starts with a double click on run.bat (Python must
+  be installed).
+: Bilgisayar 1 ile 100 arasında bir sayı tutar, sen konsolda tahmin edersin; run.bat'a çift tıklayarak açılır (Python kurulu olmalı).
+? A number guessing game in the console. The computer picks a secret number between 1 and 100; you type a guess and press Enter, and
+  it answers "higher" or "lower" until you find it. Then it shows how many guesses you needed and your best score so far, and asks
+  whether to play again. Input that is not a number between 1 and 100 prints a short message and does not count as a guess. "quit"
+  ends the game at any time.
+: Konsolda bir sayı tahmin oyunu. Bilgisayar 1 ile 100 arasında gizli bir sayı tutar; bir tahmin yazıp Enter'a basarsın, sayıyı bulana
+  kadar "daha büyük" ya da "daha küçük" diye cevap verir. Sonra kaç tahminde bulduğunu ve şimdiye kadarki en iyi skorunu gösterir,
+  yeniden oynamak isteyip istemediğini sorar. 1 ile 100 arasında sayı olmayan girdi kısa bir mesaj yazar ve tahmin sayılmaz. "quit"
+  oyunu her an bitirir.
+? 'Standard library only. Put the game in game.py: a function play(input_stream, output_stream, rng) that takes a random.Random, so
+  the tests use a seeded one and drive whole games with io.StringIO; main.py only calls it with sys.stdin, sys.stdout and random.Random()
+  and ends quietly on Ctrl+C or end of input. Fewest files: game.py, main.py, run.bat, run.sh and one test file under tests/. Keep
+  every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca standard library kullan. Oyunu game.py içine koy: bir random.Random alan play(input_stream, output_stream, rng) fonksiyonu;
+  böylece testler seed verilmiş bir Random kullanır ve bütün oyunları io.StringIO ile yürütür. main.py yalnızca onu sys.stdin, sys.stdout
+  ve random.Random() ile çağırır, Ctrl+C''de ya da girdi bitince sessizce kapanır. En az dosya: game.py, main.py, run.bat, run.sh
+  ve tests/ altında tek test dosyası. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+Expense notebook (Node.js, console): Harcama defteri (Node.js, konsol)
+? Write down your spending in the console and see the list and the totals; saved to a file. Starts with a double click on run.bat
+  (Node.js must be installed).
+: Harcamalarını konsola yaz, listeyi ve toplamları gör; bir dosyaya kaydedilir. run.bat'a çift tıklayarak açılır (Node.js kurulu olmalı).
+? 'A small expense notebook in the console. It opens with a "> " prompt and keeps running: "add 45.50 groceries" records an expense
+  with today''s date, "list" shows all expenses with their numbers, "total" shows the sum and the sum per category, "delete 3" removes
+  expense number 3, "help" shows the commands and "quit" closes it. The expenses are saved, so they are still there after a restart.
+  A wrong command or amount prints a short message and the notebook keeps running.'
+: 'Konsolda küçük bir harcama defteri. "> " istemiyle açılır ve çalışmaya devam eder: "add 45.50 market" bugünün tarihiyle bir harcama
+  kaydeder, "list" bütün harcamaları numaralarıyla gösterir, "total" toplamı ve kategori başına toplamı gösterir, "delete 3" 3 numaralı
+  harcamayı siler, "help" komutları gösterir, "quit" kapatır. Harcamalar kaydedilir, yeniden başlatınca da yerinde durur. Hatalı komut
+  ya da tutar kısa bir mesaj yazar ve defter çalışmaya devam eder.'
+Node.js 22 (ES modules, node:readline), node:test: Node.js 22 (ES modülleri, node:readline), node:test
+? 'No dependencies, so no setup command. Keep amounts as whole cents (integers), never floating point. Save the expenses to expenses.jsonl
+  (one expense per line) in the folder given by the EXPENSES_DIR environment variable, or next to the program when it is not set.
+  Put the commands in src/notebook.js as a function handleLine(line, store) that returns the text to print, and the file load/save
+  in src/store.js; src/main.js only wires them to node:readline. Importing a module has no side effects. The tests use temporary folders
+  and run with [node, --test, tests/*.test.js]. Fewest files: src/main.js, src/notebook.js, src/store.js, package.json, run.bat, run.sh
+  and one test file. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Bağımlılık yok, bu yüzden setup komutu da yok. Tutarları kayan noktalı sayı olarak değil, tam kuruş (integer) olarak tut. Harcamaları
+  EXPENSES_DIR ortam değişkeninin verdiği klasördeki, o yoksa programın yanındaki expenses.jsonl dosyasına kaydet (her satırda bir
+  harcama). Komutları src/notebook.js içinde yazdırılacak metni döndüren handleLine(line, store) fonksiyonuna, dosya okuma/yazmayı
+  src/store.js içine koy; src/main.js yalnızca bunları node:readline''a bağlar. Bir modülü import etmenin yan etkisi olmaz. Testler
+  geçici klasörler kullanır ve [node, --test, tests/*.test.js] ile çalışır. En az dosya: src/main.js, src/notebook.js, src/store.js,
+  package.json, run.bat, run.sh ve tek test dosyası. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR
+  ve 2 NFR yaz.'
 Go 1.24, standard library, go test: Go 1.24, standard library, go test
-? 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Fewest files: main.go and one
-  package under internal/ with the generator. Keep every SDLC document short (at most half a page each); write at most 3 FRs
-  and 2 NFRs.'
-: 'Yalnızca Go standard library kullan; rastgele sayıları math/rand değil crypto/rand''dan al. En az dosya: main.go ve üreticiyi
-  içeren internal/ altında tek paket. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2
-  NFR yaz.'
 To-do list (Rust, desktop window): Yapılacaklar listesi (Rust, masaüstü penceresi)
 ? 'A small to-do list app with its own window: add, tick off and delete tasks; saved to a JSONL file. Built as a Windows .exe.'
 : 'Kendi penceresi olan küçük bir yapılacaklar uygulaması: görev ekle, işaretle, sil; JSONL dosyasına kaydedilir. Windows
@@ -201,45 +264,52 @@ Python 3.12, FastAPI, pytest: Python 3.12, FastAPI, pytest
   write at most 3 FRs and 2 NFRs.
 : Girdi doğrulaması ve anlamlı hata kodları (400, 404) olsun. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa);
   en fazla 3 FR ve 2 NFR yaz.
-Folder backup (sh + bat scripts): Klasör yedekleme (sh + bat script'leri)
-Helper scripts that copy a folder into a timestamped backup; backup.sh for Linux/macOS and backup.bat for Windows.: Bir klasörü
-  zaman damgalı yedeğe kopyalayan yardımcı script'ler; Linux/macOS için backup.sh, Windows için backup.bat.
-? 'Helper scripts that back up a folder: "backup <source> <backup-folder>" copies the source folder into <backup-folder>/<source-name>-YYYYMMDD-HHMMSS
-  and prints where the backup went. A missing source folder prints a clear error message and exits with a non-zero code. The
-  same behaviour for Linux/macOS (backup.sh) and for Windows (backup.bat).'
-: 'Bir klasörü yedekleyen yardımcı script''ler: "backup <kaynak> <yedek-klasörü>" kaynak klasörü <yedek-klasörü>/<kaynak-adı>-YYYYAAGG-SSDDSS
-  klasörüne kopyalar ve yedeğin nereye gittiğini yazar. Bulunamayan kaynak klasör açık bir hata mesajı yazar ve sıfırdan farklı
-  bir çıkış koduyla biter. Aynı davranış Linux/macOS (backup.sh) ve Windows (backup.bat) için sağlanır.'
-POSIX sh and Windows batch (.bat), no dependencies: POSIX sh and Windows batch (.bat), no dependencies
-? 'Only the standard tools of each system (cp, date / xcopy). The tests run in a Linux container: write a shell test script
-  under tests/ that exercises backup.sh with temporary folders and run it with [sh, tests/test_backup.sh] as unit_test; backup.bat
-  cannot run there, so describe in the README how to check it by hand. Keep every SDLC document short (at most half a page
-  each); write at most 3 FRs and 2 NFRs.'
-: 'Her sistemin yalnızca standart araçlarını kullan (cp, date / xcopy). Testler Linux container''ında çalışır: tests/ altında
-  backup.sh''yi geçici klasörlerle çalıştıran bir shell test script''i yaz ve unit_test olarak [sh, tests/test_backup.sh]
-  ile çalıştır; backup.bat orada çalışamaz, bu yüzden elle nasıl kontrol edileceğini README''de anlat. Bütün SDLC belgeleri
-  kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
-Folder organizer (sh + bat scripts): Klasör düzenleyici (sh + bat script'leri)
-? Helper scripts that sort the files of a folder into subfolders by type; organize.sh for Linux/macOS and organize.bat for
-  Windows.
-: Bir klasördeki dosyaları türüne göre alt klasörlere ayıran yardımcı script'ler; Linux/macOS için organize.sh, Windows için
-  organize.bat.
-? 'Helper scripts that tidy a folder: "organize <folder> [--dry-run]" moves every file into a subfolder named after its type
-  (images, documents or other), chosen from the file extension; --dry-run only prints what would be moved. A file is skipped,
-  never overwritten, when the target already has a file with that name. A missing folder prints a clear error message and
-  exits with a non-zero code. The same behaviour for Linux/macOS (organize.sh) and for Windows (organize.bat).'
-: 'Bir klasörü toparlayan yardımcı script''ler: "organize <klasör> [--dry-run]" her dosyayı uzantısına göre seçilen, türünün
-  adını taşıyan bir alt klasöre (images, documents ya da other) taşır; --dry-run yalnızca nelerin taşınacağını yazar. Hedefte
-  aynı adlı bir dosya varsa dosya atlanır, üzerine hiç yazılmaz. Bulunamayan klasör açık bir hata mesajı yazar ve sıfırdan
-  farklı bir çıkış koduyla biter. Aynı davranış Linux/macOS (organize.sh) ve Windows (organize.bat) için sağlanır.'
-? 'Only the standard tools of each system. The tests run in a Linux container: write a shell test script under tests/ that
-  exercises organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as unit_test; organize.bat cannot
-  run there, so describe in the README how to check it by hand. Keep every SDLC document short (at most half a page each);
+Acrostic poem writer (Python, console, AI): Akrostiş şiir yazıcı (Python, konsol, yapay zekâ)
+? Type a word and an AI model writes an acrostic poem whose lines start with its letters; poems are saved and can be listed. Asks
+  for the OpenCode Go API key once. Starts with a double click on run.bat (Python must be installed).
+: Bir kelime yaz, yapay zekâ modeli dizeleri o kelimenin harfleriyle başlayan bir akrostiş şiir yazsın; şiirler kaydedilir ve listelenebilir.
+  OpenCode Go API anahtarını bir kez sorar. run.bat'a çift tıklayarak açılır (Python kurulu olmalı).
+? 'A console app that writes acrostic poems with an AI model. On the first start it asks for the OpenCode Go API key once (the typing
+  is hidden) and remembers it, so it is not asked again. Then it keeps running with a "> " prompt: typing a word, optionally followed
+  by a theme ("SPRING: hope"), writes a poem whose lines start with the letters of the word in order, shows it and saves it. "list"
+  shows the saved poems with their numbers, words and dates, "show 3" prints poem number 3 again, "delete 3" removes it, "key" asks
+  for a new API key, "help" shows the commands and "quit" closes it. The poems are still there after a restart. A network or key error
+  prints a short message and the app keeps running.'
+: 'Yapay zekâ modeliyle akrostiş şiir yazan bir konsol uygulaması. İlk açılışta OpenCode Go API anahtarını bir kez sorar (yazılan
+  görünmez) ve hatırlar, bir daha sormaz. Sonra "> " istemiyle çalışmaya devam eder: bir kelime, istenirse ardından bir tema ("BAHAR:
+  umut") yazınca dizeleri kelimenin harfleriyle sırayla başlayan bir şiir yazar, gösterir ve kaydeder. "list" kayıtlı şiirleri numarası,
+  kelimesi ve tarihiyle gösterir, "show 3" 3 numaralı şiiri yeniden yazar, "delete 3" onu siler, "key" yeni bir API anahtarı sorar,
+  "help" komutları gösterir, "quit" kapatır. Şiirler yeniden başlatınca da yerinde durur. Ağ ya da anahtar hatası kısa bir mesaj yazar
+  ve uygulama çalışmaya devam eder.'
+Python 3.12, standard library (urllib.request, getpass, json), pytest; OpenCode Go model glm-5.3-flash: Python 3.12, standard library
+  (urllib.request, getpass, json), pytest; OpenCode Go modeli glm-5.3-flash
+? 'Standard library only, so no setup command. The model is called with POST https://opencode.ai/inference/go/openai/v1/chat/completions
+  (OpenAI-compatible body {model, messages}, header Authorization: Bearer <key>, answer in choices[0].message.content); the model
+  is glm-5.3-flash unless the OPENCODE_MODEL environment variable names another, and a request times out after 120 seconds. The key
+  comes from the OPENCODE_API_KEY environment variable when it is set, otherwise from config.json, otherwise it is asked with getpass
+  and saved to config.json; never print the key. The poem is written in the language of the word. Check that the first letters of
+  the poem''s lines spell the word (ignoring case, empty lines and punctuation, Turkish letters included); if they do not, ask the
+  model again, at most two more times, and then say it failed without saving. Save the poems to poems.jsonl (one poem per line with
+  id, word, theme, text, model and created_at) and config.json in the folder given by the POET_DATA_DIR environment variable, or next
+  to the program when it is not set; .gitignore lists both files. Put the acrostic check, the prompt and the jsonl store in poet.py
+  and the command loop in a function run(input_stream, output_stream, store, complete, ask_key), where complete(messages) returns
+  the model''s text; the HTTP call lives in client.py. main.py only wires them together and ends quietly on Ctrl+C or end of input.
+  The tests never call the network or need a key: they pass a fake complete and temporary folders. Fewest files: poet.py, client.py,
+  main.py, run.bat, run.sh, .gitignore and one test file under tests/. Keep every SDLC document short (at most half a page each);
   write at most 3 FRs and 2 NFRs.'
-: 'Her sistemin yalnızca standart araçlarını kullan. Testler Linux container''ında çalışır: tests/ altında organize.sh''yi
-  geçici klasörlerle çalıştıran bir shell test script''i yaz ve unit_test olarak [sh, tests/test_organize.sh] ile çalıştır;
-  organize.bat orada çalışamaz, bu yüzden elle nasıl kontrol edileceğini README''de anlat. Bütün SDLC belgeleri kısa olsun
-  (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
+: 'Yalnızca standard library kullan, bu yüzden setup komutu yok. Model POST https://opencode.ai/inference/go/openai/v1/chat/completions
+  ile çağrılır (OpenAI uyumlu gövde {model, messages}, Authorization: Bearer <anahtar> başlığı, cevap choices[0].message.content içinde);
+  OPENCODE_MODEL ortam değişkeni başka bir model belirtmedikçe model glm-5.3-flash olur ve bir istek 120 saniyede zaman aşımına uğrar.
+  Anahtar, ayarlıysa OPENCODE_API_KEY ortam değişkeninden, değilse config.json''dan alınır; o da yoksa getpass ile sorulur ve config.json''a
+  kaydedilir; anahtar asla ekrana yazılmaz. Şiir kelimenin dilinde yazılır. Şiirdeki dizelerin ilk harflerinin kelimeyi oluşturduğunu
+  kontrol et (büyük/küçük harf, boş satırlar ve noktalama yok sayılır, Türkçe harfler dahil); oluşturmuyorsa modele en fazla iki kez
+  daha sor, sonra kaydetmeden başarısız olduğunu söyle. Şiirleri poems.jsonl''a (her satırda id, word, theme, text, model ve created_at
+  ile bir şiir) ve config.json''u POET_DATA_DIR ortam değişkeninin verdiği klasöre, o yoksa programın yanına kaydet; .gitignore ikisini
+  de listeler. Akrostiş kontrolünü, istemi ve jsonl deposunu poet.py içine, komut döngüsünü de run(input_stream, output_stream, store,
+  complete, ask_key) fonksiyonuna koy; complete(messages) modelin metnini döndürür; HTTP çağrısı client.py içindedir. main.py yalnızca
+  bunları birbirine bağlar ve Ctrl+C''de ya da girdi bitince sessizce kapanır. Testler hiç ağa çıkmaz ve anahtar istemez: sahte bir
+  complete ve geçici klasörler kullanır. En az dosya: poet.py, client.py, main.py, run.bat, run.sh, .gitignore ve tests/ altında tek
+  test dosyası. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
 What is the project type?: Proje türü nedir?
 Which languages and frameworks will be used? State the backend, frontend and package manager.: Hangi dil ve framework'ler
   kullanılacak? Backend, frontend ve package manager'ı belirt.

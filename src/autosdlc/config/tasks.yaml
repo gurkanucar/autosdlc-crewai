@@ -98,7 +98,9 @@ development:
         Linux (Python, Node.js, ...), do not fake it: write run.sh and run.bat launchers instead, leave package
         out and say so in the README. No Dockerfile.
       script: run.sh (POSIX sh) and run.bat launchers that run the application from source and pass the
-        arguments through. No Dockerfile.
+        arguments through. run.bat is usually started with a double click, so it changes to its own folder
+        (cd /d "%~dp0") and, when the program ends with an error, pauses so the message stays readable.
+        No Dockerfile.
       none: no Dockerfile, no launchers.
     Match the effort to the project: a small CLI, desktop app or library needs no infrastructure files beyond these.
     Build outputs go only to dist/ or bin/: never write a compiled binary to the project root

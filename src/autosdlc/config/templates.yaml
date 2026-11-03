@@ -1,6 +1,7 @@
 # Example project templates shown in the UI. Each one fills the form; the user can change it afterwards.
 # The decisions keys are the same as in questions.yaml. Idea at most 1000, stack at most 200, constraints at most 4000 characters.
-# Keep the catalog small: tiny, sensible examples; desktop apps first, only a couple of CLIs, one web app, one API, scripts.
+# Keep the catalog small: tiny, sensible examples; desktop apps first, then console apps that keep running and read what
+# the user types (no tools that only take command-line arguments), one web app, one API.
 # The idea is written the way a user would say it; technical hints belong to stack and constraints.
 # Texts are English source strings; other languages are in locales/<code>/content.yaml.
 - id: quick-demo
@@ -79,34 +80,42 @@
       because the tests run without a display. Fewest files: timer.py (logic), app.py (window), run.bat, run.sh. Keep
       every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: calculator-cli
-  title: Calculator (Python, CLI)
-  description: A command-line calculator for the four basic operations; run.sh/run.bat launchers (Python must be installed).
-  idea: 'A command-line calculator that performs the four basic operations: addition, subtraction, multiplication
-    and division. Usage: calc 6 / 3 prints 2. Division by zero prints a clear error message and exits with a non-zero
-    code.'
+  title: Calculator (Python, console)
+  description: A console calculator that keeps running; type an expression, press Enter, get the answer. Starts with a double click on run.bat (Python must be installed).
+  idea: 'A console calculator that keeps running. It opens with a one-line help and a "> " prompt; you type an expression
+    such as 6 / 3 or 2 + 3 * (4 - 1) and press Enter, and it prints the result. It supports +, -, *, / and parentheses,
+    and "ans" stands for the last result. A wrong input or a division by zero prints a short error and the calculator
+    keeps running. "help" shows the help again, "quit" or "exit" closes it.'
   decisions:
     scale: small
     project_type: cli
-    stack: Python 3.12, argparse, pytest
+    stack: Python 3.12, standard library, pytest
     delivery: script
-    constraints: 'Use no external dependencies; standard library only. Fewest files: one source module and a single
-      test file under tests/. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+    constraints: 'Standard library only and never eval(): parse the expression with a small tokenizer and parser that
+      respects operator precedence and parentheses. Put the parsing and calculation in calculator.py and the prompt loop
+      in a function run(input_stream, output_stream) in the same module, so the tests drive a whole session with
+      io.StringIO; main.py only calls run(sys.stdin, sys.stdout) and ends quietly on Ctrl+C or end of input. Fewest files:
+      calculator.py, main.py, run.bat, run.sh and one test file under tests/. Keep every SDLC document short (at most
+      half a page each); write at most 3 FRs and 2 NFRs.'
 - id: password-generator-go
-  title: Password generator (Go, CLI)
-  description: Prints random passwords; ready-to-run executables for Windows (.exe), Linux and macOS.
-  idea: 'A command-line password generator. "genpass" prints one random password of 16 characters. "--length 24" sets the
-    length, "--no-symbols" leaves out symbols and "--count 5" prints five passwords. Every password contains at least
-    one lowercase letter, one uppercase letter and one digit. A length below 8 prints a clear error message and exits
-    with a non-zero code.'
+  title: Password generator (Go, console)
+  description: Double-click it and a console window shows a fresh password on every Enter; ready-to-run executables for Windows (.exe), Linux and macOS.
+  idea: 'An interactive password generator. Double-click it and a console window opens and shows a random 16-character
+    password. Pressing Enter shows a new one; typing a number between 8 and 64 changes the length; "s" turns symbols on
+    or off; "q" closes it. The current settings are shown above the prompt. Every password contains at least one
+    lowercase letter, one uppercase letter and one digit (and one symbol when symbols are on). A wrong input prints a
+    short message and the program keeps running.'
   decisions:
     scale: small
     project_type: cli
     stack: Go 1.24, standard library, go test
     delivery: binary
     platforms: all
-    constraints: 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Fewest files:
-      main.go and one package under internal/ with the generator. Keep every SDLC document short (at most half a page
-      each); write at most 3 FRs and 2 NFRs.'
+    constraints: 'Use the Go standard library only; draw the random numbers from crypto/rand, not math/rand. Put the
+      generator and the prompt loop in one package under internal/; the loop is a function Run(in io.Reader, out
+      io.Writer) so the tests drive a whole session with strings.Reader and bytes.Buffer, and it returns at end of input.
+      main.go only calls it with os.Stdin and os.Stdout. Fewest files: main.go and that package. Keep every SDLC document
+      short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: todo-web-node
   title: To-do list (Node.js, web app)
   description: 'A simple to-do list web page: add tasks, tick them off and delete them; runs in Docker.'
@@ -183,36 +192,71 @@
     delivery: docker
     constraints: 'Include input validation and meaningful error codes (400, 404). Keep every SDLC document short (at most
       half a page each); write at most 3 FRs and 2 NFRs.'
-- id: backup-helper-script
-  title: Folder backup (sh + bat scripts)
-  description: Helper scripts that copy a folder into a timestamped backup; backup.sh for Linux/macOS and backup.bat for Windows.
-  idea: 'Helper scripts that back up a folder: "backup <source> <backup-folder>" copies the source folder into
-    <backup-folder>/<source-name>-YYYYMMDD-HHMMSS and prints where the backup went. A missing source folder prints a
-    clear error message and exits with a non-zero code. The same behaviour for Linux/macOS (backup.sh) and for Windows
-    (backup.bat).'
+- id: guessing-game-python
+  title: Number guessing game (Python, console)
+  description: The computer picks a number between 1 and 100 and you guess it in the console; starts with a double click on run.bat (Python must be installed).
+  idea: 'A number guessing game in the console. The computer picks a secret number between 1 and 100; you type a guess
+    and press Enter, and it answers "higher" or "lower" until you find it. Then it shows how many guesses you needed and
+    your best score so far, and asks whether to play again. Input that is not a number between 1 and 100 prints a short
+    message and does not count as a guess. "quit" ends the game at any time.'
   decisions:
     scale: small
     project_type: cli
-    stack: POSIX sh and Windows batch (.bat), no dependencies
+    stack: Python 3.12, standard library, pytest
     delivery: script
-    constraints: 'Only the standard tools of each system (cp, date / xcopy). The tests run in a Linux container: write a
-      shell test script under tests/ that exercises backup.sh with temporary folders and run it with
-      [sh, tests/test_backup.sh] as unit_test; backup.bat cannot run there, so describe in the README how to check it by
-      hand. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
-- id: file-organizer-script
-  title: Folder organizer (sh + bat scripts)
-  description: Helper scripts that sort the files of a folder into subfolders by type; organize.sh for Linux/macOS and organize.bat for Windows.
-  idea: 'Helper scripts that tidy a folder: "organize <folder> [--dry-run]" moves every file into a subfolder named after
-    its type (images, documents or other), chosen from the file extension; --dry-run only prints what would be moved. A
-    file is skipped, never overwritten, when the target already has a file with that name. A missing folder prints a
-    clear error message and exits with a non-zero code. The same behaviour for Linux/macOS (organize.sh) and for Windows
-    (organize.bat).'
+    constraints: 'Standard library only. Put the game in game.py: a function play(input_stream, output_stream, rng) that
+      takes a random.Random, so the tests use a seeded one and drive whole games with io.StringIO; main.py only calls
+      it with sys.stdin, sys.stdout and random.Random() and ends quietly on Ctrl+C or end of input. Fewest files: game.py,
+      main.py, run.bat, run.sh and one test file under tests/. Keep every SDLC document short (at most half a page each);
+      write at most 3 FRs and 2 NFRs.'
+- id: expense-notebook-node
+  title: Expense notebook (Node.js, console)
+  description: Write down your spending in the console and see the list and the totals; saved to a file. Starts with a double click on run.bat (Node.js must be installed).
+  idea: 'A small expense notebook in the console. It opens with a "> " prompt and keeps running: "add 45.50 groceries"
+    records an expense with today''s date, "list" shows all expenses with their numbers, "total" shows the sum and the
+    sum per category, "delete 3" removes expense number 3, "help" shows the commands and "quit" closes it. The expenses
+    are saved, so they are still there after a restart. A wrong command or amount prints a short message and the
+    notebook keeps running.'
   decisions:
     scale: small
     project_type: cli
-    stack: POSIX sh and Windows batch (.bat), no dependencies
+    stack: Node.js 22 (ES modules, node:readline), node:test
     delivery: script
-    constraints: 'Only the standard tools of each system. The tests run in a Linux container: write a shell test script
-      under tests/ that exercises organize.sh with temporary folders and run it with [sh, tests/test_organize.sh] as
-      unit_test; organize.bat cannot run there, so describe in the README how to check it by hand. Keep every SDLC
-      document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+    constraints: 'No dependencies, so no setup command. Keep amounts as whole cents (integers), never floating point.
+      Save the expenses to expenses.jsonl (one expense per line) in the folder given by the EXPENSES_DIR environment
+      variable, or next to the program when it is not set. Put the commands in src/notebook.js as a function
+      handleLine(line, store) that returns the text to print, and the file load/save in src/store.js; src/main.js only
+      wires them to node:readline. Importing a module has no side effects. The tests use temporary folders and run with
+      [node, --test, tests/*.test.js]. Fewest files: src/main.js, src/notebook.js, src/store.js, package.json, run.bat,
+      run.sh and one test file. Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+- id: acrostic-poet-python
+  title: Acrostic poem writer (Python, console, AI)
+  description: Type a word and an AI model writes an acrostic poem whose lines start with its letters; poems are saved and can be listed. Asks for the OpenCode Go API key once. Starts with a double click on run.bat (Python must be installed).
+  idea: 'A console app that writes acrostic poems with an AI model. On the first start it asks for the OpenCode Go API
+    key once (the typing is hidden) and remembers it, so it is not asked again. Then it keeps running with a "> " prompt:
+    typing a word, optionally followed by a theme ("SPRING: hope"), writes a poem whose lines start with the letters of
+    the word in order, shows it and saves it. "list" shows the saved poems with their numbers, words and dates, "show 3"
+    prints poem number 3 again, "delete 3" removes it, "key" asks for a new API key, "help" shows the commands and
+    "quit" closes it. The poems are still there after a restart. A network or key error prints a short message and the
+    app keeps running.'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: Python 3.12, standard library (urllib.request, getpass, json), pytest; OpenCode Go model glm-5.3-flash
+    delivery: script
+    constraints: 'Standard library only, so no setup command. The model is called with POST
+      https://opencode.ai/inference/go/openai/v1/chat/completions (OpenAI-compatible body {model, messages}, header
+      Authorization: Bearer <key>, answer in choices[0].message.content); the model is glm-5.3-flash unless the
+      OPENCODE_MODEL environment variable names another, and a request times out after 120 seconds. The key comes from
+      the OPENCODE_API_KEY environment variable when it is set, otherwise from config.json, otherwise it is asked with
+      getpass and saved to config.json; never print the key. The poem is written in the language of the word. Check that
+      the first letters of the poem''s lines spell the word (ignoring case, empty lines and punctuation, Turkish letters
+      included); if they do not, ask the model again, at most two more times, and then say it failed without saving.
+      Save the poems to poems.jsonl (one poem per line with id, word, theme, text, model and created_at) and config.json
+      in the folder given by the POET_DATA_DIR environment variable, or next to the program when it is not set;
+      .gitignore lists both files. Put the acrostic check, the prompt and the jsonl store in poet.py and the command loop
+      in a function run(input_stream, output_stream, store, complete, ask_key), where complete(messages) returns the
+      model''s text; the HTTP call lives in client.py. main.py only wires them together and ends quietly on Ctrl+C or
+      end of input. The tests never call the network or need a key: they pass a fake complete and temporary folders.
+      Fewest files: poet.py, client.py, main.py, run.bat, run.sh, .gitignore and one test file under tests/. Keep every
+      SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
