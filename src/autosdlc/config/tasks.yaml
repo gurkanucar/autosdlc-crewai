@@ -186,17 +186,17 @@ testing:
     $files
     Write all explanations in $language. Produce tests suited to the chosen language and framework ONLY under
     the tests/ (or test/) folder; do not put test files at the project root. Return ONLY JSON of the form
-    {"files": {"relative/path": "complete content"}}. Link the tests to the FR/NFR ids; cover successful
-    and faulty usage. Write the related id (e.g. FR-01) explicitly in the name or description of every test;
-    the traceability matrix is built from these ids.
-    Every FR must be covered by at least one test. In a backend/fullstack project test the real API HTTP
-    endpoints. A Postgres or Redis project gets a real, empty server at DATABASE_URL / REDIS_URL during the tests:
+    {"files": {"relative/path": "complete content"}}. Keep the suite SMALL and simple: one test per FR for the
+    main successful flow, plus a faulty-usage test only where it is the core of the requirement. No exhaustive edge
+    cases, no NFR or performance tests, no extra helpers. Write the related id (e.g. FR-01) explicitly in the name
+    or description of every test; the traceability matrix is built from these ids.
+    In a backend/fullstack project test the real API HTTP endpoints. A Postgres or Redis project gets a real, empty server at DATABASE_URL / REDIS_URL during the tests:
     use it, never mock the database, and keep each test independent of the data other tests leave behind (unique
     names or emails per test). Test files run in parallel against that one database, which also keeps its data
     between test attempts: never rely on the order of signups or on an empty table (e.g. "the first user becomes
     admin"). When a test needs a privileged role, create a fresh user and give it the role directly in the database
     (SQL at DATABASE_URL, or the application's own data module). If there is a web UI, open BASE_URL with Playwright
-    and verify a visible interaction. Keep the test data isolated and deterministic.
+    and verify one visible interaction (a single smoke test is enough). Keep the test data isolated and deterministic.
     For Node.js ESM TypeScript projects using tsx, use `node --import tsx --test tests/*.test.ts`;
     `node --test tests/` is not a valid directory invocation.
     Use ONLY functions, types, constants and HTTP endpoints that appear in the application files above; never call
