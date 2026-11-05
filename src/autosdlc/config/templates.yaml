@@ -97,6 +97,25 @@
       io.StringIO; main.py only calls run(sys.stdin, sys.stdout) and ends quietly on Ctrl+C or end of input. Fewest files:
       calculator.py, main.py, run.bat, run.sh and one test file under tests/. Keep every SDLC document short (at most
       half a page each); write at most 3 FRs and 2 NFRs.'
+- id: todo-cli-python
+  title: To-do list (Python, console)
+  description: A console to-do list that keeps running; add, list, tick off and delete tasks by typing commands. Saved to a JSONL file. Starts with a double click on run.bat (Python must be installed).
+  idea: 'A to-do list in the console. It opens with a "> " prompt and keeps running: "add buy milk" adds a task, "list"
+    shows all tasks with their numbers and whether they are done, "done 2" ticks task 2 off, "undo 2" marks it as not
+    done, "delete 2" removes it, "help" shows the commands and "quit" closes it. The tasks are saved, so they are still
+    there after a restart. A wrong command or task number prints a short message and the program keeps running.'
+  decisions:
+    scale: small
+    project_type: cli
+    stack: Python 3.12, standard library, pytest
+    delivery: script
+    constraints: 'Standard library only. Save the tasks to tasks.jsonl (one task per line with id, text and done) in the
+      folder given by the TODO_DIR environment variable, or next to the program when it is not set. Put the commands in
+      todo.py as a function handle_line(line, store) that returns the text to print, the JSONL load/save in store.py,
+      and the prompt loop in a function run(input_stream, output_stream, store) so the tests drive a whole session with
+      io.StringIO and a temporary folder; main.py only calls it with sys.stdin and sys.stdout and ends quietly on Ctrl+C
+      or end of input. Fewest files: todo.py, store.py, main.py, run.bat, run.sh and one test file under tests/. Keep every
+      SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
 - id: password-generator-go
   title: Password generator (Go, console)
   description: Double-click it and a console window shows a fresh password on every Enter; ready-to-run executables for Windows (.exe), Linux and macOS.

@@ -331,3 +331,28 @@ For which operating systems should the executables be built? Every extra system 
 : Proje ölçeği nedir? Küçük projede belgeler kısa tutulur ve inceleme yalnızca kritik bulguda tasarımı geri gönderir.
 In which language should the agents write the documents?: Ajanlar belgeleri hangi dilde yazsın?
 Are there any other technical or product constraints?: Başka teknik veya ürün kısıtları var mı?
+To-do list (Python, console): Yapılacaklar listesi (Python, konsol)
+? A console to-do list that keeps running; add, list, tick off and delete tasks by typing commands. Saved to a JSONL file. Starts
+  with a double click on run.bat (Python must be installed).
+: Çalışmaya devam eden bir konsol yapılacaklar listesi; komut yazarak görev ekle, listele, işaretle ve sil. JSONL dosyasına kaydedilir.
+  run.bat'a çift tıklayarak açılır (Python kurulu olmalı).
+? 'A to-do list in the console. It opens with a "> " prompt and keeps running: "add buy milk" adds a task, "list" shows all tasks
+  with their numbers and whether they are done, "done 2" ticks task 2 off, "undo 2" marks it as not done, "delete 2" removes it,
+  "help" shows the commands and "quit" closes it. The tasks are saved, so they are still there after a restart. A wrong command or
+  task number prints a short message and the program keeps running.'
+: 'Konsolda bir yapılacaklar listesi. "> " istemiyle açılır ve çalışmaya devam eder: "add süt al" görev ekler, "list" bütün görevleri
+  numaraları ve yapılıp yapılmadığıyla gösterir, "done 2" 2 numaralı görevi işaretler, "undo 2" yapılmadı olarak geri alır, "delete 2"
+  siler, "help" komutları gösterir, "quit" kapatır. Görevler kaydedilir, yeniden başlatınca da yerinde durur. Hatalı komut ya da görev
+  numarası kısa bir mesaj yazar ve program çalışmaya devam eder.'
+? 'Standard library only. Save the tasks to tasks.jsonl (one task per line with id, text and done) in the folder given by the TODO_DIR
+  environment variable, or next to the program when it is not set. Put the commands in todo.py as a function handle_line(line, store)
+  that returns the text to print, the JSONL load/save in store.py, and the prompt loop in a function run(input_stream, output_stream,
+  store) so the tests drive a whole session with io.StringIO and a temporary folder; main.py only calls it with sys.stdin and sys.stdout
+  and ends quietly on Ctrl+C or end of input. Fewest files: todo.py, store.py, main.py, run.bat, run.sh and one test file under tests/.
+  Keep every SDLC document short (at most half a page each); write at most 3 FRs and 2 NFRs.'
+: 'Yalnızca standard library kullan. Görevleri TODO_DIR ortam değişkeninin verdiği klasördeki, o yoksa programın yanındaki tasks.jsonl
+  dosyasına kaydet (her satırda id, text ve done içeren bir görev). Komutları todo.py içinde yazdırılacak metni döndüren
+  handle_line(line, store) fonksiyonuna, JSONL okuma/yazmayı store.py içine, istem döngüsünü ise run(input_stream, output_stream, store)
+  fonksiyonuna koy; böylece testler bütün oturumu io.StringIO ve geçici klasörle yürütür. main.py yalnızca onu sys.stdin ve sys.stdout
+  ile çağırır, Ctrl+C''de ya da girdi bitince sessizce kapanır. En az dosya: todo.py, store.py, main.py, run.bat, run.sh ve tests/
+  altında tek test dosyası. Bütün SDLC belgeleri kısa olsun (her biri en fazla yarım sayfa); en fazla 3 FR ve 2 NFR yaz.'
