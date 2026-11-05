@@ -53,6 +53,8 @@ design:
     Write the whole document in $language. Design the components, interfaces, error handling, test approach
     and deployment with the chosen technology.
     Include at least one Mermaid component diagram and one Mermaid sequence diagram.
+    Mermaid syntax must stay valid: write nothing after a node or edge on its line (a marker such as [CR-001]
+    after a node breaks the diagram); put change-request ids inside the node label or in the text under the diagram.
     If a database is selected, include an erDiagram and the data schema with keys/indexes.
     If there is an API, write the endpoints, request/response contracts and HTTP status codes.
     Explain the rationale and trade-offs of the decisions. Return Markdown only.
@@ -279,6 +281,8 @@ section_edit:
     Write in $language and follow the document's existing format (heading level, table/bullet structure).
     Do not change existing FR/NFR ids; if a new requirement is added use the number after the
     largest number in the document. Do not change anything outside the instruction.
+    In a Mermaid diagram write nothing after a node or edge on its line (e.g. a trailing [CR-001] breaks it);
+    put such ids inside the node label.
     Return Markdown only; do not add explanations, a preamble or a code fence.
   expected_output: Only the new version of the section or the new content to add (Markdown).
 
